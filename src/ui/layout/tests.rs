@@ -331,3 +331,35 @@ fn a_tab_placed_on_a_blank_pane_lands_beside_it() {
     assert!(set.place_tab_on_pane(&b_tab, "blank", PaneEdge::Right));
     assert_eq!(set.active().unwrap().leaf_ids(), ["blank", "b"]);
 }
+
+#[test]
+fn pins_lead_the_tabs_and_keep_their_own_group() {
+    let mut tabs = TabSet::with_sessions(["s1", "s2", "s3"]);
+    let id = |tabs: &TabSet, ix: usize| tabs.tabs()[ix].id.clone();
+    let order = |tabs: &TabSet| {
+        tabs.tabs()
+            .iter()
+            .map(|t| t.focused.clone())
+            .collect::<Vec<_>>()
+    };
+    let third = id(&tabs, 2);
+    assert!(tabs.set_pinned(&third, true));
+    assert!(!tabs.set_pinned(&third, true));
+    assert_eq!(order(&tabs), ["s3", "s1", "s2"]);
+    let second = id(&tabs, 2);
+    tabs.set_pinned(&second, true);
+    assert_eq!(order(&tabs), ["s3", "s2", "s1"]);
+    // A pin and an unpinned tab do not trade places.
+    assert!(!tabs.reorder(0, 2));
+    assert!(tabs.reorder(0, 1));
+    assert_eq!(order(&tabs), ["s2", "s3", "s1"]);
+    // Unpinned, it leads the rest.
+    tabs.set_pinned(&third, false);
+    assert_eq!(order(&tabs), ["s2", "s3", "s1"]);
+    assert!(!tabs.tabs()[1].pinned);
+    // A split pane closing keeps the tab pinned.
+    let pinned = id(&tabs, 0);
+    tabs.split("s2", SplitDir::Right, "s4");
+    tabs.close_pane("s4");
+    assert!(tabs.tabs().iter().find(|t| t.id == pinned).unwrap().pinned);
+}

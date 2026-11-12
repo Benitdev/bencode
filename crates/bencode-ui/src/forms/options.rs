@@ -280,6 +280,10 @@ pub(crate) struct Popup<'a> {
     pub scroll: Option<&'a ScrollHandle>,
     /// A row to scroll into view once the list has its bounds, and what marks it done.
     pub reveal: Option<(usize, Run)>,
+    /// Drawn above the rows, outside their scroll (a long select's filter).
+    pub header: Option<AnyElement>,
+    /// Shown in place of the rows when there are none.
+    pub empty: Option<SharedString>,
 }
 
 impl Popup<'_> {
@@ -304,6 +308,30 @@ impl Popup<'_> {
                 })
             })
         });
+        let none = self.rows.is_empty();
+        let rows = div()
+            .id((self.id.clone(), "rows"))
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .when_some(self.scroll, |list, handle| list.track_scroll(handle))
+            .flex()
+            .flex_col()
+            .children(rows)
+            .when_some(self.empty.filter(|_| none), |list, empty| {
+                list.child(
+                    div()
+                        .px_2()
+                        .py_1()
+                        .text_color(theme.colors.fg_subtle)
+                        .child(empty),
+                )
+            })
+            .when_some(
+                self.scroll.zip(self.reveal),
+                |list, (handle, (ix, done))| list.child(revealer(handle, ix, done)),
+            );
+        let extra = usize::from(self.header.is_some()) + usize::from(none);
         let list = surface(self.id.clone(), window, cx)
             .debug_selector(|| "option-list".into())
             .min_w(theme.tooltip_max_width())
@@ -313,20 +341,15 @@ impl Popup<'_> {
             .max_w(window.viewport_size().width - theme.window_margin() * 2.0)
             .max_h(theme.list_max_height())
             .occlude()
-            .overflow_y_scroll()
-            .when_some(self.scroll, |list, handle| list.track_scroll(handle))
             .p_1()
             .flex()
             .flex_col()
             .when_some(self.dismiss, |list, dismiss| {
                 list.on_mouse_down_out(move |_, window, cx| dismiss(window, cx))
             })
-            .children(rows)
-            .when_some(
-                self.scroll.zip(self.reveal),
-                |list, (handle, (ix, done))| list.child(revealer(handle, ix, done)),
-            );
-        float(self.id, anchor, self.rows.len(), list, window, cx)
+            .children(self.header)
+            .child(rows);
+        float(self.id, anchor, self.rows.len() + extra, list, window, cx)
     }
 }
 

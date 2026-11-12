@@ -25,6 +25,8 @@ pub struct ThreadState {
     /// File reads in flight, and whether a send waits for them.
     pub attaching: usize,
     pub send_after_attach: bool,
+    /// That send was ⌘↩: it queues rather than steers.
+    pub queue_after_attach: bool,
     /// MonoCode's composer card (note, handoff), carried until the next send.
     pub composer_card: Option<ComposerCard>,
     /// The form state of the agent's pending question.

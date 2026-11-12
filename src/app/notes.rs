@@ -685,7 +685,11 @@ impl BenCodeApp {
             async move {
                 // Pasted data passes through temporary files: the note
                 // keeps its own copy.
-                let temporary = write_pasted_images(pasted, stamp);
+                let temporary = write_pasted_images(
+                    pasted,
+                    stamp,
+                    &crate::ui::composer::attachments::paste_temp_dir(),
+                );
                 let all: Vec<PathBuf> =
                     paths.into_iter().chain(temporary.iter().cloned()).collect();
                 let saved = save_note_images(&data_dir, &note_id, &all);

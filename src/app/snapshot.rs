@@ -9,7 +9,9 @@
 //! `BENCODE_SNAPSHOT_POINTER=120,560` where the pointer rests;
 //! `BENCODE_SNAPSHOT_CLICK=1225,258` clicks there first (`;` between
 //! several), to open a menu or a popup; `BENCODE_SNAPSHOT_SCROLL=1240,330,-120`
-//! then scrolls the wheel there by that many points (negative goes down).
+//! then scrolls the wheel there by that many points (negative goes down);
+//! `BENCODE_SNAPSHOT_DRAG=1300,200,500,600` then drags from the first point to
+//! the second and lets go (`BENCODE_SNAPSHOT_DRAG_HOLD=1` still holding it).
 //! Like the frame bench it runs on a copy of the data folder (a scratch
 //! `HOME`, see AGENTS.md) and starts no agent, fetch or sign-in.
 
@@ -32,6 +34,8 @@ const BACKDROP_ENV: &str = "BENCODE_SNAPSHOT_BACKDROP";
 const POINTER_ENV: &str = "BENCODE_SNAPSHOT_POINTER";
 const CLICK_ENV: &str = "BENCODE_SNAPSHOT_CLICK";
 const SCROLL_ENV: &str = "BENCODE_SNAPSHOT_SCROLL";
+const DRAG_ENV: &str = "BENCODE_SNAPSHOT_DRAG";
+const DRAG_HOLD_ENV: &str = "BENCODE_SNAPSHOT_DRAG_HOLD";
 const DEFAULT_SIZE: (f32, f32) = (1440.0, 900.0);
 /// The launch's loads (sessions, the git snapshot) land in this time.
 const SETTLE: Duration = Duration::from_secs(3);
@@ -115,6 +119,50 @@ fn move_pointer(window: &mut Window, cx: &mut gpui::App, at: gpui::Point<gpui::P
     window.dispatch_event(gpui::PlatformInput::MouseMove(event), cx);
 }
 
+/// Presses the left button at `from` and moves to `to` holding it, drawn
+/// between the steps as a hand's would be.
+async fn press_and_move(
+    cx: &mut AsyncWindowContext,
+    from: gpui::Point<gpui::Pixels>,
+    to: gpui::Point<gpui::Pixels>,
+) -> Result<()> {
+    let (button, modifiers) = (gpui::MouseButton::Left, gpui::Modifiers::default());
+    cx.update(|window, cx| {
+        move_pointer(window, cx, from);
+        let down = gpui::MouseDownEvent {
+            button,
+            position: from,
+            modifiers,
+            click_count: 1,
+            first_mouse: false,
+        };
+        window.dispatch_event(gpui::PlatformInput::MouseDown(down), cx);
+    })?;
+    // The first move starts the drag; the rest are the drop target's.
+    for at in [from + gpui::point(px(12.0), px(0.0)), to, to] {
+        settle(cx).await?;
+        cx.update(|window, cx| {
+            let event = gpui::MouseMoveEvent {
+                position: at,
+                pressed_button: Some(button),
+                modifiers,
+            };
+            window.dispatch_event(gpui::PlatformInput::MouseMove(event), cx);
+        })?;
+    }
+    Ok(())
+}
+
+fn release(window: &mut Window, cx: &mut gpui::App, at: gpui::Point<gpui::Pixels>) {
+    let up = gpui::MouseUpEvent {
+        button: gpui::MouseButton::Left,
+        position: at,
+        modifiers: Default::default(),
+        click_count: 1,
+    };
+    window.dispatch_event(gpui::PlatformInput::MouseUp(up), cx);
+}
+
 /// A wheel scroll of `dy` points at `at`, the pointer resting there.
 fn scroll(window: &mut Window, cx: &mut gpui::App, at: gpui::Point<gpui::Pixels>, dy: f32) {
     move_pointer(window, cx, at);
@@ -172,7 +220,11 @@ const SCENES: &[(&str, SetUp)] = &[
     // projects.
     ("navigator-closed-projects", |app, _, cx| {
         let at = gpui::point(crate::ui::scale::px(54.0), crate::ui::scale::px(90.0));
-        app.open_sidebar_menu(crate::ui::sidebar_menus::SidebarMenuKind::CompactProjects, at, cx);
+        app.open_sidebar_menu(
+            crate::ui::sidebar_menus::SidebarMenuKind::CompactProjects,
+            at,
+            cx,
+        );
     }),
     // A staged Inbox (`stage_inbox`): Backlog issues and GitHub items,
     // a Backlog issue open with its fields, comments and a translation,
@@ -222,9 +274,9 @@ const SCENES: &[(&str, SetUp)] = &[
     ("automations-unsaved", |app, _, cx| {
         stage_automations(app, cx);
         app.select_automation(AUTO_STANDUP, cx);
-        app.automations.name_input.update(cx, |input, cx| {
-            input.set_text("Morning standup (team)", cx)
-        });
+        app.automations
+            .name_input
+            .update(cx, |input, cx| input.set_text("Morning standup (team)", cx));
         app.select_automation(AUTO_NIGHTLY, cx);
         app.automations.prompt_input.update(cx, |input, cx| {
             input.set_text("Run the full test suite and summarize any failures.", cx)
@@ -243,9 +295,9 @@ const SCENES: &[(&str, SetUp)] = &[
     // A new automation begun and left: the New automation page offers it.
     ("automations-new-unsaved", |app, _, cx| {
         app.begin_blank_automation(cx);
-        app.automations.name_input.update(cx, |input, cx| {
-            input.set_text("Release notes draft", cx)
-        });
+        app.automations
+            .name_input
+            .update(cx, |input, cx| input.set_text("Release notes draft", cx));
         app.show_automation_picker(cx);
     }),
     // Pause all for three days: the list's bar and the editor's next run.
@@ -346,6 +398,48 @@ const SCENES: &[(&str, SetUp)] = &[
             app.open_bot(&id, cx);
         }
     }),
+    // Its Changes tab over a staged checkout: files, a folder, and a
+    // repository nested in it (git's `dir/`).
+    ("bot-changes", |app, _, cx| {
+        use crate::git::{GitFileChange, GitFileStatus};
+        let Some(root) = app.bot_changes_root() else {
+            return;
+        };
+        let change = |path: &str, status: GitFileStatus| GitFileChange {
+            path: path.into(),
+            status,
+            additions: 0,
+            deletions: 0,
+        };
+        let project = crate::app::bot_changes::ProjectChanges {
+            repo: true,
+            status: crate::git::GitDetailedStatus {
+                branch: "main".into(),
+                staged: vec![change("src/app/bots.rs", GitFileStatus::Modified)],
+                unstaged: vec![
+                    change("README.md", GitFileStatus::Modified),
+                    change("docs/sprints/qa/README-ja.md", GitFileStatus::Modified),
+                    change("src/ui/old_view.rs", GitFileStatus::Deleted),
+                    change("src/ui/new_view.rs", GitFileStatus::Untracked),
+                    change(".worktrees/D-1153/", GitFileStatus::Untracked),
+                    change(".worktrees/fe-style-suggest/", GitFileStatus::Untracked),
+                ],
+            },
+            sync: crate::git::sync::SyncInfo {
+                branch: Some("main".into()),
+                upstream: Some("origin/main".into()),
+                ahead: 2,
+                behind: 5,
+                ..Default::default()
+            },
+        };
+        app.bots.overview_open = true;
+        app.bots
+            .overview
+            .select(crate::app::bot_overview::OverviewTab::Changes);
+        app.bots.changes.projects.insert(root, project);
+        cx.notify();
+    }),
     // Its settings, the look popover open on its figure's parts.
     ("bot-look", |app, _, cx| {
         app.open_bot_settings(crate::app::bots::SettingsSection::General, cx);
@@ -410,7 +504,97 @@ const SCENES: &[(&str, SetUp)] = &[
             app.open_session(id, cx);
         }
     }),
+    // A thread moved to another agent: its message with a pull request's
+    // link (the chip) under the divider, "Transferred from …".
+    ("provider-switch", |app, _, cx| {
+        app.close_surface(cx);
+        stage_provider_switch(app);
+        cx.notify();
+    }),
+    // `/` in the composer: each built-in command's icon.
+    ("slash-commands", |app, _, cx| {
+        app.prompt_input
+            .update(cx, |input, cx| input.set_text("/", cx));
+        cx.notify();
+    }),
+    // Two tabs pinned: their cards ahead of the strip.
+    ("pinned-tabs", |app, _, cx| {
+        app.prompt_input
+            .update(cx, |input, cx| input.set_text("", cx));
+        let ids: Vec<String> = app
+            .deck_tabs()
+            .iter()
+            .take(2)
+            .map(|t| t.id.clone())
+            .collect();
+        for id in ids {
+            app.tabs.set_pinned(&id, true);
+        }
+        cx.notify();
+    }),
+    // The dock's terminal moved to a tab beside the chat.
+    ("terminal-tab", |app, _, cx| {
+        app.set_terminal_open(true, cx);
+        app.move_active_terminal_to_tab(cx);
+    }),
+    // The project's Theme colors, with colours of its own.
+    ("project-theme", |app, _, cx| {
+        let path = app.current_cwd.clone();
+        let theme = crate::ui::rail::model::ProjectTheme {
+            hue: 160.0,
+            saturation: 40.0,
+            dark_lightness: 11.0,
+            accent_color: Some("#10b981".into()),
+        };
+        app.set_project_theme(&path, Some(theme), cx);
+        app.rail_ui.theme_dialog = Some(path);
+        cx.notify();
+    }),
 ];
+
+/// The focused thread's tail as a model change leaves it, in memory only:
+/// a turn on its agent, then a message to another with a GitHub link.
+fn stage_provider_switch(app: &mut BenCodeApp) {
+    use std::sync::Arc;
+
+    use crate::db::{Block, TurnModel};
+    let Some(id) = app.selected_session_id.clone() else {
+        return;
+    };
+    let Some(session) = app.sessions.iter_mut().find(|s| s.id == id) else {
+        return;
+    };
+    let turn = |harness: &str, name: &str| TurnModel {
+        harness: Some(harness.into()),
+        id: Some(format!("{harness}:{name}")),
+        name: Some(name.into()),
+    };
+    let mut asked = Block::new("snap-switch-1", "user", "Tighten the sidebar spacing.");
+    asked.turn_model = Some(turn("claude", "Opus 4.6"));
+    let answer = Block::new(
+        "snap-switch-2",
+        "assistant",
+        "Done: the rows are 4px tighter.",
+    );
+    let mut moved = Block::new(
+        "snap-switch-3",
+        "user",
+        "Review https://github.com/acme/app/pull/1142 against it, please.",
+    );
+    moved.turn_model = Some(turn("codex", "GPT-5.5"));
+    let transfer = crate::app::transfer::Transfer {
+        from: crate::harness::HarnessKind::Claude,
+        model: "Opus 4.6".into(),
+    };
+    moved.extra.insert(
+        crate::app::transfer::TRANSFER_FROM.into(),
+        transfer.to_extra(),
+    );
+    session
+        .blocks
+        .extend([Arc::new(asked), Arc::new(answer), Arc::new(moved)]);
+    app.sync_transcript_list_for(&id);
+}
 
 /// Turns as the Agents section shows them, without an agent: a thread of
 /// another project waiting on a command, one of this project and one of
@@ -588,7 +772,10 @@ fn stage_automations(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
     let now = crate::app::now_ms();
     let tz = TimeZone::system();
     let model = app.selected_model.clone();
-    let harness = model.split_once(':').map_or("claude", |(h, _)| h).to_string();
+    let harness = model
+        .split_once(':')
+        .map_or("claude", |(h, _)| h)
+        .to_string();
     let row = |id: &str, name: &str, prompt: &str, triggers: Vec<schedule::Trigger>| {
         let mut auto = crate::db::AutomationRow {
             id: id.into(),
@@ -1557,6 +1744,18 @@ async fn run(this: WeakEntity<BenCodeApp>, cx: &mut AsyncWindowContext) -> Resul
             settle(cx).await?;
             let position = gpui::point(px(at[0]), px(at[1]));
             cx.update(|window, cx| scroll(window, cx, position, at[2]))?;
+        }
+        for at in number_groups(DRAG_ENV, 4) {
+            settle(cx).await?;
+            let (from, to) = (
+                gpui::point(px(at[0]), px(at[1])),
+                gpui::point(px(at[2]), px(at[3])),
+            );
+            press_and_move(cx, from, to).await?;
+            if std::env::var_os(DRAG_HOLD_ENV).is_none() {
+                settle(cx).await?;
+                cx.update(|window, cx| release(window, cx, to))?;
+            }
         }
         settle(cx).await?;
         let mut image = cx.update(|window, _| window.render_to_image())??;

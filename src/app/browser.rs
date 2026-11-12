@@ -122,6 +122,8 @@ pub struct BrowserState {
     pub current: Option<u64>,
     /// The tab whose element picker is on.
     pub picking: Option<u64>,
+    /// A site's sign-in the user is asked (`browser_sign_in.rs`).
+    pub sign_in: Option<super::browser_sign_in::BrowserSignIn>,
     /// Where the agents' MCP server reaches this app; None when the
     /// socket could not be opened.
     socket: Option<PathBuf>,
@@ -194,6 +196,7 @@ impl BrowserState {
             events,
             current: None,
             picking: None,
+            sign_in: None,
             socket,
             obscured: Rc::new(Cell::new(false)),
             drawn: Cell::new(None),
@@ -438,7 +441,7 @@ impl BenCodeApp {
         }
     }
 
-    fn browser_page(&self, id: u64) -> Option<Rc<Page>> {
+    pub(super) fn browser_page(&self, id: u64) -> Option<Rc<Page>> {
         self.browser.tabs.get(&id)?.page.clone()
     }
 
@@ -774,13 +777,25 @@ impl BenCodeApp {
             };
             let stamp = super::now_ms();
             let (picked, context) = pick.unzip();
+            let dir = match this.update(cx, |this, _| this.selected_session_id.clone()) {
+                Ok(Some(id)) => crate::thread_files::attachments_dir(&id),
+                Ok(None) => crate::ui::composer::attachments::paste_temp_dir(),
+                Err(err) => {
+                    log::debug!("browser snapshot after app drop: {err:#}");
+                    return;
+                }
+            };
             let saved = executor
                 .spawn(async move {
                     let png = match &picked {
                         Some(picked) => cropped_to_pick(png, picked),
                         None => png,
                     };
-                    crate::ui::composer::attachments::write_pasted_images(vec![(png, "png")], stamp)
+                    crate::ui::composer::attachments::write_pasted_images(
+                        vec![(png, "png")],
+                        stamp,
+                        &dir,
+                    )
                 })
                 .await;
             let landed = this.update(cx, |this, cx| {
@@ -824,6 +839,7 @@ impl BenCodeApp {
                 }
             }
             PageEvent::Loading(loading) => self.browser_loading(id, loading, cx),
+            PageEvent::SignIn(asked) => self.ask_browser_sign_in(id, asked, window, cx),
             // Never a `file:` or `javascript:` address a site could not
             // have gone to itself.
             PageEvent::NewWindow(url) => {

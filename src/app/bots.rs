@@ -862,7 +862,11 @@ impl BenCodeApp {
         }
         // Never loaded this launch: only its row is left.
         let row = session_id.to_string();
-        self.db_write("delete bot session", move |db| db.delete_session(&row));
+        self.db_write("delete bot session", move |db| {
+            db.delete_session(&row)?;
+            crate::thread_files::remove(&row);
+            Ok(())
+        });
         self.sync_selection(cx);
     }
 

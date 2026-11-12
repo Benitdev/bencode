@@ -13,12 +13,14 @@ pub mod git_actions;
 pub mod markdown;
 mod outline;
 pub mod outline_model;
+mod provider_switch;
 mod review_card;
 pub mod selection;
 mod selection_ui;
 mod subagents;
 mod task_list;
 pub mod turns;
+mod user_link;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -481,6 +483,13 @@ impl BenCodeApp {
         let view = self.transcripts.entry(session_id.to_string()).or_default();
         let fresh = view.session_id.as_deref() != Some(session_id);
         let relayout = fresh || key.is_none() || view.layout_key != key;
+        // The row being read, before the rows change. Only a reader who
+        // scrolled away: a following list and a held prompt place themselves.
+        let top = view.list.logical_scroll_top();
+        let reader = (!fresh && !view.hold && !view.list.is_following_tail())
+            .then(|| view.rows.get(top.item_ix))
+            .flatten()
+            .and_then(|row| turns::row_source(row, &view.turns));
         let (turns, mut rows) = if relayout {
             match session {
                 Some(s) => {
@@ -535,6 +544,15 @@ impl BenCodeApp {
                 .count();
             if same < old || count != old {
                 view.list.splice(same..old, count - same);
+                // A splice over the reader's row drops them at its start.
+                if let Some(source) = reader.filter(|_| (same..old).contains(&top.item_ix))
+                    && let Some((item_ix, kept)) = turns::reader_row(&source, &rows, &turns)
+                {
+                    view.list.scroll_to(ListOffset {
+                        item_ix,
+                        offset_in_item: if kept { top.offset_in_item } else { px(0.0) },
+                    });
+                }
             }
             if running || view.live {
                 view.list

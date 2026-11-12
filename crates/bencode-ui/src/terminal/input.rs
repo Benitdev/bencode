@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use alacritty_terminal::{
-    grid::Scroll,
+    grid::{Dimensions, Scroll},
     index::{Column, Line, Point as Cell, Side},
     selection::{Selection, SelectionType},
     term::TermMode,
@@ -11,6 +11,8 @@ use gpui::{
     KeyDownEvent, ModifiersChangedEvent, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels,
     Point, ScrollEvent, UTF16Selection, Window, actions,
 };
+
+use crate::menus::{Menu, MenuItem, PointMenu, run_on};
 
 use super::{
     keys,
@@ -26,6 +28,7 @@ actions!(
         Copy,
         Paste,
         Clear,
+        SelectAll,
         PageUp,
         PageDown,
         Find
@@ -34,28 +37,50 @@ actions!(
 
 pub(crate) const CONTEXT: &str = "ElyTerminal";
 
+/// Copy, Paste, Clear, Find and Select All: a shell keeps Ctrl's plain
+/// letters.
+struct Chords {
+    copy: &'static str,
+    paste: &'static str,
+    clear: &'static str,
+    find: &'static str,
+    select_all: &'static str,
+}
+
+fn chords() -> Chords {
+    if cfg!(target_os = "macos") {
+        Chords {
+            copy: "cmd-c",
+            paste: "cmd-v",
+            clear: "cmd-k",
+            find: "cmd-f",
+            select_all: "cmd-a",
+        }
+    } else {
+        Chords {
+            copy: "ctrl-shift-c",
+            paste: "ctrl-shift-v",
+            clear: "ctrl-shift-k",
+            find: "ctrl-shift-f",
+            select_all: "ctrl-shift-a",
+        }
+    }
+}
+
 /// Tab and Shift-Tab go to the program here, ahead of focus moves; the rest are the app's own.
 pub(crate) fn bind_keys(cx: &mut App) {
     let context = Some(CONTEXT);
-    let (copy, paste, clear, find) = if cfg!(target_os = "macos") {
-        ("cmd-c", "cmd-v", "cmd-k", "cmd-f")
-    } else {
-        (
-            "ctrl-shift-c",
-            "ctrl-shift-v",
-            "ctrl-shift-k",
-            "ctrl-shift-f",
-        )
-    };
+    let keys = chords();
     cx.bind_keys([
         KeyBinding::new("tab", SendTab, context),
         KeyBinding::new("shift-tab", SendBackTab, context),
-        KeyBinding::new(copy, Copy, context),
-        KeyBinding::new(paste, Paste, context),
-        KeyBinding::new(clear, Clear, context),
+        KeyBinding::new(keys.copy, Copy, context),
+        KeyBinding::new(keys.paste, Paste, context),
+        KeyBinding::new(keys.clear, Clear, context),
+        KeyBinding::new(keys.select_all, SelectAll, context),
         KeyBinding::new("shift-pageup", PageUp, context),
         KeyBinding::new("shift-pagedown", PageDown, context),
-        KeyBinding::new(find, Find, context),
+        KeyBinding::new(keys.find, Find, context),
     ]);
 }
 
@@ -67,6 +92,7 @@ pub(crate) fn listen<E: InteractiveElement>(root: E, cx: &mut Context<Terminal>)
         .on_action(cx.listener(|terminal, _: &Copy, _, cx| terminal.copy(cx)))
         .on_action(cx.listener(|terminal, _: &Paste, _, cx| terminal.paste(cx)))
         .on_action(cx.listener(|terminal, _: &Clear, _, cx| terminal.clear(cx)))
+        .on_action(cx.listener(|terminal, _: &SelectAll, _, cx| terminal.select_all(cx)))
         .on_action(cx.listener(|terminal, _: &PageUp, _, cx| terminal.scroll(Scroll::PageUp, cx)))
         .on_action(
             cx.listener(|terminal, _: &PageDown, _, cx| terminal.scroll(Scroll::PageDown, cx)),
@@ -74,6 +100,7 @@ pub(crate) fn listen<E: InteractiveElement>(root: E, cx: &mut Context<Terminal>)
         .on_action(cx.listener(|_, _: &Find, _, cx| cx.emit(TerminalEvent::Find)))
         .on_key_down(cx.listener(Terminal::key_down))
         .on_mouse_down(MouseButton::Left, cx.listener(Terminal::press))
+        .on_mouse_down(MouseButton::Right, cx.listener(Terminal::secondary_press))
         .on_mouse_move(cx.listener(Terminal::moved))
         .on_mouse_up(
             MouseButton::Left,
@@ -109,11 +136,59 @@ impl Terminal {
         }
     }
 
+    /// Copy, Paste and Clear (MonoCode `terminal/context_menu.rs`). What is
+    /// selected stays selected, for Copy.
+    fn secondary_press(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.focus(&self.focus, cx);
+        if let Some(open) = self.menu.take() {
+            open.close(window, cx);
+        }
+        let row = |label: &'static str, keys: &'static str, enabled: bool| {
+            MenuItem::new(label).keys(keys).disabled(!enabled)
+        };
+        let keys = chords();
+        let selected = self.term.lock().selection_to_string().is_some();
+        let clipboard = cx
+            .read_from_clipboard()
+            .is_some_and(|item| item.text().is_some());
+        let menu = Menu::new()
+            .item(row("Copy", keys.copy, selected).on_click(run_on(&self.focus, Copy)))
+            .item(row("Paste", keys.paste, clipboard).on_click(run_on(&self.focus, Paste)))
+            .item(row("Select All", keys.select_all, true).on_click(run_on(&self.focus, SelectAll)))
+            .separator()
+            .item(row("Clear", keys.clear, true).on_click(run_on(&self.focus, Clear)));
+        self.menu = Some(PointMenu::open(menu, event.position, cx));
+        cx.stop_propagation();
+    }
+
     fn copy(&mut self, cx: &mut Context<Self>) {
         if let Some(text) = self.term.lock().selection_to_string() {
             log::info!("terminal: copied {} characters", text.chars().count());
             cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
+    }
+
+    /// Everything the terminal holds, its scrollback included (MonoCode's
+    /// terminal menu Select All), ready for Copy.
+    pub(crate) fn select_all(&mut self, cx: &mut Context<Self>) {
+        {
+            let mut term = self.term.lock();
+            let (top, bottom, last) = (
+                term.topmost_line(),
+                term.bottommost_line(),
+                term.last_column(),
+            );
+            let mut selection =
+                Selection::new(SelectionType::Simple, Cell::new(top, Column(0)), Side::Left);
+            selection.update(Cell::new(bottom, last), Side::Right);
+            term.selection = Some(selection);
+        }
+        cx.notify();
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
@@ -318,5 +393,24 @@ impl EntityInputHandler for Terminal {
         _: &mut Context<Self>,
     ) -> Option<usize> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::{AppContext as _, TestAppContext};
+
+    use super::Terminal;
+
+    #[gpui::test]
+    fn select_all_takes_the_scrollback_too(cx: &mut TestAppContext) {
+        let lines: String = (1..=30).map(|n| format!("line {n}\r\n")).collect();
+        let terminal = cx.new(|cx| Terminal::replay(lines.as_bytes(), 20, 5, cx));
+        terminal.update(cx, |terminal, cx| terminal.select_all(cx));
+        let selected =
+            terminal.read_with(cx, |terminal, _| terminal.term.lock().selection_to_string());
+        let selected = selected.expect("a selection");
+        assert!(selected.starts_with("line 1\n"), "{selected:?}");
+        assert!(selected.contains("line 30"), "{selected:?}");
     }
 }

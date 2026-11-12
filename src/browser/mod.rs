@@ -8,6 +8,8 @@
 //! open or its tab is not drawn (`app/browser.rs`).
 
 pub mod artifact;
+#[cfg(target_os = "macos")]
+mod auth;
 pub mod bridge;
 #[cfg(target_os = "macos")]
 mod container;

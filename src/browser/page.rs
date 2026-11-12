@@ -32,6 +32,20 @@ pub enum PageEvent {
     Focused,
     /// A message from BenCode's scripts in the page (`picked`, …).
     Message(Value),
+    /// The site asks for a user name and password; the page waits for
+    /// `Page::sign_in`.
+    SignIn(SignIn),
+}
+
+/// A site's HTTP sign-in, as the user is asked it (`auth.rs`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SignIn {
+    /// `host` or `host:port` when the port is not the scheme's.
+    pub host: String,
+    /// The password would travel unencrypted (plain `http`).
+    pub insecure: bool,
+    /// The last answer for this site was refused.
+    pub retry: bool,
 }
 
 /// What `eval` fails with when the script threw, did not parse, or
@@ -59,8 +73,8 @@ impl Page {
                 log::debug!("browser tab {id}: event after the app left");
             }
         };
-        let (on_load, on_title, on_window, on_message) =
-            (send.clone(), send.clone(), send.clone(), send);
+        let (on_load, on_title, on_window, on_message, on_sign_in) =
+            (send.clone(), send.clone(), send.clone(), send.clone(), send);
         #[cfg(target_os = "macos")]
         let container = super::container::Container::new(window)?;
         #[cfg(target_os = "macos")]
@@ -98,6 +112,10 @@ impl Page {
             .context("the web view could not be created")?;
         #[cfg(target_os = "macos")]
         container.fill(&view);
+        #[cfg(target_os = "macos")]
+        super::auth::watch(&view, move |asked| on_sign_in(PageEvent::SignIn(asked)));
+        #[cfg(not(target_os = "macos"))]
+        drop(on_sign_in);
         Ok(Self {
             view,
             #[cfg(target_os = "macos")]
@@ -110,6 +128,15 @@ impl Page {
         if let Err(err) = self.view.load_url(url) {
             log::warn!("browser: could not load {url}: {err}");
         }
+    }
+
+    /// Answers the site's sign-in: `None` goes on without one (the
+    /// server's own page for it).
+    pub fn sign_in(&self, credential: Option<(&str, &str)>) {
+        #[cfg(target_os = "macos")]
+        super::auth::answer(&self.view, credential);
+        #[cfg(not(target_os = "macos"))]
+        let _ = credential;
     }
 
     pub fn back(&self) {
@@ -313,6 +340,9 @@ impl Page {
 
 impl Drop for Page {
     fn drop(&mut self) {
+        // WebKit must hear back on every sign-in it asked for.
+        #[cfg(target_os = "macos")]
+        super::auth::forget(&self.view);
         // An inspector in its own window would outlive its tab.
         if self.view.is_devtools_open() {
             self.view.close_devtools();

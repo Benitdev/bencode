@@ -160,6 +160,10 @@ pub struct AppSettings {
     /// MonoCode `monocode.pinnedProjects`: projects on the rail's Pinned
     /// list, in rail order.
     pub pinned_projects: Vec<String>,
+    /// BenCode's own (MonoCode GPUI keeps them in its workspace): the
+    /// focused thread of each pinned title-bar tab, in strip order, opened
+    /// pinned at launch.
+    pub pinned_tabs: Vec<String>,
     /// The external editor files and workspaces open in, by
     /// `external_editor` id; `None` (or one no longer installed) is the
     /// first one found.
@@ -382,6 +386,7 @@ mod tests {
                 }],
             )]),
             pinned_projects: vec!["/repo".into()],
+            pinned_tabs: vec!["s1".into()],
             default_editor: Some("zed".into()),
             provider_accounts: [(
                 "claude".to_string(),

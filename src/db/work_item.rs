@@ -180,6 +180,19 @@ impl LinkedWorkItem {
         github_url(text).map(|(_, item)| item)
     }
 
+    /// MonoCode `parseUserMessageLink` for a GitHub item: the first
+    /// github.com issue or pull URL in `text`, and the bytes of `text` it
+    /// spans (trailing punctuation left out, as MonoCode trims it).
+    pub fn github_link_in(text: &str) -> Option<(std::ops::Range<usize>, Self)> {
+        let (at, item) = github_url(text)?;
+        let lower = text[..at].to_ascii_lowercase();
+        let start = at - if lower.ends_with("https://") { 8 } else { 7 };
+        let token = text[start..]
+            .find(|c: char| c.is_whitespace() || matches!(c, '<' | '>' | '"' | '\''))
+            .map_or(text.len(), |len| start + len);
+        Some((start..trim_url_punctuation(text, start, token), item))
+    }
+
     /// A Backlog issue URL (`https://<host>/view/KEY`) anywhere in `text`,
     /// on `host` when one is given (the connected space), else on any
     /// Backlog space; rebuilt canonically.
@@ -265,6 +278,20 @@ fn github_url(text: &str) -> Option<(usize, LinkedWorkItem)> {
     None
 }
 
+/// MonoCode `trimUrlPunctuation`: where the URL in `text[start..end]`
+/// ends once a sentence's trailing `.,!;:` and unmatched closing brackets
+/// are left out.
+fn trim_url_punctuation(text: &str, start: usize, end: usize) -> usize {
+    let mut url = text[start..end].trim_end_matches(['.', ',', '!', ';', ':']);
+    for (opening, closing) in [('(', ')'), ('[', ']'), ('{', '}')] {
+        while url.ends_with(closing) && url.matches(closing).count() > url.matches(opening).count()
+        {
+            url = &url[..url.len() - 1];
+        }
+    }
+    start + url.len()
+}
+
 /// The first Backlog issue URL in `text` (on `host`, when given), and
 /// where it starts.
 fn backlog_url(text: &str, host: Option<&str>) -> Option<(usize, LinkedWorkItem)> {
@@ -327,6 +354,23 @@ mod tests {
         assert!(LinkedWorkItem::from_item_key("backlog:proj_d-7", None).is_none());
         assert!(LinkedWorkItem::from_item_key("o/r:thing:1", None).is_none());
         assert!(LinkedWorkItem::from_item_key("nonsense", None).is_none());
+    }
+
+    #[test]
+    fn a_message_link_spans_its_url_alone() {
+        let text = "review this (https://github.com/acme/app/pull/1142). thanks";
+        let (range, item) = LinkedWorkItem::github_link_in(text).unwrap();
+        assert_eq!(&text[range], "https://github.com/acme/app/pull/1142");
+        assert_eq!((item.repo.as_str(), item.number), ("acme/app", 1142));
+        let text = "http://github.com/a/b/issues/7#issuecomment-1, then";
+        let (range, item) = LinkedWorkItem::github_link_in(text).unwrap();
+        assert_eq!(
+            &text[range],
+            "http://github.com/a/b/issues/7#issuecomment-1"
+        );
+        assert_eq!(item.kind, WorkItemKind::Issue);
+        assert!(LinkedWorkItem::github_link_in("see github.com/a/b/pull/1").is_none());
+        assert!(LinkedWorkItem::github_link_in("https://github.com/a/b/tree/main").is_none());
     }
 
     #[test]

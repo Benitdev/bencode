@@ -527,7 +527,7 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "bencode"
-version = "0.1.41"
+version = "0.1.44"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -537,6 +537,7 @@ dependencies = [
  "block",
  "env_logger",
  "gpui-pre",
+ "gpui-pre-apple",
  "gpui-pre-platform",
  "image",
  "jiff",
@@ -557,7 +558,7 @@ dependencies = [
 
 [[package]]
 name = "bencode-core"
-version = "0.1.41"
+version = "0.1.44"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -572,7 +573,7 @@ dependencies = [
 
 [[package]]
 name = "bencode-host"
-version = "0.1.41"
+version = "0.1.44"
 dependencies = [
  "anyhow",
  "bencode-core",
@@ -587,7 +588,7 @@ dependencies = [
 
 [[package]]
 name = "bencode-ui"
-version = "0.1.41"
+version = "0.1.44"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -2357,8 +2358,6 @@ dependencies = [
 [[package]]
 name = "gpui-pre-macos"
 version = "0.3.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e07a5e5c84f0b2160c194a1c852cc89d1942db66867938ceabcd7f763cb4386"
 dependencies = [
  "accesskit",
  "accesskit_macos",

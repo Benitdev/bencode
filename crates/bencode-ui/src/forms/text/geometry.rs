@@ -89,7 +89,9 @@ impl TextInput {
                 let index = match line.closest_index_for_position(inside, layout.line_height) {
                     Ok(index) | Err(index) => index,
                 };
-                return self.content_offset(start + index.min(line.len()));
+                // The layout is the last frame's: text that shrank since must not be pointed past.
+                let offset = self.content_offset(start + index.min(line.len()));
+                return self.text.floor_char_boundary(offset);
             }
             top += height;
         }

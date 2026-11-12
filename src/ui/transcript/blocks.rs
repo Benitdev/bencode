@@ -248,7 +248,9 @@ impl BenCodeApp {
     }
 
     /// MonoCode's user bubble: right-aligned, clamped to four lines with
-    /// Show more, and a row of actions that fades in on hover.
+    /// Show more, and a row of actions that fades in on hover. A GitHub
+    /// issue or pull request it links shows as a chip over the text
+    /// (`user_link.rs`); a message of the link alone, as the chip only.
     fn render_user_message(
         &self,
         session: &SessionRow,
@@ -272,9 +274,15 @@ impl BenCodeApp {
         let chips = attachment_chips(block, cx);
         // MonoCode shows the note or handoff a turn was sent with as a card.
         let note = crate::ui::composer::cards::turn_cards(block, cx);
+        let link = super::user_link::message_link(&text);
+        let link_alone = link.as_ref().is_some_and(|(_, alone)| *alone);
+        let link_chip = link
+            .map(|(item, _)| self.work_item_chip(&session.id, &key, session.work_dir(), item, cx));
         // A pill only for one short line with nothing attached.
-        let single_line =
-            chips.is_none() && !text.contains('\n') && text.chars().count() <= CHARS_PER_LINE;
+        let single_line = chips.is_none()
+            && link_chip.is_none()
+            && !text.contains('\n')
+            && text.chars().count() <= CHARS_PER_LINE;
         let group = SharedString::from(format!("user-msg-{key}"));
         let accent = crate::ui::appearance::user_accent(cx);
         // A Bot's reaction sits on the message it answers (MonoCode
@@ -323,27 +331,32 @@ impl BenCodeApp {
             .text_color(colors.fg)
             .children(note.map(|card| div().when(!text.is_empty(), |el| el.mb_2()).child(card)))
             .children(chips.map(|chips| div().when(!text.is_empty(), |el| el.mb_2()).child(chips)))
-            .child(
-                div()
-                    // Cut by height, not `line_clamp`: GPUI caches a line's
-                    // wrapping without the line limit it was wrapped under,
-                    // so the lines past the clamp stayed unwrapped once the
-                    // message was shown in full.
-                    .when(clamps && !expanded, |el| {
-                        el.max_h(px(LINE_HEIGHT * CLAMP_LINES as f32))
-                            .overflow_hidden()
-                    })
-                    .child(
-                        PlainText::new(self.seg_ctx(&session.id, ix, true, cx), text.clone())
-                            .marks(
-                                query
-                                    .map(|query| {
-                                        super::find::match_marks(&text, &query, current, cx)
-                                    })
-                                    .unwrap_or_default(),
-                            ),
-                    ),
+            .children(
+                link_chip.map(|chip| div().flex().when(!link_alone, |el| el.mb_2()).child(chip)),
             )
+            .when(!link_alone, |el| {
+                el.child(
+                    div()
+                        // Cut by height, not `line_clamp`: GPUI caches a line's
+                        // wrapping without the line limit it was wrapped under,
+                        // so the lines past the clamp stayed unwrapped once the
+                        // message was shown in full.
+                        .when(clamps && !expanded, |el| {
+                            el.max_h(px(LINE_HEIGHT * CLAMP_LINES as f32))
+                                .overflow_hidden()
+                        })
+                        .child(
+                            PlainText::new(self.seg_ctx(&session.id, ix, true, cx), text.clone())
+                                .marks(
+                                    query
+                                        .map(|query| {
+                                            super::find::match_marks(&text, &query, current, cx)
+                                        })
+                                        .unwrap_or_default(),
+                                ),
+                        ),
+                )
+            })
             .when(clamps, |el| {
                 el.child(self.show_more_toggle(&key, expanded, cx))
             })
@@ -370,7 +383,7 @@ impl BenCodeApp {
         } else {
             bubble
         };
-        div()
+        let row = div()
             .id(SharedString::from(format!("user-row-{key}")))
             .group(group.clone())
             .w_full()
@@ -388,8 +401,12 @@ impl BenCodeApp {
             } else {
                 self.user_actions(session, ix, text, &group, cx)
                     .into_any_element()
-            })
-            .into_any_element()
+            });
+        // A Bot's chat has one agent to the reader, whatever runs it.
+        match self.provider_divider(session, ix, cx).filter(|_| !bot_chat) {
+            Some(divider) => div().w_full().child(divider).child(row).into_any_element(),
+            None => row.into_any_element(),
+        }
     }
 
     /// A saved draft: "Draft", then Send or Remove (MonoCode drafts).

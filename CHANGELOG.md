@@ -4,8 +4,56 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [0.1.42] - Unreleased
+## [0.1.44] - 2026-11-06
 
+- A site in the browser that asks for a user name and password (a dev
+  server behind HTTP Basic Auth, say) opens a sign-in dialog instead of
+  showing a white page. The password is kept until BenCode quits, never
+  saved.
+- A thread moved to another agent with the model picker carries on: its
+  first turn there gets a recap of the conversation so far, and the
+  transcript marks the switch with a rule, the new agent's mark and
+  "Transferred from <model>". Before, the new agent started blind.
+- A message that links a GitHub issue or pull request shows it as a
+  "PR #12" or "Issue #7" chip; hovering it shows its state, title, a
+  summary, its author, branches and labels. A click opens it beside the
+  thread, ⌘-click on GitHub.
+- Title-bar tabs can be pinned (Pin Tab in a tab's menu): they show as
+  cards ahead of the strip in every project, come back pinned after a
+  restart, and stay when the others close; ⌘W leaves them open.
+- A dock terminal moves to a tab beside the chat: drag its tab onto the
+  workspace, or Move to Tab (⇧⌘J or its menu). Closing that tab asks first
+  while a job runs in it, as the dock does; Move to Terminal Panel takes it
+  back.
+- Projects move up and down their list on the navigator from their menu's
+  Move, or with ⌥⇧⌘↑ / ⌥⇧⌘↓. Previous and Next Project follow the
+  navigator's order, pinned first.
+- A project can have colors of its own (Theme colors… in its menu): hue,
+  saturation, dark-mode lightness and accent, shown while it is open and
+  faded into when switching to it.
+- A long list in a select (more than eight choices) filters as you type.
+- The `/` commands each have their own icon and color.
+- A terminal's right-click menu has Select All (⌘A), scrollback included.
+- BenCode gives GPU memory back once it is quiet: 10 seconds after its
+  windows go to the background, or two minutes without typing.
+- A project on the navigator shows its pin while the pointer is over it,
+  even while an agent works there.
+
+## [0.1.43] - 2026-11-04
+
+- Typing with an input method (Vietnamese Telex, for one) no longer quits
+  BenCode now and then. A click or arrow key right after a text box's text
+  got shorter could leave the caret past its end, and the input method
+  asking where the caret was then crashed the app.
+- A bot's Changes tab lists its files as the project's Changes does: the file's
+  icon, its name, its folder beside it and its status letter.
+
+## [0.1.42] - 2026-11-02
+
+- Files and folders drag from the Explorer and from Changes into a thread's
+  composer, as from the Finder. In a project on a machine they go in as an
+  `@` mention, since the file is not on this computer to attach. A deleted
+  file in Changes has nothing to attach and does not drag.
 - The thread list shows a ticket's short key (`D-1147`) from launch. It
   showed the whole key until the Inbox's list landed, pushing the
   thread's name out of its row.
@@ -14,6 +62,20 @@ tagging (`docs/releasing.md`).
 - Opening Notes after launch shows the newest note's text. It showed the
   note empty, and leaving Notes without picking a note then saved over
   it, losing its title, text and tags.
+- A window whose display link stops no longer freezes with input still
+  working until a resize: BenCode notices the silence and restarts it, after
+  MonoCode's fix. Resizing a window also no longer fights its own redraws.
+- Images pasted into a thread, and browser snapshots, are kept with the thread
+  instead of in a temporary folder the system clears, and are deleted with it.
+- Reading further up while a turn runs no longer drops you elsewhere when the
+  answer arrives and the tool calls you were reading fold away. You stay in
+  that turn.
+- Right click in a text box, the code editor or the terminal opens an editing
+  menu: Cut, Copy, Paste and Select All; Undo and Redo in the editor; Copy,
+  Paste and Clear in the terminal.
+- While an agent works, Enter still steers its turn and ⌘↩ now queues the
+  message for after it. The send button's icon and tooltip say which one
+  Enter will do.
 
 ## [0.1.41] - 2026-10-30
 

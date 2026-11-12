@@ -343,6 +343,10 @@ impl Render for CodeEditor {
                 .left_0()
                 .size_full(),
             );
+        if self.menu.as_ref().is_some_and(|menu| !menu.is_open(cx)) {
+            self.menu = None;
+        }
+        let menu = self.menu.as_ref().and_then(|menu| menu.element(window, cx));
         let root = div()
             .id(("code-editor", cx.entity_id().as_u64()))
             .key_context(CONTEXT)
@@ -389,6 +393,6 @@ impl Render for CodeEditor {
                 .left_0()
                 .size_full(),
             );
-        listen(root, cx)
+        crate::menus::beside(listen(root, cx), menu)
     }
 }

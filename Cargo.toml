@@ -8,10 +8,10 @@ description = "A native, GPU-drawn control plane for coding-agent CLIs, in Rust 
 [workspace.package]
 # One version for the app, its host and what they share: Settings ›
 # Connections installs the host of the app's own version.
-version = "0.1.41"
+version = "0.1.44"
 
 [workspace]
-exclude = ["vendor/gpui-pre-apple"]
+exclude = ["vendor/gpui-pre-apple", "vendor/gpui-pre-macos"]
 members = [".", "crates/bencode-core", "crates/bencode-host", "crates/bencode-ui"]
 default-members = [".", "crates/bencode-core", "crates/bencode-host", "crates/bencode-ui"]
 
@@ -73,6 +73,9 @@ block = "0.1"
 # The window's NSView, for the Liquid Glass under it (ui/native_glass.rs);
 # the version GPUI already builds.
 raw-window-handle = "0.6"
+# The Metal renderer GPUI already builds (vendor/gpui-pre-apple), for
+# `metal_renderer::trim` (gpu_trim.rs).
+gpui_apple = { package = "gpui-pre-apple", version = "=0.3.10" }
 
 # The shipped binary: whole-program LTO and no symbols take it from 33 MB to
 # about 22 MB at the same speed, for a release build about twice as long.
@@ -90,6 +93,9 @@ opt-level = 1
 opt-level = 3
 
 # GPUI's Metal renderer with MonoCode's backdrop blur (`backdrop_blur_marker`):
-# 0.3.10 plus that one patch, see vendor/gpui-pre-apple/NOTICE.
+# 0.3.10 plus that one patch, see vendor/gpui-pre-apple/NOTICE. Its window code
+# with MonoCode's recovery for a stalled display link, see
+# vendor/gpui-pre-macos/NOTICE.
 [patch.crates-io]
 gpui-pre-apple = { path = "vendor/gpui-pre-apple" }
+gpui-pre-macos = { path = "vendor/gpui-pre-macos" }

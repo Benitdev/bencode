@@ -447,7 +447,10 @@ impl BenCodeApp {
                 | PaneTab::SessionChanges { cwd, .. }
                 | PaneTab::Commit { cwd, .. }
                 | PaneTab::FileHistory { cwd, .. } => is_path_in_project(cwd, path),
-                PaneTab::Browser { .. } | PaneTab::WorkItem { .. } => false,
+                // A terminal is in its dock's tabs, which `any_in` reads.
+                PaneTab::Browser { .. } | PaneTab::WorkItem { .. } | PaneTab::Terminal { .. } => {
+                    false
+                }
             });
         files || self.terminals(cx).any_in(path)
     }

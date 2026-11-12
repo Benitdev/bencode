@@ -27,6 +27,8 @@ pub struct RailMenu {
 /// The rows a menu row's submenu lists (MonoCode `ExplorerMenu` beside it).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubmenuKind {
+    /// A project's Move: up, down, to the top or bottom of its list.
+    Move,
     MoveToGroup,
     Editor,
     Mute,
@@ -82,6 +84,8 @@ pub struct RailUi {
     pub inbox_active: usize,
     pub mute_picker: Option<MutePicker>,
     pub removing: Option<RemoveProject>,
+    /// The project whose Theme colors dialog is open.
+    pub theme_dialog: Option<String>,
     /// The width shown while the sash is dragged; saved on release.
     pub drag_width: Option<f32>,
     /// Pointer x and width when the sash was pressed.
@@ -93,6 +97,9 @@ pub struct RailUi {
     /// A press on a trigger, so the open popover's outside-press check
     /// leaves the toggle to the trigger.
     pub trigger_hit: bool,
+    /// The project card under the pointer: its working figure, a busy mark
+    /// drawn over the region, would cover the pin that replaces it.
+    pub hovered_card: Option<String>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -139,12 +146,14 @@ impl RailUi {
             inbox_active: 0,
             mute_picker: None,
             removing: None,
+            theme_dialog: None,
             drag_width: None,
             drag_origin: (0.0, 0.0),
             reorder: None,
             slides: HashMap::new(),
             slide_seq: 0,
             trigger_hit: false,
+            hovered_card: None,
             _subscriptions: subscriptions,
         }
     }

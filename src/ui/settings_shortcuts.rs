@@ -110,6 +110,9 @@ fn groups() -> Vec<Group<Entry>> {
                 .note("Opens it in place of the focused pane."),
                 entry("Previous Project", I::ChevronLeft, cmd::PreviousProject),
                 entry("Next Project", I::ChevronRight, cmd::NextProject),
+                entry("Move Project Up", I::ChevronUp, cmd::MoveProjectUp)
+                    .note("Within its list on the navigator."),
+                entry("Move Project Down", I::ChevronDown, cmd::MoveProjectDown),
                 entry("Next Agent", I::Bot, cmd::NextAgent).note("Those waiting on you first."),
                 entry("Open Settings", I::Settings, cmd::OpenSettings),
             ],
@@ -178,6 +181,8 @@ fn groups() -> Vec<Group<Entry>> {
                 entry("Ask Bot About This Thread", I::Bot, cmd::AskBot)
                     .note("With what is selected in it."),
                 entry("New Terminal", I::Terminal, cmd::NewTerminal),
+                entry("Move Terminal to Tab", I::Terminal, cmd::MoveTerminalToTab)
+                    .note("The dock's terminal, beside the chat."),
                 entry("Open Browser", I::Globe, cmd::OpenBrowser),
                 entry(
                     "Reload Page Ignoring Cache",

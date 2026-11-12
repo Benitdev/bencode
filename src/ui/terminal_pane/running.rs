@@ -27,8 +27,8 @@ pub struct RunningTerminal {
 
 /// Terminals to close once "Close anyway?" is answered.
 pub(super) struct CloseConfirm {
-    project: String,
-    ids: Vec<u64>,
+    /// Each project's terminals to close.
+    closing: Vec<(String, Vec<u64>)>,
     /// Close Others: the terminal that stays, selected.
     keep: Option<u64>,
     message: String,
@@ -246,13 +246,41 @@ impl BenCodeApp {
         keep: Option<u64>,
         cx: &mut Context<Self>,
     ) {
-        if ids.is_empty() {
+        self.request_close_terminal_set(vec![(project.to_string(), ids)], keep, cx);
+    }
+
+    /// Closes terminals by id, whichever docks hold them (the tabs they
+    /// were moved to), with one question for all of them.
+    pub(crate) fn request_close_terminal_ids(&mut self, ids: Vec<u64>, cx: &mut Context<Self>) {
+        let mut closing: Vec<(String, Vec<u64>)> = Vec::new();
+        for (project, dock) in &self.terminals(cx).docks {
+            let mine: Vec<u64> = (dock.tabs.iter())
+                .map(|tab| tab.id)
+                .filter(|id| ids.contains(id))
+                .collect();
+            if !mine.is_empty() {
+                closing.push((project.clone(), mine));
+            }
+        }
+        self.request_close_terminal_set(closing, None, cx);
+    }
+
+    fn request_close_terminal_set(
+        &mut self,
+        closing: Vec<(String, Vec<u64>)>,
+        keep: Option<u64>,
+        cx: &mut Context<Self>,
+    ) {
+        let closing: Vec<_> = closing
+            .into_iter()
+            .filter(|(_, ids)| !ids.is_empty())
+            .collect();
+        if closing.is_empty() {
             return;
         }
-        let running: Vec<RunningTerminal> = self
-            .terminals(cx)
-            .dock(project)
-            .map(|dock| {
+        let running: Vec<RunningTerminal> = (closing.iter())
+            .filter_map(|(project, ids)| Some((self.terminals(cx).dock(project)?, ids)))
+            .flat_map(|(dock, ids)| {
                 dock.tabs
                     .iter()
                     .filter(|tab| ids.contains(&tab.id) && tab.process.is_some())
@@ -265,17 +293,15 @@ impl BenCodeApp {
                             label: tab.folder(),
                         })
                     })
-                    .collect()
             })
-            .unwrap_or_default();
+            .collect();
         if running.is_empty() {
-            self.finish_close_terminals(project, &ids, keep, cx);
+            self.finish_close_terminals(&closing, keep, cx);
             return;
         }
         self.terminals_state.as_mut(cx).close_confirm = Some(CloseConfirm {
-            project: project.to_string(),
             message: close_message(&running),
-            ids,
+            closing,
             keep,
         });
         cx.notify();
@@ -283,16 +309,17 @@ impl BenCodeApp {
 
     fn finish_close_terminals(
         &mut self,
-        project: &str,
-        ids: &[u64],
+        closing: &[(String, Vec<u64>)],
         keep: Option<u64>,
         cx: &mut Context<Self>,
     ) {
-        match keep {
-            Some(keep) => self.close_terminals_but(project, ids, keep, cx),
-            None => {
-                for &id in ids {
-                    self.close_terminal(project, id, cx);
+        for (project, ids) in closing {
+            match keep {
+                Some(keep) => self.close_terminals_but(project, ids, keep, cx),
+                None => {
+                    for &id in ids {
+                        self.close_terminal(project, id, cx);
+                    }
                 }
             }
         }
@@ -300,7 +327,12 @@ impl BenCodeApp {
 
     /// MonoCode `onToggleRunningTerminal`: hides the dock when it shows,
     /// else shows it on terminal `id` with the keyboard.
+    /// One moved out to a tab shows its tab.
     pub(crate) fn toggle_running_terminal(&mut self, id: u64, cx: &mut Context<Self>) {
+        if self.terminal_in_tab(id, cx) {
+            self.show_terminal_tab(id, cx);
+            return;
+        }
         if self.is_terminal_open(cx) {
             self.set_terminal_open(false, cx);
             self.refocus_prompt(cx);
@@ -330,7 +362,7 @@ impl BenCodeApp {
         let close = app_callback(cx, |this, cx| {
             let confirm = this.terminals_mut(cx, |docks| docks.close_confirm.take());
             if let Some(confirm) = confirm {
-                this.finish_close_terminals(&confirm.project, &confirm.ids, confirm.keep, cx);
+                this.finish_close_terminals(&confirm.closing, confirm.keep, cx);
             }
             cx.notify();
         });

@@ -1,5 +1,6 @@
 //! The terminal dock's menus: a tab's right click (`surfaceTabMenuItems`
-//! for a terminal: Close, Close Others) and Move Terminal (`SIDE_ITEMS`),
+//! for a terminal: Close, Close Others; BenCode's Move to Tab) and Move
+//! Terminal (`SIDE_ITEMS`),
 //! both MonoCode `ExplorerMenu`s, and the title bar's list of running
 //! terminals (`UsageFooter` `RunningTerminalChip`'s popover).
 
@@ -46,8 +47,10 @@ impl BenCodeApp {
                 let tabs = self
                     .terminals(cx)
                     .dock(&self.current_cwd)
-                    .map_or(0, |dock| dock.tabs.len());
+                    .map_or(0, |dock| dock.docked().count());
                 vec![
+                    MenuEntry::Item(MenuAction::new("move-to-tab", "Move to Tab")),
+                    MenuEntry::Separator,
                     MenuEntry::Item(MenuAction::new("close", "Close")),
                     MenuEntry::Item(
                         MenuAction::new("close-others", "Close Others").disabled(tabs < 2),
@@ -170,6 +173,7 @@ impl BenCodeApp {
         self.refocus_prompt(cx);
         let project = self.current_cwd.clone();
         match (menu.target, id) {
+            (MenuTarget::Tab(tab), "move-to-tab") => self.move_terminal_to_tab(tab, cx),
             (MenuTarget::Tab(tab), "close") => {
                 self.request_close_terminals(&project, vec![tab], None, cx)
             }
@@ -178,8 +182,7 @@ impl BenCodeApp {
                     .terminals(cx)
                     .dock(&project)
                     .map(|dock| {
-                        dock.tabs
-                            .iter()
+                        dock.docked()
                             .map(|t| t.id)
                             .filter(|&id| id != tab)
                             .collect()

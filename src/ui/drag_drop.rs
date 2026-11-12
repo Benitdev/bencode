@@ -15,11 +15,25 @@ pub struct DraggedPane {
     pub session_id: String,
 }
 
-/// Payload when dragging a file from the file tree.
+/// What a file's dragged path is relative to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DragBase {
+    /// The folder itself: the Explorer's rows.
+    Folder,
+    /// The top of the folder's checkout: git's paths, in the Changes rows.
+    Checkout,
+}
+
+/// Payload when dragging a file or folder out of the Explorer or Changes.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DraggedFile {
+    /// The folder the row was listed for, as the drag began: dropped on
+    /// another thread's pane, the path still means this one.
+    pub cwd: String,
+    pub base: DragBase,
     pub path: String,
     pub name: String,
+    pub dir: bool,
 }
 
 impl Render for DraggedFile {
@@ -42,9 +56,13 @@ impl Render for DraggedFile {
             .text_color(colors.fg)
             .child(
                 div().flex_none().child(
-                    Icon::new(IconName::FileText)
-                        .size(IconSize::Xs)
-                        .color(colors.accent),
+                    Icon::new(if self.dir {
+                        IconName::Folder
+                    } else {
+                        IconName::FileText
+                    })
+                    .size(IconSize::Xs)
+                    .color(colors.accent),
                 ),
             )
             .child(

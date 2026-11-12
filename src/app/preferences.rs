@@ -9,7 +9,7 @@ use crate::harness::catalog;
 use crate::settings::{self, AppSettings, PermissionPreference, ThemePreference};
 use crate::ui::appearance::{
     self, AppearancePrefs, AppearanceTokens, ChatBackgroundPrefs, CollapsedRailMode, DiffPalette,
-    ThemeTint,
+    ThemeTint, UserAccent,
 };
 
 impl From<PermissionPreference> for PermissionMode {
@@ -249,6 +249,10 @@ impl BenCodeApp {
             pinned_sessions_collapsed: self.sessions_ui.pinned_collapsed.clone(),
             reminder_sessions_collapsed: self.sessions_ui.reminders_collapsed.clone(),
             pinned_projects: self.settings.pinned_projects.clone(),
+            pinned_tabs: (self.tabs.tabs().iter())
+                .filter(|tab| tab.pinned)
+                .map(|tab| tab.focused.clone())
+                .collect(),
             default_editor: self.settings.default_editor.clone(),
             delete_cli_sessions: self.settings.delete_cli_sessions,
             provider_accounts: self.settings.provider_accounts.clone(),
@@ -652,9 +656,65 @@ impl BenCodeApp {
         self.apply_appearance_tokens(cx);
     }
 
-    /// Rebuilds the palettes from the tint and the accent.
-    fn apply_palettes(&self, cx: &mut Context<Self>) {
-        crate::ui::theme::set_palettes(&self.appearance.tint, self.appearance.user_accent(), cx);
+    /// Rebuilds the palettes from the colours shown, at once (a slider
+    /// drag must not cross-fade on every step).
+    fn apply_palettes(&mut self, cx: &mut Context<Self>) {
+        let (tint, accent) = self.shown_colors();
+        crate::ui::theme::set_palettes(&tint, accent.as_deref().and_then(UserAccent::parse), cx);
+        self.shown_colors = Some((tint, accent));
+    }
+
+    /// The colours the window shows: the current project's own (MonoCode
+    /// GPUI `ProjectTheme`), else Appearance's.
+    pub(crate) fn shown_colors(&self) -> (ThemeTint, Option<String>) {
+        match self.settings.rail.theme(&self.current_cwd) {
+            Some(theme) => (theme.tint(), theme.accent_color.clone()),
+            None => (self.appearance.tint, self.appearance.accent_color.clone()),
+        }
+    }
+
+    /// What views read beyond the palette, with the shown accent.
+    fn shown_tokens(&self) -> AppearanceTokens {
+        AppearanceTokens {
+            user_accent: self.shown_colors().1.as_deref().and_then(UserAccent::parse),
+            ..self.appearance.tokens()
+        }
+    }
+
+    /// After the current project changed: its colours (or Appearance's)
+    /// fade in, unless they are those shown already; at once with reduced
+    /// motion, which `Theme`'s fade follows.
+    pub(crate) fn follow_project_colors(&mut self, cx: &mut Context<Self>) {
+        let shown = self.shown_colors();
+        if self.shown_colors.as_ref() == Some(&shown) {
+            return;
+        }
+        // The launch's first project: no fade from Appearance's colours.
+        if self.shown_colors.is_none() {
+            self.apply_palettes(cx);
+            AppearanceTokens::set(self.shown_tokens(), cx);
+            return;
+        }
+        let (tint, accent) = &shown;
+        crate::ui::theme::fade_palettes(tint, accent.as_deref().and_then(UserAccent::parse), cx);
+        AppearanceTokens::set(self.shown_tokens(), cx);
+        self.shown_colors = Some(shown);
+    }
+
+    /// The project menu's Theme colors: `None` gives `path` Appearance's
+    /// colours back. The open project shows each change at once.
+    pub fn set_project_theme(
+        &mut self,
+        path: &str,
+        theme: Option<crate::ui::rail::model::ProjectTheme>,
+        cx: &mut Context<Self>,
+    ) {
+        self.update_rail_prefs(|prefs| prefs.with_theme(path, theme), cx);
+        if crate::app::same_project_path(path, &self.current_cwd) {
+            self.apply_palettes(cx);
+            AppearanceTokens::set(self.shown_tokens(), cx);
+        }
+        cx.notify();
     }
 
     /// MonoCode `onDiffPalette`.
@@ -675,7 +735,7 @@ impl BenCodeApp {
     }
 
     fn apply_appearance_tokens(&mut self, cx: &mut Context<Self>) {
-        AppearanceTokens::set(self.appearance.tokens(), cx);
+        AppearanceTokens::set(self.shown_tokens(), cx);
         self.save_settings(cx);
         cx.notify();
     }
@@ -746,6 +806,8 @@ impl BenCodeApp {
         self.set_theme_tint(defaults.tint, cx);
         self.set_ui_scale(defaults.ui_scale, cx);
         self.appearance = defaults;
+        // The accent went back to Default too.
+        self.apply_palettes(cx);
         self.apply_appearance_tokens(cx);
     }
 

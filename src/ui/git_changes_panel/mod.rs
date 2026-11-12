@@ -11,8 +11,9 @@ mod tree;
 
 pub use confirm::GitConfirm;
 pub use error::{GitError, GitFailure};
+use tree::on_disk;
 pub use tree::{ChangeDir, build_tree};
-use tree::{basename, dirname};
+pub(crate) use tree::{basename, dirname, is_folder};
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -1158,6 +1159,23 @@ impl BenCodeApp {
         })
     }
 
+    /// What a Changes row carries when dragged to a composer.
+    fn dragged_change(
+        &self,
+        path: &str,
+        name: &str,
+        dir: bool,
+        cx: &Context<Self>,
+    ) -> crate::ui::drag_drop::DraggedFile {
+        crate::ui::drag_drop::DraggedFile {
+            cwd: self.workspace(cx).cwd.clone(),
+            base: crate::ui::drag_drop::DragBase::Checkout,
+            path: path.to_string(),
+            name: name.to_string(),
+            dir,
+        }
+    }
+
     fn render_change_item(&self, item: &ChangeItem<'_>, cx: &Context<Self>) -> AnyElement {
         match item {
             ChangeItem::Header { side, files } => self.render_section_header(*side, files, cx),
@@ -1268,6 +1286,12 @@ impl BenCodeApp {
             .on_hover(Self::row_hover(group.clone(), cx))
             // The whole row folds the folder, as far as its hover reaches.
             .cursor_pointer()
+            .when(on_disk(dir.status.as_ref()), |el| {
+                el.on_drag(
+                    self.dragged_change(&dir.path, &dir.name, true, cx),
+                    |dragged, _, _, cx| cx.new(|_| dragged.clone()),
+                )
+            })
             .on_click(cx.listener(move |this, _, _, cx| {
                 if !this.changes_ui.collapsed_dirs.remove(&key) {
                     this.changes_ui.collapsed_dirs.insert(key.clone());
@@ -1349,7 +1373,7 @@ impl BenCodeApp {
                 if *cwd == self.workspace(cx).cwd && *path == file.path && *open == side
         );
         let busy = self.changes_ui.busy.is_some();
-        let icon = crate::ui::file_tree::resolve_entry_icon(&name, false, false);
+        let icon = crate::ui::file_tree::resolve_entry_icon(&name, is_folder(&file.path), false);
         let group = SharedString::from(format!("git-row-{side:?}-{}", file.path));
         let selection = fg.fill(Fill::Selected);
         let hover = fg.fill(Fill::Hover);
@@ -1426,6 +1450,12 @@ impl BenCodeApp {
             // The whole row opens the file, as far as its hover reaches:
             // the padding and the status letter too.
             .cursor_pointer()
+            .when(on_disk(Some(&file.status)), |el| {
+                el.on_drag(
+                    self.dragged_change(&file.path, &name, false, cx),
+                    |dragged, _, _, cx| cx.new(|_| dragged.clone()),
+                )
+            })
             .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
                 this.open_change(open_path.clone(), side, event.click_count() == 2, cx)
             }))
@@ -1497,5 +1527,14 @@ mod tests {
         assert_eq!(status_letter(&GitFileStatus::Renamed), "M");
         assert_eq!(dirname("a/b/c.rs"), "a/b");
         assert_eq!(dirname("c.rs"), "");
+    }
+
+    #[test]
+    fn only_what_is_on_disk_can_be_dragged_out() {
+        assert!(on_disk(Some(&GitFileStatus::Modified)));
+        assert!(on_disk(Some(&GitFileStatus::Untracked)));
+        // A folder whose files differ has no status of its own.
+        assert!(on_disk(None));
+        assert!(!on_disk(Some(&GitFileStatus::Deleted)));
     }
 }

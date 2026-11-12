@@ -73,9 +73,11 @@ pub fn deck_tabs<'a>(
     {
         return vec![active];
     }
+    // The pinned show in every project (they lead the set).
     tabs.iter()
         .filter(|t| {
-            Some(t.id.as_str()) == active_id
+            t.pinned
+                || Some(t.id.as_str()) == active_id
                 || (in_project(t, sessions, project)
                     && workspace.is_none_or(|workspace| in_workspace(t, sessions, workspace)))
         })
@@ -115,8 +117,10 @@ pub fn plan_tab_close(
         };
     };
     let workspace = tab_workspace(closing, sessions).filter(|_| by_workspace);
+    // MonoCode: the strip's last tab gives way to a blank one, not to a pin.
     let same_scope = |tab: &WorkspaceTab| {
-        in_project(tab, sessions, project)
+        (closing.pinned || !tab.pinned)
+            && in_project(tab, sessions, project)
             && workspace.is_none_or(|path| in_workspace(tab, sessions, path))
     };
     tabs[..ix]
@@ -217,6 +221,7 @@ mod tests {
             id: id.into(),
             layout: leaf(pane),
             focused: pane.into(),
+            pinned: false,
         }
     }
 

@@ -5,7 +5,7 @@
 
 use bencode_ui::buttons::{Button, ButtonVariant, SegmentedControl};
 use bencode_ui::forms::{Choice, ColorPicker, Select, Slider, Switch};
-use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::primitives::{Icon, IconName, Tooltip, raise};
 use bencode_ui::settings::{Appearance, ThemeSelector};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -24,11 +24,29 @@ use crate::ui::appearance::{
 };
 use crate::ui::git_changes_panel::spinning_icon;
 use crate::ui::icons::ExtraIcon;
+use crate::ui::rail::model::ProjectTheme;
 
 use crate::ui::scale::px;
 use crate::ui::settings_modal::SettingsTab;
 use crate::ui::settings_parts::{SettingsGroup, SettingsPage, SettingsRow};
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+
+/// Whose colours a control edits: Appearance's, or one project's own.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ColorScope {
+    App,
+    Project(String),
+}
+
+impl ColorScope {
+    /// Keeps the two pickers' element ids apart.
+    fn id_prefix(&self) -> &'static str {
+        match self {
+            Self::App => "",
+            Self::Project(_) => "project-",
+        }
+    }
+}
 
 /// MonoCode `ColorPickerPopover`'s `width={248}`.
 const ACCENT_PICKER_WIDTH: f32 = 248.0;
@@ -112,7 +130,7 @@ impl BenCodeApp {
             .row(
                 SettingsRow::new("Accent color")
                     .description("Used for the composer send button and your message bubbles.")
-                    .control(self.render_accent_picker(cx)),
+                    .control(self.render_accent_picker(&ColorScope::App, cx)),
             )
             .row(
                 SettingsRow::new("Diff colors")
@@ -126,15 +144,22 @@ impl BenCodeApp {
     }
 
     /// MonoCode `AccentColorPicker`: Default (the text colour), six presets,
-    /// and a custom colour whose picker hangs below the row.
-    fn render_accent_picker(&self, cx: &Context<Self>) -> impl IntoElement {
+    /// and a custom colour whose picker hangs below the row; `scope` says
+    /// whose accent it picks.
+    pub(crate) fn render_accent_picker(
+        &self,
+        scope: &ColorScope,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
         let fg = cx.theme().colors.fg;
-        let value = self.appearance.accent_color.as_deref();
+        let (_, value) = self.scope_colors(scope);
+        let value = value.as_deref();
         let custom: Option<Hsla> = value
             .filter(|hex| ACCENT_PRESETS.iter().all(|(_, preset)| preset != hex))
             .and_then(parse_hex)
             .map(Into::into);
-        let picker_open = self.accent_picker_open;
+        let picker_open = self.accent_picker.as_ref() == Some(scope);
+        let prefix = scope.id_prefix();
         // `size-3.5 rounded-full`, `ring-2 ring-content/80 ring-offset-1` when picked.
         let swatch = |id: SharedString, color: Option<Hsla>, selected: bool| {
             div()
@@ -174,33 +199,36 @@ impl BenCodeApp {
             let color = hex.and_then(parse_hex).map_or(fg, Into::into);
             row = row.child(
                 swatch(
-                    SharedString::from(format!("accent-color-{ix}")),
+                    SharedString::from(format!("{prefix}accent-color-{ix}")),
                     Some(color),
                     value == hex,
                 )
                 .tooltip(Tooltip::text(name))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.accent_picker_open = false;
-                    this.set_accent_color(hex.map(str::to_string), cx);
-                })),
+                .on_click({
+                    let scope = scope.clone();
+                    cx.listener(move |this, _, _, cx| {
+                        this.accent_picker = None;
+                        this.set_scope_accent(&scope, hex.map(str::to_string), cx);
+                    })
+                }),
             );
         }
         let row = row.child(
             swatch(
-                SharedString::from("accent-color-custom"),
+                SharedString::from(format!("{prefix}accent-color-custom")),
                 custom,
                 custom.is_some() || picker_open,
             )
             .tooltip(Tooltip::text("Custom color"))
             // On the press, not the click: the picker's own outside-press
             // has closed it by then, and the click would open it again.
-            .on_mouse_down(
-                MouseButton::Left,
+            .on_mouse_down(MouseButton::Left, {
+                let scope = scope.clone();
                 cx.listener(move |this, _, _, cx| {
-                    this.accent_picker_open = !picker_open;
+                    this.accent_picker = (!picker_open).then(|| scope.clone());
                     cx.notify();
-                }),
-            )
+                })
+            })
             .when(custom.is_none(), |el| {
                 el.child(
                     div().absolute().child(
@@ -222,97 +250,187 @@ impl BenCodeApp {
             .child(row)
             .when(picker_open, |el| {
                 let popover = crate::ui::sidebar_popovers::popover_frame(cx)
-                    .id("accent-color-picker-popover")
+                    .id(SharedString::from(format!(
+                        "{prefix}accent-color-picker-popover"
+                    )))
                     .occlude()
                     .w(px(ACCENT_PICKER_WIDTH))
                     .p_2()
                     .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                        this.accent_picker_open = false;
+                        this.accent_picker = None;
                         cx.notify();
                     }))
                     .child(
-                        ColorPicker::new("accent-color-picker", current)
-                            .opaque()
-                            .on_change(app_callback_with(cx, |this, color: Hsla, cx| {
-                                this.set_accent_color(Some(to_hex(color)), cx);
-                            })),
-                    );
-                el.child(
-                    div().absolute().bottom_0().right_0().child(
-                        deferred(
-                            anchored()
-                                .anchor(Anchor::TopRight)
-                                .offset(point(px(0.0), px(6.0)))
-                                .snap_to_window()
-                                .child(popover),
+                        ColorPicker::new(
+                            SharedString::from(format!("{prefix}accent-color-picker")),
+                            current,
                         )
-                        .with_priority(3),
-                    ),
-                )
+                        .opaque()
+                        .on_change({
+                            let scope = scope.clone();
+                            app_callback_with(cx, move |this, color: Hsla, cx| {
+                                this.set_scope_accent(&scope, Some(to_hex(color)), cx);
+                            })
+                        }),
+                    );
+                let placed = anchored()
+                    .anchor(Anchor::TopRight)
+                    .offset(point(px(0.0), px(6.0)))
+                    .snap_to_window()
+                    .child(popover);
+                // In the project's dialog, a bencode-ui layer: raised in it,
+                // as a deferred element would draw under it.
+                let placed = match scope {
+                    ColorScope::App => deferred(placed).with_priority(3).into_any_element(),
+                    ColorScope::Project(_) => raise("project-accent-color-layer", placed)
+                        .with_priority(1)
+                        .into_any_element(),
+                };
+                el.child(div().absolute().bottom_0().right_0().child(placed))
             })
     }
 
     fn render_appearance_color(&self, cx: &Context<Self>) -> impl IntoElement {
-        let tint = self.appearance.tint;
-        let light = !cx.theme().is_dark();
+        let mut description = String::from(
+            "Hue and saturation tint every surface. Lightness only moves the dark theme.",
+        );
+        if self.settings.rail.theme(&self.current_cwd).is_some() {
+            let name = self.rail_project_label(&self.current_cwd);
+            description.push_str(&format!(
+                " {name} has colors of its own, shown while it is open (its menu's Theme colors)."
+            ));
+        }
         SettingsGroup::new("Color")
-            .description(
-                "Hue and saturation tint every surface. Lightness only moves the dark theme.",
+            .description(description)
+            .rows(self.render_color_rows(&ColorScope::App, cx))
+    }
+
+    /// Hue, Saturation and Dark-mode lightness for `scope`.
+    pub(crate) fn render_color_rows(
+        &self,
+        scope: &ColorScope,
+        cx: &Context<Self>,
+    ) -> Vec<SettingsRow> {
+        let (tint, _) = self.scope_colors(scope);
+        let light = !cx.theme().is_dark();
+        let prefix = scope.id_prefix();
+        let id = |name: &str| SharedString::from(format!("{prefix}appearance-{name}"));
+        // The project's dialog is narrow: its rows go without the
+        // explanations Settings gives.
+        let explained = *scope == ColorScope::App;
+        let row = |label: &'static str, text: &'static str| {
+            let row = SettingsRow::new(label);
+            if explained {
+                row.description(text)
+            } else {
+                row
+            }
+        };
+        let set = |scope: &ColorScope| {
+            let scope = scope.clone();
+            move |this: &mut BenCodeApp, tint: ThemeTint, cx: &mut Context<BenCodeApp>| {
+                this.set_scope_tint(&scope, tint, cx)
+            }
+        };
+        let (on_hue, on_saturation, on_lightness) = (set(scope), set(scope), set(scope));
+        vec![
+            row("Hue", "Base hue for accents and tinted surfaces.").control(slider(
+                id("hue"),
+                tint.hue,
+                (HUE_MIN, HUE_MAX),
+                format!("{}°", tint.hue),
+                false,
+                cx,
+                move |this, hue, cx| on_hue(this, ThemeTint { hue, ..tint }, cx),
+            )),
+            row(
+                "Saturation",
+                "How strongly the hue tints the interface. Zero keeps it neutral.",
             )
-            .row(
-                SettingsRow::new("Hue")
-                    .description("Base hue for accents and tinted surfaces.")
-                    .control(slider(
-                        "appearance-hue",
-                        tint.hue,
-                        (HUE_MIN, HUE_MAX),
-                        format!("{}°", tint.hue),
-                        false,
-                        cx,
-                        move |this, hue, cx| this.set_theme_tint(ThemeTint { hue, ..tint }, cx),
-                    )),
+            .control(slider(
+                id("saturation"),
+                tint.saturation,
+                (SATURATION_MIN, SATURATION_MAX),
+                format!("{}%", tint.saturation),
+                false,
+                cx,
+                move |this, saturation, cx| {
+                    on_saturation(this, ThemeTint { saturation, ..tint }, cx)
+                },
+            )),
+            row(
+                if explained {
+                    "Dark-mode lightness"
+                } else {
+                    "Dark lightness"
+                },
+                if light {
+                    "This only affects dark mode. Your dark-mode value is preserved."
+                } else {
+                    "Base brightness of the dark theme. Lower values are darker; zero is true \
+                     black."
+                },
             )
-            .row(
-                SettingsRow::new("Saturation")
-                    .description("How strongly the hue tints the interface. Zero keeps it neutral.")
-                    .control(slider(
-                        "appearance-saturation",
-                        tint.saturation,
-                        (SATURATION_MIN, SATURATION_MAX),
-                        format!("{}%", tint.saturation),
-                        false,
-                        cx,
-                        move |this, saturation, cx| {
-                            this.set_theme_tint(ThemeTint { saturation, ..tint }, cx)
+            .control(slider(
+                id("dark-lightness"),
+                tint.dark_lightness,
+                (DARK_LIGHTNESS_MIN, DARK_LIGHTNESS_MAX),
+                format!("{}%", tint.dark_lightness),
+                light,
+                cx,
+                move |this, dark_lightness, cx| {
+                    on_lightness(
+                        this,
+                        ThemeTint {
+                            dark_lightness,
+                            ..tint
                         },
-                    )),
-            )
-            .row(
-                SettingsRow::new("Dark-mode lightness")
-                    .description(if light {
-                        "This only affects dark mode. Your dark-mode value is preserved."
-                    } else {
-                        "Base brightness of the dark theme. Lower values are darker; zero is true \
-                         black."
-                    })
-                    .control(slider(
-                        "appearance-dark-lightness",
-                        tint.dark_lightness,
-                        (DARK_LIGHTNESS_MIN, DARK_LIGHTNESS_MAX),
-                        format!("{}%", tint.dark_lightness),
-                        light,
                         cx,
-                        move |this, dark_lightness, cx| {
-                            this.set_theme_tint(
-                                ThemeTint {
-                                    dark_lightness,
-                                    ..tint
-                                },
-                                cx,
-                            )
-                        },
-                    )),
-            )
+                    )
+                },
+            )),
+        ]
+    }
+
+    /// The colours `scope` has: a project without its own has Appearance's.
+    pub(crate) fn scope_colors(&self, scope: &ColorScope) -> (ThemeTint, Option<String>) {
+        let app = (self.appearance.tint, self.appearance.accent_color.clone());
+        match scope {
+            ColorScope::App => app,
+            ColorScope::Project(path) => match self.settings.rail.theme(path) {
+                Some(theme) => (theme.tint(), theme.accent_color.clone()),
+                None => app,
+            },
+        }
+    }
+
+    /// A project's first change gives it colours of its own, starting
+    /// from Appearance's.
+    fn set_scope_tint(&mut self, scope: &ColorScope, tint: ThemeTint, cx: &mut Context<Self>) {
+        match scope {
+            ColorScope::App => self.set_theme_tint(tint, cx),
+            ColorScope::Project(path) => {
+                let (_, accent) = self.scope_colors(scope);
+                let theme = ProjectTheme::from_app(&tint, accent.as_deref());
+                self.set_project_theme(path, Some(theme), cx);
+            }
+        }
+    }
+
+    fn set_scope_accent(
+        &mut self,
+        scope: &ColorScope,
+        accent: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        match scope {
+            ColorScope::App => self.set_accent_color(accent, cx),
+            ColorScope::Project(path) => {
+                let (tint, _) = self.scope_colors(scope);
+                let theme = ProjectTheme::from_app(&tint, accent.as_deref());
+                self.set_project_theme(path, Some(theme), cx);
+            }
+        }
     }
 
     /// MonoCode Appearance › Translucency: how much of the desktop shows
@@ -617,7 +735,7 @@ impl BenCodeApp {
 
 /// MonoCode's settings `Slider`: the track, then the value (`display`).
 fn slider(
-    id: &'static str,
+    id: impl Into<gpui::ElementId>,
     value: f32,
     (min, max): (f32, f32),
     display: String,

@@ -1,5 +1,6 @@
 //! The rail's saved state: order, width, archive, project groups, each
-//! project's label / colour / figure / logo, and notification mutes.
+//! project's label / colour / figure / logo / theme colours, and
+//! notification mutes.
 //! MonoCode keeps these in webview `localStorage`; BenCode keeps them in
 //! `settings.json` under the same names (`monocode.projectRailOrder` is
 //! `projectRailOrder`, `monocode:tab-group:labels` is `tabGroupLabels`, …)
@@ -49,6 +50,64 @@ pub struct RailPrefs {
     pub tab_group_logos: BTreeMap<String, String>,
     /// `monocode.projectNotifications.v1`, by notification project id.
     pub project_notifications: BTreeMap<String, NotificationPreference>,
+    /// Project path → the colours it shows instead of Appearance's
+    /// (MonoCode GPUI `ProjectAppearance::theme`; BenCode's own key).
+    pub project_themes: BTreeMap<String, ProjectTheme>,
+}
+
+/// A project's own copy of Appearance's colours (MonoCode
+/// `ProjectTheme`, without its workspace theme: BenCode has one).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ProjectTheme {
+    pub hue: f32,
+    pub saturation: f32,
+    pub dark_lightness: f32,
+    /// `#rrggbb`, or `None` for the default accent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accent_color: Option<String>,
+}
+
+impl Default for ProjectTheme {
+    fn default() -> Self {
+        Self::from_app(&crate::ui::appearance::ThemeTint::default(), None)
+    }
+}
+
+impl ProjectTheme {
+    /// The colours Appearance sets, as a project's first change starts.
+    pub fn from_app(tint: &crate::ui::appearance::ThemeTint, accent: Option<&str>) -> Self {
+        Self {
+            hue: tint.hue,
+            saturation: tint.saturation,
+            dark_lightness: tint.dark_lightness,
+            accent_color: accent.map(str::to_string),
+        }
+        .normalized()
+    }
+
+    pub fn tint(&self) -> crate::ui::appearance::ThemeTint {
+        crate::ui::appearance::ThemeTint {
+            hue: self.hue,
+            saturation: self.saturation,
+            dark_lightness: self.dark_lightness,
+        }
+        .clamped()
+    }
+
+    /// MonoCode `ProjectTheme::normalize`: within range, a valid accent.
+    pub fn normalized(self) -> Self {
+        let tint = self.tint();
+        Self {
+            hue: tint.hue,
+            saturation: tint.saturation,
+            dark_lightness: tint.dark_lightness,
+            accent_color: self
+                .accent_color
+                .filter(|hex| crate::ui::appearance::parse_hex(hex).is_some())
+                .map(|hex| hex.to_lowercase()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -285,6 +344,10 @@ impl RailPrefs {
             tab_group_custom_colors: drop(&self.tab_group_custom_colors),
             tab_group_mascots: drop(&self.tab_group_mascots),
             tab_group_logos: drop(&self.tab_group_logos),
+            project_themes: (self.project_themes.iter())
+                .filter(|(k, _)| **k != key)
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             ..self.clone()
         }
     }
@@ -428,6 +491,23 @@ impl RailPrefs {
         }
     }
 
+    /// `None` gives the project Appearance's colours back.
+    pub fn with_theme(&self, path: &str, theme: Option<ProjectTheme>) -> Self {
+        let mut themes = self.project_themes.clone();
+        match theme {
+            Some(theme) => themes.insert(path_key(path), theme.normalized()),
+            None => themes.remove(&path_key(path)),
+        };
+        Self {
+            project_themes: themes,
+            ..self.clone()
+        }
+    }
+
+    pub fn theme(&self, path: &str) -> Option<&ProjectTheme> {
+        self.project_themes.get(&path_key(path))
+    }
+
     pub fn with_logo(&self, path: &str, file: Option<&str>) -> Self {
         Self {
             tab_group_logos: with_entry(&self.tab_group_logos, &path_key(path), file),
@@ -549,6 +629,54 @@ pub fn rail_sections(order: &[String], pinned: &[String], prefs: &RailPrefs) -> 
     sections
 }
 
+impl RailSections {
+    /// The rail's projects as drawn: pinned, each group's, then the rest
+    /// (MonoCode's Next/Previous Project follow it).
+    pub fn drawn(&self) -> Vec<String> {
+        let groups = self.groups.iter().flat_map(|(_, items)| items);
+        (self.pinned.iter().chain(groups).chain(&self.ungrouped))
+            .cloned()
+            .collect()
+    }
+
+    /// The list `path` is a row of, by the name a reorder gives it
+    /// (`pinned`, `group:<id>`, `projects`), and its rows.
+    pub fn list_of(&self, path: &str) -> Option<(String, &[String])> {
+        let holds = |items: &[String]| items.iter().any(|p| same(p, path));
+        if holds(&self.pinned) {
+            return Some(("pinned".into(), &self.pinned));
+        }
+        if let Some((group, items)) = self.groups.iter().find(|(_, items)| holds(items)) {
+            return Some((format!("group:{}", group.id), items));
+        }
+        holds(&self.ungrouped).then(|| ("projects".to_string(), self.ungrouped.as_slice()))
+    }
+}
+
+/// A project menu's Move, or Move Project Up / Down: within its list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RailMove {
+    Up,
+    Down,
+    Top,
+    Bottom,
+}
+
+impl RailMove {
+    /// Where the row at `from` of `len` goes; `None` when it stays.
+    pub fn target(self, from: usize, len: usize) -> Option<usize> {
+        let to = match self {
+            Self::Up | Self::Top if from == 0 => return None,
+            Self::Down | Self::Bottom if from + 1 >= len => return None,
+            Self::Up => from - 1,
+            Self::Down => from + 1,
+            Self::Top => 0,
+            Self::Bottom => len - 1,
+        };
+        Some(to)
+    }
+}
+
 /// MonoCode `reorderSubset`: `subset_order` takes the slots its members
 /// held in `full`, everything else stays put.
 pub fn reorder_subset(full: &[String], subset_order: &[String]) -> Vec<String> {
@@ -589,6 +717,59 @@ mod tests {
 
     fn paths(items: &[&str]) -> Vec<String> {
         items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_project_theme_is_clamped_and_forgotten_with_the_project() {
+        let theme = ProjectTheme {
+            hue: 400.0,
+            saturation: 30.4,
+            dark_lightness: 50.0,
+            accent_color: Some("#ABCDEF".into()),
+        };
+        let prefs = RailPrefs::default().with_theme("/a", Some(theme));
+        let saved = prefs.theme("/a").unwrap();
+        assert_eq!((saved.hue, saved.dark_lightness), (360.0, 30.0));
+        assert_eq!(saved.accent_color.as_deref(), Some("#abcdef"));
+        let bad = ProjectTheme {
+            accent_color: Some("blue".into()),
+            ..ProjectTheme::default()
+        };
+        assert_eq!(bad.normalized().accent_color, None);
+        assert!(prefs.without_project("/a").theme("/a").is_none());
+        assert!(prefs.with_theme("/a", None).project_themes.is_empty());
+    }
+
+    #[test]
+    fn moves_stay_inside_the_list() {
+        assert_eq!(RailMove::Up.target(0, 3), None);
+        assert_eq!(RailMove::Up.target(2, 3), Some(1));
+        assert_eq!(RailMove::Down.target(2, 3), None);
+        assert_eq!(RailMove::Down.target(0, 3), Some(1));
+        assert_eq!(RailMove::Top.target(2, 3), Some(0));
+        assert_eq!(RailMove::Bottom.target(0, 3), Some(2));
+        assert_eq!(RailMove::Bottom.target(0, 1), None);
+    }
+
+    #[test]
+    fn drawn_order_and_lists_follow_the_sections() {
+        let sections = RailSections {
+            pinned: paths(&["/p"]),
+            groups: vec![(
+                ProjectGroup {
+                    id: "g".into(),
+                    ..Default::default()
+                },
+                paths(&["/g1", "/g2"]),
+            )],
+            ungrouped: paths(&["/u"]),
+        };
+        assert_eq!(sections.drawn(), paths(&["/p", "/g1", "/g2", "/u"]));
+        let (list, rows) = sections.list_of("/g2").unwrap();
+        assert_eq!((list.as_str(), rows.len()), ("group:g", 2));
+        assert_eq!(sections.list_of("/u").unwrap().0, "projects");
+        assert_eq!(sections.list_of("/p").unwrap().0, "pinned");
+        assert!(sections.list_of("/x").is_none());
     }
 
     #[test]

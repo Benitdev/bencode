@@ -7,11 +7,14 @@
 //! one whose shell ended stays open with MonoCode's `[process exited]`.
 //! A tab dragged onto an edge of a terminal shows the two side by side
 //! (`split`), as panes dock in the chat. Each tab shows a session of the
-//! terminal host (`sessions`), so its shell outlives a restart.
+//! terminal host (`sessions`), so its shell outlives a restart. A tab
+//! dragged off the dock onto the workspace moves to a tab beside the chat
+//! (`moved`).
 
 mod ime;
 mod layout;
 mod menu;
+mod moved;
 mod running;
 mod sessions;
 mod split;
@@ -65,6 +68,8 @@ pub struct TerminalTab {
     foreground: Option<crate::terminal_process::Foreground>,
     /// The folder its shell is in now.
     dir: Option<String>,
+    /// Shown in a tab beside the chat (`PaneTab::Terminal`), not the dock.
+    in_pane: bool,
     _events: Subscription,
 }
 
@@ -95,6 +100,20 @@ pub struct TerminalDock {
 }
 
 impl TerminalDock {
+    /// The terminals the dock shows: those not moved out to a tab.
+    fn docked(&self) -> impl Iterator<Item = &TerminalTab> {
+        self.tabs.iter().filter(|tab| !tab.in_pane)
+    }
+
+    /// The docked terminal after (or before) the one at `ix`, for the
+    /// active one once that leaves; 0 for none.
+    fn neighbour(&self, ix: usize) -> u64 {
+        let docked = |tab: &&TerminalTab| !tab.in_pane;
+        (self.tabs[ix..].iter().find(docked))
+            .or_else(|| self.tabs[..ix].iter().rev().find(docked))
+            .map_or(0, |tab| tab.id)
+    }
+
     /// Takes terminal `id` out of its split; its tab stays. The active
     /// terminal moves to a neighbour when it was `id`.
     fn leave_split(&mut self, id: u64) {
@@ -112,6 +131,8 @@ pub struct TerminalDocks {
     /// Each project's side, size and shown state, as saved; a project
     /// missing here has the default, hidden bottom dock.
     pub layouts: BTreeMap<String, DockLayout>,
+    /// A dragged tab is over the workspace, where it would move to a tab.
+    tab_drop: bool,
     /// The pointer (along the dock's axis) and the dock's size when the
     /// sash was pressed.
     resize_from: Option<(f32, f32)>,
@@ -295,7 +316,7 @@ impl BenCodeApp {
         let has_tab = self
             .terminals(cx)
             .dock(&self.current_cwd)
-            .is_some_and(|dock| !dock.tabs.is_empty());
+            .is_some_and(|dock| dock.docked().next().is_some());
         if !has_tab {
             self.new_terminal(cx);
         }
@@ -364,6 +385,7 @@ impl BenCodeApp {
                 shell: None,
                 foreground: None,
                 dir: None,
+                in_pane: false,
                 _events: events,
             });
             dock.active = id;
@@ -384,12 +406,11 @@ impl BenCodeApp {
             if split::group_of(&dock.splits, id).is_some() {
                 dock.leave_split(id);
             } else if dock.active == id {
-                let next = dock.tabs.get(ix).or_else(|| dock.tabs.last());
-                dock.active = next.map_or(0, |t| t.id);
+                dock.active = dock.neighbour(ix);
             }
             // MonoCode `closeTerminalInDock` drops an emptied dock, which
-            // hides it.
-            if dock.tabs.is_empty() && docks.layout(project).open {
+            // hides it; one whose terminal was in a tab stays as it was.
+            if !closed.in_pane && dock.docked().next().is_none() && docks.layout(project).open {
                 docks.set_open(project, false);
             }
             Some(closed)
@@ -397,6 +418,9 @@ impl BenCodeApp {
         let Some(closed) = closed else {
             return;
         };
+        if closed.in_pane {
+            self.drop_pane_tab(&crate::app::file_pane::PaneTab::Terminal { id }.key(), cx);
+        }
         self.end_terminal_sessions(vec![closed.session], cx);
         self.save_settings(cx);
         cx.notify();
@@ -454,7 +478,7 @@ impl BenCodeApp {
 
     fn select_terminal(&mut self, id: u64, cx: &mut Context<Self>) {
         self.change_current_dock(cx, |dock| {
-            if dock.tabs.iter().any(|tab| tab.id == id) {
+            if dock.docked().any(|tab| tab.id == id) {
                 dock.active = id;
             }
         });
@@ -526,12 +550,15 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let main = div()
+            .id("workspace-main")
+            .relative()
             .flex()
             .flex_1()
             .min_w_0()
             .min_h_0()
             .overflow_hidden()
-            .child(self.render_workspace_split(cx));
+            .child(self.render_workspace_split(cx))
+            .map(|main| self.terminal_tab_drop_target(main, cx));
         let layout = self.terminals(cx).layout(&self.current_cwd);
         if !layout.open {
             return main.into_any_element();
@@ -577,15 +604,17 @@ impl BenCodeApp {
     ) -> impl IntoElement + use<> {
         // A drag let go anywhere but on a pane leaves its hint behind.
         if !cx.has_active_drag() {
-            self.terminals_mut(cx, |docks| docks.pane_drop = None);
+            self.terminals_mut(cx, |docks| {
+                docks.pane_drop = None;
+                docks.tab_drop = false;
+            });
         }
         let (split, active) =
             self.terminals(cx)
                 .dock(&self.current_cwd)
                 .map_or((None, None), |dock| {
                     let active = dock
-                        .tabs
-                        .iter()
+                        .docked()
                         .any(|t| t.id == dock.active)
                         .then_some(dock.active);
                     (split::group_of(&dock.splits, dock.active).cloned(), active)
@@ -946,9 +975,11 @@ impl BenCodeApp {
             .terminals(cx)
             .dock(&self.current_cwd)
             .map(|dock| {
+                // `ix` counts every tab, as reordering does.
                 dock.tabs
                     .iter()
                     .enumerate()
+                    .filter(|(_, tab)| !tab.in_pane)
                     .map(|(ix, tab)| {
                         let shown = split::together(&dock.splits, dock.active, tab.id);
                         self.render_terminal_tab(ix, tab, tab.id == dock.active, shown, cx)

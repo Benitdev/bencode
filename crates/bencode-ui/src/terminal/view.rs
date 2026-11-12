@@ -52,6 +52,8 @@ pub struct Terminal {
     pub(crate) term: Arc<FairMutex<Term<Listener>>>,
     pub(crate) pty: Option<Notifier>,
     pub(crate) focus: FocusHandle,
+    /// Its right click's Copy, Paste and Clear, while open.
+    pub(crate) menu: Option<crate::menus::PointMenu>,
     title: SharedString,
     exited: Option<ExitStatus>,
     /// Columns and lines.
@@ -128,6 +130,7 @@ impl Terminal {
             term,
             pty,
             focus: cx.focus_handle().tab_stop(true),
+            menu: None,
             title,
             exited: None,
             size,
@@ -306,6 +309,10 @@ impl Render for Terminal {
             current: colors.warning.opacity(0.55),
             link: colors.link,
         };
+        if self.menu.as_ref().is_some_and(|menu| !menu.is_open(cx)) {
+            self.menu = None;
+        }
+        let menu = self.menu.as_ref().and_then(|menu| menu.element(window, cx));
         let root = div()
             .id(("terminal", cx.entity_id()))
             .key_context(input::CONTEXT)
@@ -323,6 +330,6 @@ impl Render for Terminal {
                 self.hovered.clone(),
                 look,
             ));
-        input::listen(root, cx)
+        crate::menus::beside(input::listen(root, cx), menu)
     }
 }

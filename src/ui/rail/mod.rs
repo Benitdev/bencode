@@ -337,6 +337,11 @@ impl BenCodeApp {
         sync_rail_order(&prefs.project_rail_order, &projects)
     }
 
+    /// The rail's projects as drawn: pinned, grouped, then the rest.
+    pub(crate) fn rail_drawn_order(&self) -> Vec<String> {
+        self.rail_sections_for(&self.rail_order()).drawn()
+    }
+
     pub(super) fn rail_sections_for(&self, order: &[String]) -> RailSections {
         rail_sections(order, &self.settings.pinned_projects, &self.settings.rail)
     }

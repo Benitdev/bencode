@@ -8,8 +8,35 @@ use gpui::{
 use metal::Device;
 use parking_lot::Mutex;
 use std::borrow::Cow;
+use std::sync::{Arc, Weak};
 
 pub struct MetalAtlas(Mutex<AtlasState<MetalAtlasTextures>>);
+
+/// Every window's atlas, so [`clear_all`] can reach them (BenCode).
+static ATLASES: Mutex<Vec<Weak<MetalAtlas>>> = Mutex::new(Vec::new());
+
+/// Remembers `atlas` for [`clear_all`].
+pub(crate) fn register(atlas: &Arc<MetalAtlas>) {
+    let mut atlases = ATLASES.lock();
+    atlases.retain(|atlas| atlas.strong_count() > 0);
+    atlases.push(Arc::downgrade(atlas));
+}
+
+/// Drops every tile and texture of every window's atlas (BenCode, after
+/// MonoCode's `PlatformAtlas::clear`): atlases keep each glyph, icon and
+/// image any frame drew. Only between frames, followed by a refresh of
+/// every window, so no view replays a paint naming the old tiles; the
+/// frames that follow upload again only what they draw. Frames still on
+/// the GPU keep their own references to the textures.
+pub(crate) fn clear_all() {
+    let atlases: Vec<Arc<MetalAtlas>> = ATLASES.lock().iter().filter_map(Weak::upgrade).collect();
+    for atlas in atlases {
+        atlas.0.lock().clear(|textures| {
+            drop(textures.monochrome_textures.drain());
+            drop(textures.polychrome_textures.drain());
+        });
+    }
+}
 
 impl MetalAtlas {
     pub(crate) fn new(device: Device, supports_shared_storage: bool) -> Self {

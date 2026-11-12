@@ -54,8 +54,12 @@ pub(crate) fn line_end(text: &str, offset: usize) -> usize {
         .map_or(text.len(), |ix| offset + ix)
 }
 
+/// UTF-16 length of the text before `offset`; an offset past the text or inside a character floors into it.
 pub(crate) fn to_utf16(text: &str, offset: usize) -> usize {
-    text[..offset].chars().map(char::len_utf16).sum()
+    text[..text.floor_char_boundary(offset)]
+        .chars()
+        .map(char::len_utf16)
+        .sum()
 }
 
 pub(crate) fn from_utf16(text: &str, offset: usize) -> usize {
@@ -220,6 +224,15 @@ mod tests {
         let emoji_end = 11;
         assert_eq!(to_utf16(text, emoji_end), 9);
         assert_eq!(from_utf16(text, 9), emoji_end);
+    }
+
+    /// An input method asking for a stale selection gets the text's end, not a panic.
+    #[test]
+    fn utf16_of_a_stale_offset_floors_into_the_text() {
+        let text = "xin chào bạn";
+        assert_eq!(to_utf16(text, text.len() + 1), 12);
+        // Inside "à" (two bytes from 6): counts the characters before it.
+        assert_eq!(to_utf16(text, 7), 6);
     }
 
     #[test]

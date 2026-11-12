@@ -496,9 +496,19 @@ impl BenCodeApp {
     }
 
     /// Sends the composer text to the focused thread. While that thread's
-    /// agent is busy the message is queued, as MonoCode's Queue follow-up
-    /// behaviour does.
+    /// agent is busy the message steers its turn, or waits in the queue
+    /// where it cannot.
     pub fn submit_prompt(&mut self, cx: &mut Context<Self>) {
+        self.submit_prompt_as(false, cx);
+    }
+
+    /// ⌘↩: the other way (MonoCode `enqueue_follow_up_inverted`). While the
+    /// agent is busy the message waits for its own turn rather than steering.
+    pub fn submit_prompt_queued(&mut self, cx: &mut Context<Self>) {
+        self.submit_prompt_as(true, cx);
+    }
+
+    pub(crate) fn submit_prompt_as(&mut self, queued: bool, cx: &mut Context<Self>) {
         let typed = self.prompt_input.read(cx).text().trim().to_string();
         // MonoCode runs a lone `/compact` and opens the `/mcp` picker
         // instead of sending them; a lone `/clear` starts a fresh thread.
@@ -599,6 +609,7 @@ impl BenCodeApp {
             return;
         };
         if self.defer_send_for_attachments(&session_id) {
+            self.thread_mut(&session_id).queue_after_attach = queued;
             return;
         }
         // An edited resend or a new worktree is still being prepared, or the
@@ -701,7 +712,12 @@ impl BenCodeApp {
         if self.is_agent_running_in(&session_id) {
             // MonoCode's default follow-up: steer into the running turn
             // (Plan waits for its own turn); harnesses that cannot, queue.
-            if let Err(input) = self.steer(&session_id, input, cx) {
+            let sent = if queued {
+                Err(Box::new(input))
+            } else {
+                self.steer(&session_id, input, cx)
+            };
+            if let Err(input) = sent {
                 self.thread_mut(&session_id).queue.push(*input);
             }
             cx.notify();
@@ -855,10 +871,35 @@ impl BenCodeApp {
         // Before the prompt lands: a thread with a user block and no account
         // reads as one from before accounts, and would run as the default.
         let pinned = self.pin_session_account(session_id);
+        // Another agent picked mid-thread starts with the recap
+        // (`transfer.rs`); a Bot briefs its own, a card or a prompt of its
+        // own says what the agent reads.
+        let transfer = (input.card.is_none()
+            && input.agent_prompt.is_none()
+            && !self.is_bot_session(session_id))
+        .then(|| self.sessions.iter().find(|s| s.id == session_id))
+        .flatten()
+        .and_then(|session| {
+            let transfer = super::transfer::pending_transfer(session)?;
+            let to = crate::harness::HarnessKind::from_id(&session.harness)?;
+            let card = crate::ui::composer::handoff::HandoffCard::new(
+                transfer.from,
+                to,
+                &session.blocks,
+                &input.text,
+            );
+            Some((transfer, card.agent_prompt(&input.text)))
+        });
         let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) else {
             return;
         };
         start_turn(session, &input.text, now_ms(), &input.attachments);
+        if let (Some((transfer, _)), Some(block)) = (&transfer, session.blocks.last_mut()) {
+            log::info!("thread {session_id}: {}", transfer.label());
+            Arc::make_mut(block)
+                .extra
+                .insert(super::transfer::TRANSFER_FROM.into(), transfer.to_extra());
+        }
         if let (Some(card), Some(block)) = (&input.card, session.blocks.last_mut()) {
             card.stamp(Arc::make_mut(block));
         }
@@ -879,10 +920,11 @@ impl BenCodeApp {
         self.dismiss_due_reminder(session_id, cx);
         // Skill bodies are small SKILL.md files; read them as MonoCode does
         // right before the turn starts.
-        let typed = match (&input.agent_prompt, &input.card) {
-            (Some(prompt), _) => prompt.clone(),
-            (None, Some(card)) => card.agent_prompt(&input.text),
-            (None, None) => input.text.clone(),
+        let typed = match (&input.agent_prompt, &input.card, transfer) {
+            (Some(prompt), _, _) => prompt.clone(),
+            (None, Some(card), _) => card.agent_prompt(&input.text),
+            (None, None, Some((_, prompt))) => prompt,
+            (None, None, None) => input.text.clone(),
         };
         let agent_prompt = self.apply_skills(&typed);
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {

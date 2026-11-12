@@ -23,6 +23,7 @@ pub mod bot_overview;
 pub mod bot_sessions;
 pub mod bots;
 pub mod browser;
+pub mod browser_sign_in;
 pub mod chat_background;
 pub mod cli_import;
 pub mod commands;
@@ -67,6 +68,7 @@ mod tab_history;
 mod tab_scope;
 pub mod task_list;
 pub mod thread_state;
+pub mod transfer;
 pub mod updater;
 pub mod usage;
 pub mod work_item_link;
@@ -353,7 +355,10 @@ pub struct BenCodeApp {
     /// Appearance › Theme, Color and Layout choices.
     pub appearance: crate::ui::appearance::AppearancePrefs,
     /// Appearance › Accent color: the custom colour picker is open.
-    pub accent_picker_open: bool,
+    /// The accent's custom colour picker is open, for whose colours.
+    pub(crate) accent_picker: Option<crate::ui::settings_appearance::ColorScope>,
+    /// The colours the palettes were last built from (`shown_colors`).
+    pub(crate) shown_colors: Option<(crate::ui::appearance::ThemeTint, Option<String>)>,
     /// Appearance › Chat background: the image as drawn behind the panes.
     pub chat_background: chat_background::ChatBackground,
     /// Each chat pane's place in the pane tree this frame, for the part of
@@ -585,14 +590,34 @@ impl BenCodeApp {
                 .iter()
                 .any(|bot| bot.session_id.as_deref() == Some(id))
         };
-        let tabs = crate::ui::layout::TabSet::with_sessions(
-            sessions
-                .iter()
-                // Nor is one left in the home folder (a Bot's that was).
-                .filter(|s| !is_bot_session(&s.id) && !is_home_path(&s.cwd))
-                .take(INITIAL_OPEN_TABS)
-                .map(|s| s.id.as_str()),
-        );
+        let openable = |s: &&SessionRow| !is_bot_session(&s.id) && !is_home_path(&s.cwd);
+        // The pinned tabs first, pinned again, if their threads are still
+        // here; the most recent thread stays the one in view.
+        let pinned: Vec<&str> = (saved.pinned_tabs.iter())
+            .filter_map(|id| sessions.iter().find(|s| s.id == *id))
+            .filter(openable)
+            .map(|s| s.id.as_str())
+            .collect();
+        let recent: Vec<&str> = (sessions.iter())
+            // Nor is one left in the home folder (a Bot's that was).
+            .filter(openable)
+            .take(INITIAL_OPEN_TABS)
+            .map(|s| s.id.as_str())
+            .filter(|id| !pinned.contains(id))
+            .collect();
+        let mut tabs =
+            crate::ui::layout::TabSet::with_sessions(pinned.iter().chain(&recent).copied());
+        for id in &pinned {
+            if let Some(tab) = tabs.tab_of(id).map(|tab| tab.id.clone()) {
+                tabs.set_pinned(&tab, true);
+            }
+        }
+        if let Some(tab) = (recent.first().or(pinned.first()))
+            .and_then(|id| tabs.tab_of(id))
+            .map(|tab| tab.id.clone())
+        {
+            tabs.activate(&tab);
+        }
         let selected_session_id = tabs.focused_session().map(str::to_string);
 
         // MonoCode paints known `@file` labels in the prompt.
@@ -727,7 +752,8 @@ impl BenCodeApp {
             cx.subscribe(
                 &prompt_input,
                 |this: &mut Self, _, event: &InputEvent, cx| match event {
-                    InputEvent::Submit => this.submit_prompt(cx),
+                    // Only ⌘↩ gets here: Enter is `handle_composer_key`'s.
+                    InputEvent::Submit => this.submit_prompt_queued(cx),
                     InputEvent::Changed => this.on_prompt_changed(cx),
                     InputEvent::Focus | InputEvent::Blur => {
                         this.prompt_focused = *event == InputEvent::Focus;
@@ -1458,7 +1484,8 @@ impl BenCodeApp {
             sidebar_opacity: crate::ui::glass::OPACITY_DEFAULT,
             settings_write: Default::default(),
             appearance: Default::default(),
-            accent_picker_open: false,
+            accent_picker: None,
+            shown_colors: None,
             chat_background: Default::default(),
             pane_rects: HashMap::new(),
             body_glass: true,
@@ -1588,6 +1615,10 @@ impl BenCodeApp {
         app.start_project_stats_poll(cx);
         app.start_session_age_tick(cx);
         app.start_reminder_poll(cx);
+        // Not while `db` is the in-memory fallback: it knows no thread.
+        if app.db_writer.is_some() {
+            app.db_write("sweep thread files", crate::thread_files::sweep);
+        }
         app.load_folder_members(cx);
         app.start_clock(cx);
         app.start_usage_clock(cx);
@@ -1785,6 +1816,7 @@ impl Render for BenCodeApp {
         // (`app/browser.rs`).
         let dialogs: Vec<AnyElement> = [
             any_elements(self.render_link_dialog(cx)),
+            any_elements(self.render_browser_sign_in(cx)),
             any_elements(self.render_session_dialog(cx)),
             any_elements(self.render_worktree_deletion(cx)),
             any_elements(self.render_account_removal(cx)),
@@ -1812,6 +1844,7 @@ impl Render for BenCodeApp {
             any_elements(self.render_bot_settings(cx)),
             any_elements(self.render_bot_dialogs(cx)),
             any_elements(self.render_bot_background_dialog(cx)),
+            any_elements(self.render_project_theme_dialog(cx)),
             any_elements(self.render_artifact_delete(cx)),
         ]
         .into_iter()
