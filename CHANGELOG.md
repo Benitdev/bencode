@@ -4,6 +4,32 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.45] - 2026-11-12
+
+- Claude no longer signs out after a stopped turn. Stopping an agent (or
+  quitting) killed it outright, and a kill while Claude Code was saving a
+  refreshed sign-in left the Keychain with a spent one. Agents now get two
+  seconds to wrap up, and quitting waits for them.
+- A Claude sign-in that Claude Code cleared from the Keychain shows
+  Sign in again, instead of an old credentials file promising a renewal.
+- Switching projects with colors of their own changes them at once: the
+  fade repainted the whole window, the longest thread included, on every
+  one of its frames.
+- A long select's filter is a real text field: an input method (Telex)
+  types into it, with a caret.
+- A pinned tab's card shows its project's figure, so two pins of one agent
+  are told apart.
+- The composer says when the next message goes to another agent with a
+  recap, before it is sent.
+- A terminal moved to a tab is back in its tab after a restart.
+- A pull request's hover card asks GitHub again 30 seconds after a failed
+  lookup, instead of showing the error until BenCode restarts.
+- `/commit` has an icon that reads at its size.
+- The braille spinner sits centred in its box.
+- GPU memory is given back only while BenCode is in the background, no
+  longer after two minutes without typing: the first frame after it draws
+  every glyph again, a hitch someone reading the window would see.
+
 ## [0.1.44] - 2026-11-06
 
 - A site in the browser that asks for a user name and password (a dev
