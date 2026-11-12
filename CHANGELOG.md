@@ -4,6 +4,12 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.46] - Unreleased
+
+- An Inbox item's properties use the room a wide window leaves on their
+  right, so long branch names fit, and labels there show in full instead
+  of being cut at a list row's width.
+
 ## [0.1.45] - 2026-11-12
 
 - Claude no longer signs out after a stopped turn. Stopping an agent (or

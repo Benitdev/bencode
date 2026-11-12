@@ -58,6 +58,8 @@ const MAIN_MAX: f32 = 1024.0;
 /// The main column's narrowest beside the properties; below it they
 /// stack under the actions.
 const MAIN_MIN: f32 = 560.0;
+/// The most the properties column grows into an empty margin.
+const PROPERTIES_GROW: f32 = 184.0;
 /// The compact bar's height over the list.
 const COMPACT_HEAD_HEIGHT: f32 = 44.0;
 
@@ -71,6 +73,14 @@ fn group(wide: bool) -> gpui::Div {
         .max_w(px(MAIN_MAX + room))
         .mx_auto()
         .pr(px(room))
+}
+
+/// How much wider than `PROPERTIES_WIDTH` the properties column grows
+/// into the margin right of it, in a detail `width` wide (at 100%, the
+/// scrollbar's gutter taken off): the whole margin, so long branch names
+/// and labels keep their room, up to `PROPERTIES_GROW`.
+fn properties_grow(width: f32) -> f32 {
+    ((width - MAIN_MAX - PROPERTIES_WIDTH) / 2.0).clamp(0.0, PROPERTIES_GROW)
 }
 
 /// Whether a detail `width` wide (at 100%) takes the properties as a
@@ -295,13 +305,15 @@ impl BenCodeApp {
         // the margins too; its rows and the bar keep to the main column,
         // and the properties sit over the list's right side, scrolling on
         // their own.
+        let gutter = crate::ui::scrollbar::gutter(state);
+        let grow = properties_grow(width - crate::ui::scale::logical(gutter));
         let properties = wide.then(|| {
             div()
                 .absolute()
                 .top_0()
                 .bottom_0()
                 .left_0()
-                .right(crate::ui::scrollbar::gutter(state))
+                .right(gutter)
                 .child(
                     div()
                         .w_full()
@@ -311,10 +323,13 @@ impl BenCodeApp {
                         .flex()
                         .justify_end()
                         .child(
+                            // Its left edge stays beside the main column;
+                            // its right reaches into the margin.
                             div()
                                 .id("inbox-properties")
                                 .flex_none()
-                                .w(px(PROPERTIES_WIDTH))
+                                .w(px(PROPERTIES_WIDTH + grow))
+                                .mr(px(-grow))
                                 .h_full()
                                 .overflow_y_scroll()
                                 .border_l_1()
@@ -1069,6 +1084,14 @@ mod tests {
         assert!(two_columns(1920.0 / 0.9 - 240.0 - 340.0));
         // 1280 points at 90%: stacked.
         assert!(!two_columns(1280.0 / 0.9 - 240.0 - 340.0));
+    }
+
+    #[test]
+    fn properties_grow_into_the_margin_right_of_them() {
+        assert_eq!(properties_grow(900.0), 0.0);
+        assert_eq!(properties_grow(MAIN_MAX + PROPERTIES_WIDTH), 0.0);
+        assert_eq!(properties_grow(MAIN_MAX + PROPERTIES_WIDTH + 200.0), 100.0);
+        assert_eq!(properties_grow(4000.0), PROPERTIES_GROW);
     }
 
     #[test]

@@ -207,14 +207,25 @@ pub fn label_color(value: &str) -> Option<gpui::Hsla> {
         .map(|rgb| gpui::rgb(rgb).into())
 }
 
-/// A small label chip (MonoCode `InboxMiniLabel`).
+/// A small label chip (MonoCode `InboxMiniLabel`), cut at 80 px for
+/// rows and cards.
 pub fn label_chip(label: &Label, cx: &gpui::App) -> impl IntoElement {
+    label_chip_within(label, px(80.0), cx)
+}
+
+/// A label chip no wider than `max` (a properties column gives it its
+/// whole width).
+pub fn label_chip_within(
+    label: &Label,
+    max: impl Into<gpui::Length> + Clone,
+    cx: &gpui::App,
+) -> impl IntoElement {
     let fg = cx.theme().colors.fg;
     div()
         .flex()
         .flex_none()
         .min_w_0()
-        .max_w(px(80.0))
+        .max_w(max)
         .items_center()
         .gap_1()
         .px_1p5()

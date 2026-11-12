@@ -19,7 +19,7 @@ use super::{DetailView, InboxState, short_key, status_mark, status_name};
 use crate::app::BenCodeApp;
 use crate::backlog::FieldChoice;
 use crate::github::{Kind, WorkItem};
-use crate::ui::composer::inbox_card::label_chip;
+use crate::ui::composer::inbox_card::label_chip_within;
 use crate::ui::rows::ListRow;
 use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
@@ -138,7 +138,7 @@ impl BenCodeApp {
             if item.labels.is_empty() {
                 none(cx)
             } else {
-                plain(cx).children(item.labels.iter().map(|l| label_chip(l, cx)))
+                plain(cx).children(item.labels.iter().map(|l| property_label(l, cx)))
             },
             cx,
         ));
@@ -410,7 +410,7 @@ fn backlog_kinds(
     let mut rows = vec![property(
         "Type",
         match kind {
-            Some(kind) => plain(cx).child(label_chip(kind, cx)),
+            Some(kind) => plain(cx).child(property_label(kind, cx)),
             None => none(cx),
         },
         cx,
@@ -425,12 +425,17 @@ fn backlog_kinds(
             if categories.is_empty() {
                 none(cx)
             } else {
-                plain(cx).children(categories.into_iter().map(|l| label_chip(l, cx)))
+                plain(cx).children(categories.into_iter().map(|l| property_label(l, cx)))
             },
             cx,
         ));
     }
     rows
+}
+
+/// A label as a property's value: as wide as the value's column.
+fn property_label(label: &crate::work_items::Label, cx: &gpui::App) -> impl IntoElement {
+    label_chip_within(label, gpui::relative(1.0), cx)
 }
 
 /// A pull request's head into its base, in code type.
