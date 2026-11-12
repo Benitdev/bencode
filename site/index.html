@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BenCode: every coding agent, one native window</title>
   <meta name="description" content="A native macOS app that runs Claude Code, Codex, Antigravity, Grok Build and OpenCode side by side, with your files, git, terminal and inbox around them. Free, open source, no Electron.">
-  <meta name="theme-color" content="#0b0908">
+  <meta name="theme-color" content="#0a0807">
   <link rel="canonical" href="https://benitdev.github.io/bencode/">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="apple-touch-icon" href="icon.png">
-  <link rel="preload" as="image" href="shots/hero.jpg" fetchpriority="high">
+  <link rel="preload" as="font" type="font/woff2" href="fonts/big-shoulders-display-800.woff2" crossorigin>
   <meta property="og:type" content="website">
   <meta property="og:title" content="BenCode: every coding agent, one native window">
   <meta property="og:description" content="See, approve and compare many coding agents at once in a native macOS app. Rust and GPUI, no Electron, no token cost of its own.">
@@ -18,553 +18,452 @@
   <meta name="twitter:card" content="summary_large_image">
   <script>document.documentElement.classList.add('js')</script>
   <style>
+    @font-face {
+      font-family: "Big Shoulders"; font-weight: 800; font-display: swap;
+      src: url(fonts/big-shoulders-display-800.woff2) format("woff2");
+    }
     :root {
-      --bg: #0b0908;
-      --raised: #141110;
-      --raised-2: #1c1816;
-      --line: rgba(255, 236, 220, .09);
-      --line-strong: rgba(255, 236, 220, .17);
-      --fg: #f6f1ec;
-      --muted: #ab9f96;
-      --subtle: #7d726a;
-      --ember: #ff6a1a;
-      --ember-hot: #ffa469;
-      --bronze: #d9b99f;
-      --waiting: #f7b955;
-      --done: #4fd18b;
-      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", Roboto, sans-serif;
+      --ink: #0a0807;
+      --ink-2: #151110;
+      --paper: #f3eadf;
+      --dim: #a59a8f;
+      --faint: #6f655c;
+      --rule: rgba(243, 234, 223, .16);
+      --ember: #ff4a00;
+      --hot: #ff7a1a;
+      --bronze: #d2ad93;
+      --amber: #ffb054;
+      --done: #57d38c;
+      --display: "Big Shoulders", "Arial Narrow", Impact, sans-serif;
+      --text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
       --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-      --page: min(1200px, 100% - 48px);
+      --gutter: clamp(18px, 3vw, 44px);
       color-scheme: dark;
     }
-    @media (max-width: 640px) { :root { --page: calc(100% - 36px); } }
-
     * { box-sizing: border-box; }
-    html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; scroll-padding-top: 76px; }
+    html { -webkit-text-size-adjust: 100%; }
     body {
-      margin: 0; background: var(--bg); color: var(--fg); overflow-x: clip;
-      font: 17px/1.55 var(--sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+      margin: 0; background: var(--ink); color: var(--paper); overflow-x: clip;
+      font: 18px/1.5 var(--text); -webkit-font-smoothing: antialiased;
     }
-    img { display: block; max-width: 100%; height: auto; }
+    img, canvas { display: block; max-width: 100%; }
+    img { height: auto; }
     a { color: inherit; }
-    :focus-visible { outline: 2px solid var(--ember-hot); outline-offset: 3px; border-radius: 6px; }
-    .page { width: var(--page); margin-inline: auto; }
-    .skip { position: absolute; left: -999px; top: 12px; z-index: 30; padding: 8px 14px; border-radius: 8px; background: var(--fg); color: var(--bg); }
-    .skip:focus { left: 12px; }
-    kbd {
-      font: 500 .82em/1 var(--mono); color: var(--fg); white-space: nowrap;
-      padding: .28em .5em; border-radius: 6px; background: var(--raised-2);
-      border: 1px solid var(--line-strong); border-bottom-width: 2px;
-    }
+    h1, h2, h3 { margin: 0; font-family: var(--display); font-weight: 800; text-transform: uppercase; }
+    :focus-visible { outline: 2px solid var(--hot); outline-offset: 3px; }
+    ::selection { background: var(--ember); color: var(--ink); }
+    .skip { position: absolute; left: -999px; top: 8px; z-index: 40; padding: 8px 12px; background: var(--paper); color: var(--ink); }
+    .skip:focus { left: 8px; }
+    kbd { font: 500 .86em/1 var(--mono); white-space: nowrap; color: var(--paper); }
 
-    /* Bar */
+    /* Bar: inverts over whatever passes under it */
     .bar {
-      position: sticky; top: 0; z-index: 20;
-      background: color-mix(in srgb, var(--bg) 76%, transparent);
-      -webkit-backdrop-filter: saturate(170%) blur(18px); backdrop-filter: saturate(170%) blur(18px);
-      border-bottom: 1px solid transparent; transition: border-color .25s;
+      position: fixed; z-index: 30; inset: 0 0 auto; display: flex; align-items: baseline; gap: 26px;
+      padding: 16px var(--gutter) 26px; color: var(--paper); pointer-events: none; transition: color .15s;
+      background: linear-gradient(180deg, rgba(10, 8, 7, .86) 45%, transparent);
     }
-    .bar.stuck { border-bottom-color: var(--line); }
-    .bar .page { display: flex; align-items: center; gap: 28px; height: 60px; }
-    .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; letter-spacing: -.015em; text-decoration: none; }
-    .brand img { width: 28px; height: 28px; }
-    .bar nav { display: flex; gap: 22px; margin-right: auto; }
-    .bar nav a { color: var(--muted); font-size: 14.5px; text-decoration: none; transition: color .15s; }
-    .bar nav a:hover { color: var(--fg); }
-    @media (max-width: 720px) { .bar nav { display: none; } .bar .brand { margin-right: auto; } }
+    .bar.on-ember { color: var(--ink); background: none; }
+    .bar a { pointer-events: auto; text-decoration: none; font-size: 15px; }
+    .bar a:hover { text-decoration: underline; text-underline-offset: 4px; }
+    .bar .mark { font: 800 25px/1 var(--display); letter-spacing: .01em; text-transform: uppercase; margin-right: auto; }
+    .bar .mark:hover { text-decoration: none; }
+    @media (max-width: 640px) { .bar a:not(.mark):not(:last-child) { display: none; } }
 
-    /* Buttons */
-    .btn {
-      display: inline-flex; align-items: center; justify-content: center; gap: 9px; height: 50px; padding: 0 24px;
-      border-radius: 13px; font-size: 16px; font-weight: 600; letter-spacing: -.01em; text-decoration: none; white-space: nowrap;
-      border: 1px solid var(--line-strong); background: rgba(255, 236, 220, .04);
-      transition: transform .16s, box-shadow .2s, background .2s, border-color .2s;
+    /* The button */
+    .get {
+      display: inline-flex; align-items: center; gap: 14px; padding: 15px 20px 14px; text-decoration: none;
+      font: 800 clamp(23px, 2vw, 28px)/1 var(--display); letter-spacing: .012em; text-transform: uppercase;
+      background: var(--ember); color: var(--ink); transition: background .12s, color .12s;
     }
-    .btn:hover { transform: translateY(-1px); background: rgba(255, 236, 220, .08); border-color: rgba(255, 236, 220, .28); }
-    .btn:active { transform: none; }
-    .btn svg { width: 18px; height: 18px; flex: none; }
-    .btn.ember {
-      color: #190800; border-color: transparent; background: linear-gradient(180deg, #ffa066, var(--ember) 72%);
-      box-shadow: 0 0 0 1px rgba(255, 130, 60, .5), 0 12px 36px -8px rgba(255, 106, 26, .7), inset 0 1px 0 rgba(255, 255, 255, .45);
-    }
-    .btn.ember:hover {
-      background: linear-gradient(180deg, #ffb07f, #ff7a30 72%);
-      box-shadow: 0 0 0 1px rgba(255, 150, 90, .6), 0 16px 48px -6px rgba(255, 106, 26, .9), inset 0 1px 0 rgba(255, 255, 255, .5);
-    }
-    .btn.small { height: 36px; padding: 0 14px; border-radius: 10px; font-size: 14px; }
-    .actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
-    .fine { margin: 18px 0 0; color: var(--subtle); font-size: 14px; }
-    .fine a { color: var(--bronze); text-underline-offset: 3px; text-decoration-color: rgba(217, 185, 159, .4); }
-    .fine a:hover { color: var(--fg); }
+    .get svg { width: 21px; height: 21px; }
+    .get:hover { background: var(--paper); }
+    .get:active { translate: 0 1px; }
+    .get.line { background: none; color: var(--paper); box-shadow: inset 0 0 0 2px var(--paper); }
+    .get.line:hover { background: var(--paper); color: var(--ink); }
 
-    /* Hero */
-    .hero { position: relative; padding: clamp(44px, 5vw, 64px) 0 0; text-align: center; isolation: isolate; }
-    .hero::before {
-      content: ""; position: absolute; z-index: -1; left: 50%; top: -60px; width: 1100px; height: 640px; max-width: 170vw; translate: -50% 0;
-      background: radial-gradient(closest-side, rgba(255, 106, 26, .2), rgba(255, 106, 26, .05) 58%, transparent);
+    /* Lines of display type rise out of their own mask */
+    .line-mask { display: block; overflow: hidden; padding-top: .06em; margin-top: -.06em; }
+    .line-mask > span { display: block; }
+    @media (prefers-reduced-motion: no-preference) {
+      .js .line-mask > span { translate: 0 108%; transition: translate 1s cubic-bezier(.16, 1, .3, 1); transition-delay: calc(var(--i, 0) * 85ms); }
+      .js .in .line-mask > span, .js .in.line-mask > span { translate: none; }
+      .js .fade { opacity: 0; transition: opacity .9s .25s; }
+      .js .fade.in, .js .in .fade { opacity: 1; }
     }
-    .hero-icon { width: 76px; height: 76px; margin: 0 auto 22px; filter: drop-shadow(0 12px 42px rgba(255, 106, 26, .55)); }
-    h1 {
-      margin: 0 auto; font-size: clamp(40px, 8.1vw, 100px); line-height: .98; letter-spacing: -.048em; font-weight: 700; text-wrap: balance;
-    }
-    h1 span {
-      display: block; padding-bottom: .08em; color: transparent; background: linear-gradient(180deg, #ffd0ae 8%, var(--ember) 92%);
-      -webkit-background-clip: text; background-clip: text; filter: drop-shadow(0 0 34px rgba(255, 106, 26, .4));
-    }
-    .lede { max-width: 690px; margin: 22px auto 32px; color: var(--muted); font-size: clamp(18px, 2vw, 21px); line-height: 1.45; letter-spacing: -.012em; text-wrap: pretty; }
-    .lede b { color: var(--fg); font-weight: 500; }
-    .agents { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 30px; margin: 34px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 15px; font-weight: 500; }
-    .agents li { display: flex; align-items: center; gap: 8px; }
 
-    /* A provider's logo, in the colour of the text around it */
-    .logo { display: inline-block; flex: none; width: 19px; height: 19px; background: currentColor; -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; }
-    .claude { --m: url(providers/claude.svg); }
-    .codex { --m: url(providers/codex.svg); }
-    .antigravity { --m: url(providers/antigravity.svg); }
-    .grok { --m: url(providers/grok.svg); }
+    /* Hero: the icon's sign, lit by a shader */
+    .hero { position: relative; min-height: 100svh; display: flex; flex-direction: column; justify-content: flex-end; padding: 74px var(--gutter) 26px; overflow: clip; isolation: isolate; }
+    #sign { position: absolute; z-index: -1; inset: 0; width: 100%; height: 100%; }
+    .sign-fallback { position: absolute; z-index: -2; right: 2vw; top: 50%; translate: 0 -50%; width: min(70vh, 56vw); }
+    .js .sign-on .sign-fallback { display: none; }
+    h1 { font-size: clamp(66px, 13.2vw, 262px); line-height: .885; letter-spacing: -.008em; margin-left: -.02em; }
+        .hero-foot { display: grid; grid-template-columns: minmax(0, 620px) auto auto; justify-content: space-between; gap: 20px 36px; align-items: end; margin-top: clamp(20px, 3vh, 36px); }
+    .hero-foot p { margin: 0; font-size: clamp(17px, 1.5vw, 21px); line-height: 1.36; letter-spacing: -.012em; }
+    .hero-get { display: flex; flex-wrap: wrap; gap: 8px; }
+    .readout { justify-self: end; text-align: right; white-space: nowrap; font: 12.5px/1.5 var(--mono); color: var(--dim); }
+    .readout a { color: var(--paper); }
+    @media (max-width: 1040px) {
+      .hero-foot { grid-template-columns: minmax(0, 1fr); }
+      .readout { justify-self: start; text-align: left; }
+    }
+
+    /* The strip of agents */
+    .strip { overflow: hidden; border-block: 2px solid var(--paper); background: var(--ink); }
+    .strip ul { display: flex; width: max-content; margin: 0; padding: 0; list-style: none; will-change: transform; }
+    .strip li { display: flex; align-items: center; gap: .32em; padding: .1em .55em .08em; font: 800 clamp(44px, 6.4vw, 104px)/1 var(--display); text-transform: uppercase; white-space: nowrap; }
+    .logo { display: inline-block; flex: none; width: .72em; height: .72em; background: var(--ember); -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; }
+    .claude { --m: url(providers/claude.svg); } .codex { --m: url(providers/codex.svg); }
+    .antigravity { --m: url(providers/antigravity.svg); } .grok { --m: url(providers/grok.svg); }
     .opencode { --m: url(providers/opencode.svg); }
 
-    /* A picture of the window. The pictures are drawn off screen, so the
-       traffic lights are added here, where the app leaves room for them. */
-    .frame {
-      position: relative; container-type: inline-size; border-radius: clamp(8px, 1vw, 14px); overflow: hidden; background: #171717;
-      box-shadow: 0 0 0 1px rgba(255, 236, 220, .13), 0 40px 90px -30px rgba(0, 0, 0, .95);
+    /* The floor: agents at work, in the figures the app gives them */
+    .floor { padding: clamp(70px, 10vw, 140px) 0 0; }
+    .floor-head { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: 20px 40px; align-items: end; padding-inline: var(--gutter); }
+    @media (max-width: 860px) { .floor-head { grid-template-columns: minmax(0, 1fr); } }
+    h2 { font-size: clamp(54px, 9.4vw, 170px); line-height: .88; letter-spacing: -.004em; }
+    h2 b { font-weight: inherit; color: var(--ember); }
+    .floor-head p { margin: 0; color: var(--dim); }
+    .crew {
+      display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: clamp(32px, 5vw, 64px); padding-inline: var(--gutter);
+      overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity;
     }
-    .frame img { width: 100%; }
-    .frame::before {
-      content: ""; position: absolute; left: 1.2cqw; top: 1.35cqw; width: .85cqw; height: .85cqw; translate: 0 -50%; border-radius: 50%;
+    @media (max-width: 1000px) { .crew { grid-template-columns: repeat(5, minmax(246px, 1fr)); } }
+    .hand { position: relative; padding: 0 16px 26px; scroll-snap-align: center; border-left: 1px solid var(--rule); min-height: 420px; }
+    .hand:first-child { border-left: 0; padding-left: 0; }
+    .hand canvas { width: 100%; max-width: 208px; aspect-ratio: 1 / 1.22; image-rendering: pixelated; margin: 0 auto 0 0; }
+    .ground { height: 2px; margin: 0 -16px 14px; background: var(--paper); }
+    .hand:first-child .ground { margin-left: 0; }
+    .hand .who { display: flex; align-items: center; gap: 7px; font: 13px/1.3 var(--mono); color: var(--dim); }
+    .hand .who .logo { width: 14px; height: 14px; background: var(--bronze); }
+    .hand .who span:last-child { margin-left: auto; font-variant-numeric: tabular-nums; }
+    .hand h3 { margin-top: 8px; font: 600 17px/1.25 var(--text); text-transform: none; letter-spacing: -.012em; min-height: 2.5em; }
+    .hand .now { margin: 8px 0 0; font: 13px/1.4 var(--mono); color: var(--dim); overflow-wrap: anywhere; min-height: 2.8em; }
+    .hand.wait .now { color: var(--hot); }
+    .hand.done .now { color: var(--done); }
+    .answer { display: flex; gap: 6px; margin-top: 10px; height: 38px; }
+    .answer[hidden] { display: flex; visibility: hidden; }
+    .answer button { flex: 1; font: 800 20px/1 var(--display); text-transform: uppercase; letter-spacing: .012em; border: 0; cursor: pointer; color: var(--paper); background: none; box-shadow: inset 0 0 0 2px var(--rule); transition: background .1s, color .1s; }
+    .answer button:hover { box-shadow: inset 0 0 0 2px var(--paper); }
+    .answer .yes { background: var(--ember); color: var(--ink); box-shadow: none; }
+    .answer .yes:hover { background: var(--paper); box-shadow: none; }
+
+    /* The camera. Without it (narrow, Reduce Motion, no script) the steps stack. */
+    .camera { padding: clamp(70px, 10vw, 130px) var(--gutter) 0; }
+    .camera ol { margin: 0; padding: 0; list-style: none; }
+    .step { margin-bottom: 72px; }
+    .step h3 { font-size: clamp(42px, 4.6vw, 84px); line-height: .92; }
+    .step p { margin: 14px 0 0; color: var(--dim); max-width: 44ch; text-wrap: pretty; }
+    .step .keys { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 14px; font-size: 14px; color: var(--dim); }
+    .step .keys kbd { color: var(--hot); margin-right: 3px; }
+    .step .no { display: block; margin-bottom: 12px; font: 13px/1 var(--mono); color: var(--hot); }
+    .shot { position: relative; margin-top: 22px; overflow: hidden; border-radius: 10px; box-shadow: 0 0 0 1px var(--rule); background: #171717; container-type: inline-size; }
+    .shot img { width: 100%; }
+    .shot::before {
+      content: ""; position: absolute; z-index: 1; left: 1.2cqw; top: 1.35cqw; width: .85cqw; height: .85cqw; translate: 0 -50%; border-radius: 50%;
       background: #ff5f57; box-shadow: 1.35cqw 0 #febc2e, 2.7cqw 0 #28c840;
     }
-    .stage { position: relative; margin-top: clamp(36px, 4vw, 52px); perspective: 1600px; }
-    .stage::before {
-      content: ""; position: absolute; z-index: -1; inset: 6% -7% -9%; border-radius: 50%; filter: blur(60px);
-      background: radial-gradient(closest-side, rgba(255, 106, 26, .36), transparent);
+    .spot { display: none; }
+    .cam .camera { padding: 0; height: calc(var(--steps) * 112vh); margin-top: clamp(60px, 8vw, 110px); }
+    .cam .cam-stage { position: sticky; top: 0; height: 100vh; overflow: hidden; background: #060504; border-block: 2px solid var(--paper); }
+    .cam .camera ol { position: absolute; inset: 0; }
+    .cam .step { position: absolute; inset: 0; margin: 0; visibility: hidden; }
+    .cam .step-copy {
+      position: absolute; z-index: 2; left: 0; top: 0; bottom: 0; width: var(--copy); padding: 0 clamp(20px, 2.4vw, 40px) clamp(30px, 6vh, 64px) var(--gutter);
+      display: flex; flex-direction: column; justify-content: flex-end; background: linear-gradient(90deg, #060504 88%, transparent);
     }
+    .cam .shot { position: absolute; z-index: 1; left: 0; top: 0; margin: 0; transform-origin: 0 0; will-change: transform; box-shadow: 0 0 0 1px rgba(243, 234, 223, .26), 0 40px 120px #000; }
+    .cam .spot { display: block; position: absolute; z-index: 2; outline: 3px solid var(--ember); outline-offset: 0; box-shadow: 0 0 0 2000px rgba(4, 3, 2, .62); pointer-events: none; }
+    .ticks { display: none; }
+    .cam .ticks { display: flex; position: absolute; z-index: 3; left: var(--gutter); top: 76px; gap: 4px; margin: 0; padding: 0; list-style: none; }
+    .ticks a { display: block; width: 28px; height: 16px; position: relative; }
+    .ticks a::after { content: ""; position: absolute; inset: 7px 0; background: var(--rule); transition: background .15s; }
+    .ticks a:hover::after { background: var(--paper); }
+    .ticks a.on::after { background: var(--ember); }
+
+    /* And the rest, in words */
+    .also { padding: clamp(70px, 10vw, 130px) var(--gutter); }
+    .also p { margin: 0; max-width: 1240px; font: 500 clamp(25px, 3.5vw, 54px)/1.14 var(--text); letter-spacing: -.028em; color: var(--faint); text-wrap: pretty; }
+    .also b { font-weight: 500; color: var(--paper); }
+    .also kbd { font-size: .62em; color: var(--hot); vertical-align: .12em; }
+
+    /* The poster */
+    .poster { background: var(--ember); color: var(--ink); padding: clamp(60px, 8vw, 110px) var(--gutter); }
     @supports (animation-timeline: view()) {
-      @media (min-width: 900px) and (prefers-reduced-motion: no-preference) {
-        .stage .frame { transform-origin: 50% 100%; animation: settle linear both; animation-timeline: view(); animation-range: entry 35% cover 42%; }
-        @keyframes settle { from { transform: rotateX(13deg) scale(.965); } to { transform: none; } }
+      @media (prefers-reduced-motion: no-preference) {
+        .poster { animation: open linear both; animation-timeline: view(); animation-range: entry 0% entry 62%; }
+        @keyframes open { from { clip-path: inset(9% 7%); } to { clip-path: inset(0); } }
       }
     }
+    .poster-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 40px clamp(30px, 5vw, 80px); align-items: end; }
+    @media (max-width: 960px) { .poster-grid { grid-template-columns: minmax(0, 1fr); } }
+    .poster h2 { font-size: clamp(30px, 3.6vw, 60px); margin-bottom: 14px; }
+    .gone { margin: 0; padding: 0; list-style: none; font: 800 clamp(58px, 10.2vw, 186px)/.9 var(--display); text-transform: uppercase; }
+    .gone li { position: relative; width: fit-content; }
+    .gone li::after { content: ""; position: absolute; left: -.04em; right: -.04em; top: 50%; height: .085em; background: var(--ink); transform-origin: 0 50%; }
+    @media (prefers-reduced-motion: no-preference) {
+      .js .gone li::after { scale: 0 1; transition: scale .75s cubic-bezier(.7, 0, .2, 1); transition-delay: calc(var(--i) * 120ms + .25s); }
+      .js .gone.in li::after { scale: 1 1; }
+    }
+    .spec { margin: 0; font-size: 16px; }
+    .spec div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 12px; padding: 9px 0 8px; border-top: 2px solid var(--ink); }
+    .spec dt { font-weight: 650; }
+    .spec dd { margin: 0; font-variant-numeric: tabular-nums; }
+    .spec a { text-underline-offset: 3px; }
 
-    /* Sections */
-    section.part { padding-block: clamp(84px, 11vw, 150px); }
-    .eyebrow { margin: 0 0 14px; font: 500 13px/1 var(--mono); color: var(--ember-hot); letter-spacing: .01em; }
-    h2 { margin: 0; font-size: clamp(33px, 5vw, 58px); line-height: 1.04; letter-spacing: -.038em; font-weight: 680; text-wrap: balance; }
-    h3 { margin: 0; letter-spacing: -.02em; }
-    .sub { margin: 18px 0 0; color: var(--muted); font-size: clamp(17px, 1.6vw, 19px); line-height: 1.5; letter-spacing: -.008em; text-wrap: pretty; }
-    .center { text-align: center; }
-    .center .sub { max-width: 640px; margin-inline: auto; }
+    /* Keys */
+    .keysband { padding: clamp(70px, 10vw, 130px) var(--gutter) 0; }
+    .caps { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px; margin: clamp(28px, 4vw, 48px) 0 0; padding: 0; list-style: none; }
+    @media (max-width: 900px) { .caps { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+    .caps li { font-size: 14px; color: var(--dim); line-height: 1.25; }
+    .cap {
+      display: flex; align-items: flex-end; justify-content: flex-end; aspect-ratio: 1; margin-bottom: 11px; padding: 10%; border-radius: 9%;
+      font: 500 clamp(18px, 2.7vw, 40px)/1 var(--text); color: var(--paper);
+      background: linear-gradient(180deg, #2a2523, #1c1817); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .13), inset 0 -3px 0 rgba(0, 0, 0, .4), 0 7px 0 #060504, 0 8px 0 rgba(243, 234, 223, .12);
+      transition: translate .07s, box-shadow .07s, color .07s;
+    }
+    .caps li:hover .cap, .cap.hit { translate: 0 5px; color: var(--hot); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .13), inset 0 -2px 0 rgba(0, 0, 0, .4), 0 2px 0 #060504, 0 3px 0 rgba(243, 234, 223, .12), 0 0 34px -6px var(--ember); }
 
-    /* The Agents section, working */
-    .control { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 470px); gap: clamp(40px, 7vw, 96px); align-items: center; }
-    @media (max-width: 900px) { .control { grid-template-columns: minmax(0, 1fr); } }
-    .saves { margin: 26px 0 0; padding: 0; list-style: none; color: var(--muted); }
-    .saves li { padding: 13px 0; border-top: 1px solid var(--line); }
-    .saves b { color: var(--fg); font-weight: 550; }
-    .panel {
-      position: relative; padding: 14px; border-radius: 18px; background: #181513; isolation: isolate;
-      box-shadow: 0 0 0 1px var(--line-strong), 0 30px 80px -30px #000, 0 0 90px -30px rgba(255, 106, 26, .45);
-    }
-    .panel-head { display: flex; align-items: center; gap: 8px; padding: 4px 8px 12px; color: var(--muted); font-size: 14px; }
-    .panel-head .n { margin-left: auto; color: var(--subtle); font-variant-numeric: tabular-nums; }
-    .badge { padding: 2px 8px; border-radius: 7px; font-size: 12.5px; font-weight: 550; color: var(--waiting); background: rgba(247, 185, 85, .13); }
-    .badge[hidden] { display: none; }
-    .rows { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; align-content: start; }
-    .js .rows { min-height: 348px; }
-    .row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 1px 10px; padding: 10px; border-radius: 11px; font-size: 14.5px; transition: background .25s; }
-    .row.wait { background: rgba(247, 185, 85, .08); box-shadow: inset 0 0 0 1px rgba(247, 185, 85, .13); }
-    .row .logo { width: 17px; height: 17px; margin-top: 3px; color: var(--bronze); }
-    .row b { font-weight: 570; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .row time { color: var(--subtle); font-size: 12.5px; font-variant-numeric: tabular-nums; align-self: center; }
-    .row .what { grid-column: 2; display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; color: var(--muted); }
-    .row .what span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .row .where { font-size: 12.5px; color: var(--subtle); align-self: center; }
-    .row.wait .what { color: var(--waiting); font-family: var(--mono); font-size: 12.5px; }
-    .row.done .what { color: var(--done); }
-    .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ember); animation: pulse 1.3s ease-in-out infinite; }
-    .row.wait .dot { background: var(--waiting); animation: none; }
-    .row.done .dot { background: var(--done); animation: none; }
-    @keyframes pulse { 50% { opacity: .3; } }
-    .choice { grid-column: 2 / -1; display: flex; gap: 6px; margin-top: 8px; }
-    .choice button {
-      font: 550 13.5px/1 var(--sans); height: 30px; padding: 0 13px; border-radius: 8px; cursor: pointer; color: var(--fg);
-      border: 0; background: rgba(255, 236, 220, .08); transition: background .15s, transform .1s;
-    }
-    .choice button:hover { background: rgba(255, 236, 220, .15); }
-    .choice button:active { transform: scale(.97); }
-    .choice .allow { color: #190800; background: var(--ember); }
-    .choice .allow:hover { background: #ff7f3b; }
-    .panel-note { display: none; margin: 10px 8px 2px; font-size: 13px; color: var(--subtle); }
-    .js .panel-note { display: block; }
-
-    /* The showcase: one window, big enough to read, a tab for each part */
-    .tabs { display: none; }
-    .js .tabs {
-      display: flex; gap: 4px; margin: clamp(32px, 4vw, 48px) 0 28px; padding: 5px; width: fit-content; max-width: 100%;
-      overflow-x: auto; scrollbar-width: none; border-radius: 14px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--line);
-    }
-    .tabs button {
-      flex: none; height: 38px; padding: 0 15px; border: 0; border-radius: 10px; background: none; cursor: pointer; color: var(--muted);
-      font: 550 14.5px/1 var(--sans); letter-spacing: -.01em; transition: color .15s, background .15s;
-    }
-    .tabs button:hover { color: var(--fg); }
-    .tabs button[aria-selected="true"] { color: var(--fg); background: rgba(255, 236, 220, .11); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07); }
-    .tabs button:focus-visible { outline-offset: -2px; }
-    .show { margin-top: 56px; }
-    .js .shows { display: grid; }
-    .js .show { grid-area: 1 / 1; margin: 0; opacity: 0; visibility: hidden; transition: opacity .28s, visibility .28s; }
-    .js .show.on { opacity: 1; visibility: visible; }
-    .show-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px clamp(32px, 6vw, 80px); align-items: start; margin-bottom: 30px; }
-    @media (max-width: 820px) { .show-head { grid-template-columns: minmax(0, 1fr); } }
-    .show-head h3 { font-size: clamp(27px, 3.2vw, 38px); line-height: 1.08; letter-spacing: -.032em; font-weight: 660; text-wrap: balance; }
-    .show-head p { margin: 0; color: var(--muted); text-wrap: pretty; }
-    .keys { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 14px; font-size: 14px; color: var(--subtle); }
-
-    /* The rest, ruled rather than boxed */
-    .more { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: clamp(40px, 5vw, 64px); border-top: 1px solid var(--line); }
-    .more article { padding: 26px 28px 30px 0; border-bottom: 1px solid var(--line); }
-    .more article:not(:nth-child(3n + 1)) { padding-left: 28px; border-left: 1px solid var(--line); }
-    @media (max-width: 860px) {
-      .more { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .more article:nth-child(n) { padding-left: 0; border-left: 0; }
-      .more article:nth-child(even) { padding-left: 24px; border-left: 1px solid var(--line); }
-    }
-    @media (max-width: 560px) {
-      .more { grid-template-columns: minmax(0, 1fr); }
-      .more article:nth-child(n) { padding: 22px 0; border-left: 0; }
-    }
-    .more h3 { font-size: 18px; font-weight: 620; }
-    .more p { margin: 7px 0 0; color: var(--muted); font-size: 15.5px; line-height: 1.5; text-wrap: pretty; }
-
-    /* Native */
-    .native { position: relative; border-block: 1px solid var(--line); background: linear-gradient(180deg, #120e0c, var(--bg)); }
-    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: clamp(44px, 6vw, 72px) 0 0; }
-    .stats div { padding: 4px 24px; border-left: 1px solid var(--line); text-align: left; }
-    .stats dd { margin: 0; font-size: clamp(38px, 5vw, 62px); line-height: 1.05; font-weight: 660; letter-spacing: -.045em; font-variant-numeric: tabular-nums; color: var(--ember-hot); }
-    .stats dd small { font-size: .48em; letter-spacing: -.02em; margin-left: .08em; }
-    .stats dt { margin-top: 8px; color: var(--muted); font-size: 15px; line-height: 1.4; }
-    .stats div { display: flex; flex-direction: column-reverse; justify-content: flex-end; }
-    @media (max-width: 760px) {
-      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 34px; }
-    }
-    .stats-note { margin: 28px 0 0; color: var(--subtle); font-size: 14px; }
-    .keyboard { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 26px; margin: clamp(52px, 7vw, 84px) 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 15px; }
-    .keyboard li { display: flex; align-items: center; gap: 9px; }
+    /* Releases */
+    .log { padding: clamp(70px, 10vw, 130px) var(--gutter) 0; }
+    .log ol { margin: clamp(26px, 4vw, 44px) 0 0; padding: 0; list-style: none; border-top: 2px solid var(--paper); }
+    .log li a { display: grid; grid-template-columns: 96px 90px minmax(0, 1fr); gap: 14px; padding: 13px 0 12px; border-bottom: 1px solid var(--rule); text-decoration: none; transition: padding .18s, color .12s; }
+    .log li a:hover { padding-left: 12px; color: var(--hot); }
+    .log li span { font: 14px/1.6 var(--mono); color: var(--dim); }
+    .log li a:hover span { color: inherit; }
+    @media (max-width: 620px) { .log li a { grid-template-columns: 70px minmax(0, 1fr); } .log .date { display: none; } }
 
     /* Install */
-    .install { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: clamp(36px, 6vw, 80px); margin-top: clamp(40px, 5vw, 60px); }
-    @media (max-width: 880px) { .install { grid-template-columns: minmax(0, 1fr); } }
-    .steps { margin: 0; padding: 0; list-style: none; counter-reset: step; }
-    .steps li { position: relative; padding: 0 0 30px 52px; counter-increment: step; }
-    .steps li::before {
-      content: counter(step); position: absolute; left: 0; top: -2px; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
-      font: 600 14px/1 var(--mono); color: var(--ember-hot); background: rgba(255, 106, 26, .11); box-shadow: inset 0 0 0 1px rgba(255, 106, 26, .35);
-    }
-    .steps li:not(:last-child)::after { content: ""; position: absolute; left: 15.5px; top: 36px; bottom: 4px; width: 1px; background: var(--line-strong); }
-    .steps h3 { font-size: 18px; font-weight: 620; }
-    .steps p { margin: 5px 0 0; color: var(--muted); font-size: 16px; }
-    .steps a, .need a, .faq a { color: var(--bronze); text-underline-offset: 3px; }
-    .steps a:hover, .need a:hover, .faq a:hover { color: var(--fg); }
-    .steps strong { color: var(--fg); font-weight: 550; }
-    .cmd { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 7px 7px 7px 14px; border-radius: 11px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--line); }
-    .cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font: 13px/1.6 var(--mono); color: var(--fg); scrollbar-width: none; }
-    .copy-btn { font: 500 13px/1 var(--sans); height: 29px; padding: 0 11px; border-radius: 7px; border: 0; color: var(--fg); background: rgba(255, 236, 220, .09); cursor: pointer; }
-    .copy-btn:hover { background: rgba(255, 236, 220, .16); }
-    .need h3 { font-size: 18px; font-weight: 620; margin-bottom: 8px; }
-    .need ul { margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 16px; }
-    .need li { padding: 11px 0; border-top: 1px solid var(--line); }
-    .need code { font: 13.5px var(--mono); color: var(--fg); }
+    .install { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 32px clamp(30px, 6vw, 90px); padding: clamp(70px, 10vw, 130px) var(--gutter); }
+    @media (max-width: 900px) { .install { grid-template-columns: minmax(0, 1fr); } }
+    .install ol { margin: 0; padding: 0; list-style: none; counter-reset: s; }
+    .install li { counter-increment: s; display: grid; grid-template-columns: 52px minmax(0, 1fr); padding: 15px 0 18px; border-top: 2px solid var(--paper); }
+    .install li::before { content: counter(s); font: 800 40px/.95 var(--display); color: var(--ember); }
+    .install h3 { font: 600 19px/1.3 var(--text); text-transform: none; letter-spacing: -.012em; }
+    .install p { margin: 4px 0 0; color: var(--dim); font-size: 16.5px; text-wrap: pretty; }
+    .install p a { color: var(--paper); text-underline-offset: 3px; }
+    .install strong { color: var(--paper); font-weight: 550; }
+    .install code { font: 14px var(--mono); color: var(--paper); }
+    .cmd { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 7px 7px 7px 12px; background: var(--ink-2); }
+    .cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font-size: 13px; scrollbar-width: none; }
+    .cmd button { font: 800 18px/1 var(--display); text-transform: uppercase; padding: 6px 11px 5px; border: 0; cursor: pointer; background: var(--paper); color: var(--ink); }
+    .cmd button:hover { background: var(--hot); }
 
-    /* Questions */
-    .faq { max-width: 800px; margin: clamp(64px, 9vw, 110px) auto 0; }
-    .faq h3 { font-size: 26px; font-weight: 650; margin-bottom: 16px; letter-spacing: -.028em; }
-    .faq details { border-top: 1px solid var(--line); }
-    .faq details:last-child { border-bottom: 1px solid var(--line); }
-    .faq summary { display: flex; justify-content: space-between; gap: 18px; padding: 16px 0; font-weight: 550; cursor: pointer; list-style: none; }
-    .faq summary::-webkit-details-marker { display: none; }
-    .faq summary::after { content: "+"; color: var(--subtle); font: 400 21px/1 var(--mono); transition: rotate .2s; }
-    .faq details[open] summary::after { rotate: 45deg; }
-    .faq p { margin: -4px 0 18px; color: var(--muted); max-width: 68ch; text-wrap: pretty; }
-
-    /* Close */
-    .close { position: relative; padding-block: clamp(90px, 12vw, 160px); text-align: center; overflow: clip; isolation: isolate; }
-    .close::before {
-      content: ""; position: absolute; z-index: -1; left: 50%; bottom: -320px; width: 1100px; height: 640px; max-width: 170vw; translate: -50% 0;
-      background: radial-gradient(closest-side, rgba(255, 106, 26, .3), transparent);
-    }
-    .close img { width: 76px; height: 76px; margin: 0 auto 24px; filter: drop-shadow(0 10px 36px rgba(255, 106, 26, .6)); }
-    .close .actions { margin-top: 32px; }
-
-    footer { border-top: 1px solid var(--line); padding: 26px 0 40px; color: var(--subtle); font-size: 14px; }
-    footer .page { display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between; }
-    footer nav { display: flex; flex-wrap: wrap; gap: 8px 22px; }
-    footer a { text-decoration: none; }
-    footer a:hover { color: var(--fg); }
-
-    /* Reveal on scroll, only where the script runs to undo it */
-    @media (prefers-reduced-motion: no-preference) {
-      .js .reveal { opacity: 0; translate: 0 22px; transition: opacity .7s cubic-bezier(.2, .7, .2, 1), translate .7s cubic-bezier(.2, .7, .2, 1); }
-      .js .reveal.in { opacity: 1; translate: none; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      html { scroll-behavior: auto; }
-      .js .show { transition: none; }
-      .dot { animation: none; }
-      .btn, .row { transition: none; }
-    }
+    /* The end */
+    .end { position: relative; overflow: clip; border-top: 2px solid var(--paper); }
+    .end-get { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 22px var(--gutter) 0; }
+    .end-get span { margin-left: auto; color: var(--dim); font-size: 15px; }
+    #runner { width: 100%; height: 76px; margin-top: 18px; image-rendering: pixelated; }
+    .giant { display: block; margin: 0; padding: 0 0 .03em; text-align: center; font: 800 31.4vw/.72 var(--display); text-transform: uppercase; color: var(--ember); white-space: nowrap; user-select: none; }
+    .end-foot { display: flex; flex-wrap: wrap; gap: 6px 22px; justify-content: space-between; padding: 16px var(--gutter) 22px; background: var(--ember); color: var(--ink); font-size: 14.5px; }
+    .end-foot nav { display: flex; flex-wrap: wrap; gap: 6px 20px; }
+    .end-foot a { text-underline-offset: 3px; }
   </style>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
-  <header class="bar" id="bar">
-    <div class="page">
-      <a class="brand" href="#main"><img src="icon.svg" alt="" width="28" height="28">BenCode</a>
-      <nav aria-label="Main">
-        <a href="#agents">Agents</a>
-        <a href="#features">Features</a>
-        <a href="#native">Native</a>
-        <a href="#install">Install</a>
-        <a href="https://github.com/Benitdev/bencode">GitHub</a>
-      </nav>
-      <a class="btn ember small" href="#install">Download</a>
-    </div>
+  <header class="bar">
+    <a class="mark" href="#main">BenCode</a>
+    <a href="#floor">Agents</a>
+    <a href="#camera">The window</a>
+    <a href="#native">Native</a>
+    <a href="https://github.com/Benitdev/bencode">GitHub</a>
+    <a href="#install">Download</a>
   </header>
 
   <main id="main">
-    <section class="hero">
-      <div class="page">
-        <img class="hero-icon" src="icon.svg" alt="" width="76" height="76">
-        <h1>Every coding agent, <span>one native window.</span></h1>
-        <p class="lede">Run Claude Code, Codex, Antigravity, Grok Build and OpenCode side by side. <b>See, approve and compare them all</b>, with your files, git, terminal and inbox around them.</p>
-        <div class="actions">
-          <a class="btn ember" href="https://github.com/Benitdev/bencode/releases/latest/download/BenCode-arm64.dmg">
+    <section class="hero" id="hero">
+      <img class="sign-fallback" src="icon.svg" alt="" width="1024" height="1024">
+      <canvas id="sign" aria-hidden="true"></canvas>
+      <h1 class="now-in">
+        <span class="line-mask" style="--i:0"><span>Every coding</span></span>
+        <span class="line-mask" style="--i:1"><span>agent, one</span></span>
+        <span class="line-mask" style="--i:2"><span>native window.</span></span>
+      </h1>
+      <div class="hero-foot fade now-in">
+        <p>Run Claude Code, Codex, Antigravity, Grok Build and OpenCode side by side, with your files, git, terminal and inbox around them. Written in Rust, drawn by the GPU.</p>
+        <div class="hero-get">
+          <a class="get" href="https://github.com/Benitdev/bencode/releases/latest/download/BenCode-arm64.dmg">
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.37 12.6c-.02-2.3 1.88-3.4 1.97-3.46-1.07-1.57-2.74-1.78-3.33-1.8-1.42-.14-2.77.83-3.49.83-.72 0-1.83-.81-3.01-.79-1.55.02-2.98.9-3.78 2.29-1.61 2.8-.41 6.94 1.16 9.21.77 1.11 1.68 2.36 2.88 2.31 1.16-.05 1.59-.75 2.99-.75 1.4 0 1.79.75 3.01.72 1.24-.02 2.03-1.13 2.79-2.25.88-1.29 1.24-2.53 1.26-2.6-.03-.01-2.42-.93-2.45-3.71zM14.08 5.84c.64-.77 1.07-1.85.95-2.92-.92.04-2.03.61-2.69 1.38-.59.68-1.1 1.77-.97 2.82 1.03.08 2.07-.52 2.71-1.28z"/></svg>
-            Download for Apple Silicon
+            Apple Silicon
           </a>
-          <a class="btn" href="https://github.com/Benitdev/bencode">
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>
-            Source on GitHub
-          </a>
+          <a class="get line" href="https://github.com/Benitdev/bencode/releases/latest/download/BenCode-x86_64.dmg">Intel</a>
         </div>
-        <p class="fine"><span data-release>Free and open source</span> · macOS 11 or later · <a href="https://github.com/Benitdev/bencode/releases/latest/download/BenCode-x86_64.dmg">Intel build</a></p>
-        <ul class="agents" aria-label="Supported agents">
-          <li><i class="logo claude"></i>Claude Code</li>
-          <li><i class="logo codex"></i>Codex</li>
-          <li><i class="logo antigravity"></i>Antigravity</li>
-          <li><i class="logo grok"></i>Grok Build</li>
-          <li><i class="logo opencode"></i>OpenCode</li>
-        </ul>
-        <div class="stage">
-          <div class="frame"><img src="shots/hero.jpg" width="2000" height="1250" fetchpriority="high" alt="BenCode's window: the navigator and the Agents section on the left, a Claude Code thread in the middle, and Changes with the commit graph on the right"></div>
+        <div class="readout">
+          <span data-release>Free, open source</span>, macOS 11+<br>
+          <span id="fps">This sign is lit by your GPU</span><br>
+          <a href="https://github.com/Benitdev/bencode">Source on GitHub</a>
         </div>
       </div>
     </section>
 
-    <section class="part" id="agents">
-      <div class="page control">
-        <div class="reveal">
-          <p class="eyebrow">&gt;_ many agents, one person</p>
-          <h2>Five agents working. You, in one place.</h2>
-          <p class="sub">The Agents section follows every turn in flight across your projects, and puts those waiting on you first. Nothing to hunt for across terminals.</p>
-          <ul class="saves">
-            <li><b>Allow or deny where you are.</b> A waiting command is answered in place, without leaving your thread.</li>
-            <li><b>Step through them.</b> <kbd>⌥⌘A</kbd> goes to the next agent, those waiting first.</li>
-            <li><b>Stay in control.</b> In Supervised mode, every write and command waits, with the exact path or line.</li>
+    <div class="strip" aria-label="Works with">
+      <ul id="strip">
+        <li><i class="logo claude"></i>Claude Code</li>
+        <li><i class="logo codex"></i>Codex</li>
+        <li><i class="logo antigravity"></i>Antigravity</li>
+        <li><i class="logo grok"></i>Grok Build</li>
+        <li><i class="logo opencode"></i>OpenCode</li>
+      </ul>
+    </div>
+
+    <section class="floor" id="floor">
+      <div class="floor-head">
+        <h2 class="watch" id="floor-title">
+          <span class="line-mask" style="--i:0"><span id="at-work">Five at work.</span></span>
+          <span class="line-mask" style="--i:1"><span><b id="need-you">One needs you.</b></span></span>
+        </h2>
+        <p class="fade watch">Each turn in flight, across every project, with the ones waiting on you first. Answer a command right here without leaving your thread, or step through them with <kbd>⌥⌘A</kbd>. These five are running a copy of it. Answer one.</p>
+      </div>
+      <div class="crew" id="crew"></div>
+      <noscript><p style="padding:0 var(--gutter)"><img src="shots/permissions.jpg" width="2600" height="1625" loading="lazy" alt="A waiting command with Allow and Deny, in the transcript and in the Agents section"></p></noscript>
+    </section>
+
+    <section class="camera" id="camera" aria-label="The window">
+      <div class="cam-stage">
+        <ul class="ticks" id="ticks" aria-hidden="true"></ul>
+        <ol id="steps">
+          <li class="step" data-rect="0,0,1,1">
+            <div class="step-copy">
+              <span class="no">01</span>
+              <h3>One window around all of it</h3>
+              <p>Threads and agents on the left, the chat in the middle, what changed on the right. No Electron under it.</p>
+            </div>
+            <div class="shot"><img src="shots/hero.jpg" width="2600" height="1625" loading="lazy" alt="BenCode's window: the navigator and the Agents section, a Claude Code thread, and Changes with the commit graph"><i class="spot"></i></div>
+          </li>
+          <li class="step" data-rect=".195,.04,.805,.96">
+            <div class="step-copy">
+              <span class="no">02</span>
+              <h3>Two agents, one question</h3>
+              <p>One thread per task, each with its own agent, model and permission mode. Split the chat and read the answers side by side.</p>
+              <div class="keys"><span><kbd>⌘D</kbd>split</span><span><kbd>⌘.</kbd>model</span></div>
+            </div>
+            <div class="shot"><img src="shots/side.jpg" width="2600" height="1625" loading="lazy" alt="A Claude Code thread and an Antigravity thread in two panes"><i class="spot"></i></div>
+          </li>
+          <li class="step" data-rect=".488,.045,.512,.53">
+            <div class="step-copy">
+              <span class="no">03</span>
+              <h3>See what that thread changed</h3>
+              <p>A turn that edits files ends with a card: Undo, Keep or Review. A pill asks the agent to commit its own files and leave yours alone.</p>
+            </div>
+            <div class="shot"><img src="shots/review.jpg" width="2600" height="1625" loading="lazy" alt="A file's changes beside the chat, with Changes and the commit graph"><i class="spot"></i></div>
+          </li>
+          <li class="step" data-rect=".43,.05,.57,.6">
+            <div class="step-copy">
+              <span class="no">04</span>
+              <h3>Ticket to agent, one key</h3>
+              <p>GitHub and Nulab Backlog in one list, with what needs you pinned on top. Send one issue, or several at once in their own worktrees.</p>
+              <div class="keys"><span><kbd>⌘↩</kbd>send</span><span><kbd>J K</kbd>move</span><span><kbd>T</kbd>translate</span></div>
+            </div>
+            <div class="shot"><img src="shots/inbox.jpg" width="2600" height="1625" loading="lazy" alt="The Inbox with issues and pull requests, one open with its properties and a translated description"><i class="spot"></i></div>
+          </li>
+          <li class="step" data-rect=".195,.62,.53,.38">
+            <div class="step-copy">
+              <span class="no">05</span>
+              <h3>Bots take the whole job</h3>
+              <p>Agents of your own, with a soul and a memory. A bot splits big work on a board, runs each task in its own session and reviews what comes back.</p>
+              <div class="keys"><span><kbd>⌥Space</kbd>its chat, over any app</span></div>
+            </div>
+            <div class="shot"><img src="shots/bots.jpg" width="2600" height="1625" loading="lazy" alt="A bot named Pip with its board, and a digest of commands waiting for approval"><i class="spot"></i></div>
+          </li>
+          <li class="step" data-rect=".39,.06,.61,.62">
+            <div class="step-copy">
+              <span class="no">06</span>
+              <h3>Work on a schedule</h3>
+              <p>Scheduled prompts, in the repository or a fresh worktree. The overview says what is running, what needs you and what comes next.</p>
+            </div>
+            <div class="shot"><img src="shots/automations.jpg" width="2600" height="1625" loading="lazy" alt="The Automations overview"><i class="spot"></i></div>
+          </li>
+          <li class="step" data-rect=".488,.045,.512,.5">
+            <div class="step-copy">
+              <span class="no">07</span>
+              <h3>A real editor beside it</h3>
+              <p>Go to Definition with no language server to feed, line blame and File History. It notices when an agent edits the file you have open.</p>
+              <div class="keys"><span><kbd>⌘P</kbd>go to file</span><span><kbd>F12</kbd>definition</span></div>
+            </div>
+            <div class="shot"><img src="shots/files.jpg" width="2600" height="1625" loading="lazy" alt="The Explorer and a TypeScript file open in the code editor"><i class="spot"></i></div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="also">
+      <p><b>Also in there:</b> stage, commit and push, with a commit graph and worktrees. <b>Terminals</b> that outlive a crash. An <b>in-app browser</b> agents can drive. <b>Other machines</b> over SSH, where a turn carries on when the connection drops. Several <b>Claude Code and Codex accounts</b>, with usage at a glance. <b>Notes</b> you can hand to any agent. <b>Sessions you already ran</b> in those CLIs, brought in as threads. And search over all of it, <kbd>⌘K</kbd>.</p>
+    </section>
+
+    <section class="poster" id="native">
+      <div class="poster-grid">
+        <div>
+          <h2>Not in the box</h2>
+          <ul class="gone watch" aria-label="What BenCode does not include">
+            <li style="--i:0">Electron</li>
+            <li style="--i:1">Chromium</li>
+            <li style="--i:2">A sign-up</li>
+            <li style="--i:3">An API key</li>
+            <li style="--i:4">A token bill</li>
           </ul>
         </div>
-        <div class="panel reveal" id="panel">
-          <div class="panel-head"><span>Agents</span><span class="badge" id="waiting" hidden></span><span class="n" id="count"></span></div>
-          <ul class="rows" id="rows" aria-live="polite"></ul>
-          <p class="panel-note">A working copy of the section. Go on, press Allow.</p>
-          <noscript><img src="shots/permissions.jpg" width="1600" height="1000" loading="lazy" alt="An Allow Bash prompt in the transcript, and the same command waiting in the Agents section"></noscript>
-        </div>
-      </div>
-    </section>
-
-    <section class="part" id="features" style="padding-top:0">
-      <div class="page">
-        <div class="reveal">
-          <p class="eyebrow">Everything around the agent</p>
-          <h2>The whole job, in the window it runs in.</h2>
-        </div>
-        <div class="tabs reveal" role="tablist" aria-label="Features" id="tabs">
-          <button type="button" role="tab" aria-controls="side-by-side" id="tab-side-by-side">Side by side</button>
-          <button type="button" role="tab" aria-controls="review" id="tab-review">Review</button>
-          <button type="button" role="tab" aria-controls="inbox" id="tab-inbox">Inbox</button>
-          <button type="button" role="tab" aria-controls="bots" id="tab-bots">Bots</button>
-          <button type="button" role="tab" aria-controls="automations" id="tab-automations">Automations</button>
-          <button type="button" role="tab" aria-controls="editor" id="tab-editor">Editor</button>
-          <button type="button" role="tab" aria-controls="notes" id="tab-notes">Notes</button>
-        </div>
-        <div class="shows reveal">
-          <article class="show" id="side-by-side" role="tabpanel" aria-label="Side by side">
-            <div class="show-head">
-              <h3>Compare answers without switching windows.</h3>
-              <div><p>One thread per task, each with its own agent, model, effort and permission mode. Split the chat, queue follow-ups, or hand a thread to another agent with the conversation in tow.</p>
-              <div class="keys"><span><kbd>⌘D</kbd> split</span><span><kbd>⌘.</kbd> switch model</span></div></div>
-            </div>
-            <div class="frame"><img src="shots/agents-side-by-side.jpg" width="1600" height="1000" loading="lazy" alt="A Claude Code thread and an Antigravity thread in two panes side by side"></div>
-          </article>
-          <article class="show" id="review" role="tabpanel" aria-label="Review">
-            <div class="show-head">
-              <h3>Every turn ends with a receipt.</h3>
-              <div><p>A turn that edits files ends with a card of what that thread changed, and only that thread. Undo it, Keep it, or Review it file by file, beside the chat. A pill asks the agent to commit just its own files, leaving yours alone.</p></div>
-            </div>
-            <div class="frame"><img src="shots/review.jpg" width="1600" height="1000" loading="lazy" alt="A review of a file's changes beside the chat, with Changes and the commit graph on the right"></div>
-          </article>
-          <article class="show" id="inbox" role="tabpanel" aria-label="Inbox">
-            <div class="show-head">
-              <h3>From ticket to agent in one key.</h3>
-              <div><p>GitHub issues and pull requests, Nulab Backlog issues, one list, and what needs you pinned on top. Send one to an agent, or several at once in their own worktrees. Each thread stays linked to its item and shows its state on the row.</p>
-              <div class="keys"><span><kbd>⌘↩</kbd> send to agent</span><span><kbd>J</kbd> <kbd>K</kbd> move</span><span><kbd>T</kbd> translate</span></div></div>
-            </div>
-            <div class="frame"><img src="shots/inbox.jpg" width="1600" height="1000" loading="lazy" alt="The Inbox with issues and pull requests, one open with its properties, linked threads and a translated description"></div>
-          </article>
-          <article class="show" id="bots" role="tabpanel" aria-label="Bots">
-            <div class="show-head">
-              <h3>Hand over the whole job, not the next step.</h3>
-              <div><p>Agents of your own, with a soul and a memory, that look after your projects. A bot splits big work on a board, runs each task in a session of its own and reviews what comes back. Habits run on schedule, and a digest lists what waits on you.</p>
-              <div class="keys"><span><kbd>⌥Space</kbd> its chat, over any app</span></div></div>
-            </div>
-            <div class="frame"><img src="shots/bots.jpg" width="1600" height="1000" loading="lazy" alt="A bot named Pip with its board, and a digest of commands waiting for approval above its composer"></div>
-          </article>
-          <article class="show" id="automations" role="tabpanel" aria-label="Automations">
-            <div class="show-head">
-              <h3>Work that runs on schedule, and reports back.</h3>
-              <div><p>Scheduled prompts, in the repository or a fresh worktree. An overview shows what is running, what needs you, recent results and what comes next. Skip one run, or pause everything until a date.</p></div>
-            </div>
-            <div class="frame"><img src="shots/automations.jpg" width="1600" height="1000" loading="lazy" alt="The Automations overview with running automations, what needs you and upcoming runs"></div>
-          </article>
-          <article class="show" id="editor" role="tabpanel" aria-label="Editor">
-            <div class="show-head">
-              <h3>A real editor, with no language server to feed.</h3>
-              <div><p>Go to Definition by searching your project, line blame, File History, and it notices when an agent edits the file you have open. An Explorer sits beside it, and the threads stay in view.</p>
-              <div class="keys"><span><kbd>⌘P</kbd> Go to File</span><span><kbd>F12</kbd> definition</span><span><kbd>⌥⌘H</kbd> history</span></div></div>
-            </div>
-            <div class="frame"><img src="shots/files.jpg" width="1600" height="1000" loading="lazy" alt="The Explorer and a TypeScript file open in the code editor beside a new thread"></div>
-          </article>
-          <article class="show" id="notes" role="tabpanel" aria-label="Notes">
-            <div class="show-head">
-              <h3>Context you can hand to any agent.</h3>
-              <div><p>Markdown notes with tags, a project, dropped images and autosave. Add to chat gives one to an agent as context, whichever agent that is.</p></div>
-            </div>
-            <div class="frame"><img src="shots/notes.jpg" width="1600" height="1000" loading="lazy" alt="A release plan note with tags, a checklist and a quote"></div>
-          </article>
-        </div>
-
-        <div class="more reveal">
-          <article><h3>Git, built in</h3><p>Stage, commit, pull, push, pull requests, a commit graph and worktrees, all beside the chat.</p></article>
-          <article><h3>Terminals that stay</h3><p>One dock per project, split side by side. Shells outlive an update's restart or a crash.</p></article>
-          <article><h3>In-app browser</h3><p>Pick an element or take a screenshot for the prompt. Agents can drive the page while a tab is open.</p></article>
-          <article><h3>Other machines</h3><p>Run agents on another Mac or Linux box over SSH. A turn carries on when the connection drops.</p></article>
-          <article><h3>Accounts and history</h3><p>Several Claude Code and Codex accounts, usage at a glance. Sessions you ran in those CLIs come in as threads you can resume.</p></article>
-          <article><h3>Search everything</h3><p>Threads, files and projects under <kbd>⌘K</kbd>, files by name under <kbd>⌘P</kbd>, text in files under <kbd>⇧⌘F</kbd>.</p></article>
-        </div>
-      </div>
-    </section>
-
-    <section class="part native" id="native">
-      <div class="page">
-        <div class="reveal" style="max-width:820px">
-          <p class="eyebrow">Why native</p>
-          <h2>Your agents are busy enough. The window shouldn't be.</h2>
-          <p class="sub">Rust and Zed's GPUI, drawn with Metal. No Electron, no Chromium. The only web views are the pages you open in the in-app browser and a bot's visual artifacts.</p>
-        </div>
-        <dl class="stats reveal">
-          <div><dt>download, <span data-tag>Apple Silicon</span></dt><dd><span data-size>15</span><small> MB</small></dd></div>
-          <div><dt>launch, the target</dt><dd>&lt;50<small> ms</small></dd></div>
-          <div><dt>of RAM, the target</dt><dd>~30<small> MB</small></dd></div>
-          <div><dt>API keys and tokens added. It runs the CLIs you are signed in to.</dt><dd>0</dd></div>
+        <dl class="spec">
+          <div><dt>Download</dt><dd><span data-size>15</span> MB, Apple Silicon</dd></div>
+          <div><dt>Launch</dt><dd>Under 50 ms is the target</dd></div>
+          <div><dt>Memory</dt><dd>About 30 MB is the target</dd></div>
+          <div><dt>Drawing</dt><dd>Rust and Zed's GPUI, on Metal</dd></div>
+          <div><dt>Web views</dt><dd>Only the pages in its browser tabs, and a bot's visual artifacts</dd></div>
+          <div><dt>Agents</dt><dd>The CLIs you are signed in to, over stdio</dd></div>
+          <div><dt>Your data</dt><dd>On your Mac, in BenCode's own folder</dd></div>
+          <div><dt>License</dt><dd><a href="https://github.com/Benitdev/bencode/blob/main/LICENSE">MIT</a></dd></div>
         </dl>
-        <p class="stats-note reveal">Threads, notes, checkpoints and account profiles stay on your Mac, in BenCode's own folder. MIT licensed.</p>
-        <ul class="keyboard reveal" aria-label="Keyboard shortcuts">
-          <li><kbd>⌘T</kbd> New thread</li>
-          <li><kbd>⌘K</kbd> Search</li>
-          <li><kbd>⌘P</kbd> Go to File</li>
-          <li><kbd>⌘.</kbd> Switch model</li>
-          <li><kbd>⌘D</kbd> Split</li>
-          <li><kbd>⌘J</kbd> Terminal</li>
-          <li><kbd>⌘I</kbd> Bot</li>
-          <li><kbd>⌥⌘A</kbd> Next agent</li>
-        </ul>
       </div>
     </section>
 
-    <section class="part" id="install">
-      <div class="page">
-        <div class="reveal">
-          <p class="eyebrow">Install</p>
-          <h2>Running in a minute.</h2>
-        </div>
-        <div class="install reveal">
-          <ol class="steps">
-            <li>
-              <h3>Download</h3>
-              <p><a href="https://github.com/Benitdev/bencode/releases/latest/download/BenCode-arm64.dmg">Apple Silicon</a> for M1 and later, or <a href="https://github.com/Benitdev/bencode/releases/latest/download/BenCode-x86_64.dmg">Intel</a>. Every build is on the <a href="https://github.com/Benitdev/bencode/releases">releases page</a>.</p>
-            </li>
-            <li>
-              <h3>Drag BenCode into Applications</h3>
-              <p>After that, it keeps itself up to date.</p>
-            </li>
-            <!-- While builds are not notarized by Apple (docs/releasing.md), macOS
-                 asks users to confirm the first launch. Remove this step once
-                 releases are signed with a Developer ID. -->
-            <li>
-              <h3>Confirm the first launch</h3>
-              <p>The build is not notarized by Apple yet. Open BenCode once, then choose <strong>System Settings › Privacy &amp; Security › Open Anyway</strong>. If macOS says the app is damaged, run:</p>
-              <div class="cmd"><code id="xattr">xattr -dr com.apple.quarantine /Applications/BenCode.app</code><button class="copy-btn" type="button" data-copy="xattr">Copy</button></div>
-            </li>
-          </ol>
-          <aside class="need">
-            <h3>You will need</h3>
-            <ul>
-              <li>macOS 11 or later</li>
-              <li><code>git</code> on your PATH</li>
-              <li>One agent CLI, installed and signed in: <code>claude</code>, <code>codex</code>, <code>agy</code>, <code>grok</code> or <code>opencode</code></li>
-              <li>Optional: <code>gh</code> for the Inbox and pull requests, <code>ssh</code> for other machines</li>
-            </ul>
-          </aside>
-        </div>
-
-        <div class="faq reveal">
-          <h3>Questions</h3>
-          <details>
-            <summary>What does it cost?</summary>
-            <p>BenCode is free and MIT licensed. It adds no API key and no hidden turn: agents run on your own sign-ins and plans. A few features, such as translating a ticket, spend a turn on a model you pick.</p>
-          </details>
-          <details>
-            <summary>Where does my data go?</summary>
-            <p>Threads, notes, checkpoints and account profiles live in <code style="font:14px var(--mono);color:var(--fg)">~/Library/Application Support/BenCode</code>. Each agent CLI talks to its own provider, as it does in your terminal.</p>
-          </details>
-          <details>
-            <summary>Does it run on Linux or Windows?</summary>
-            <p>The app is macOS only. Agents can run on another Mac or a Linux machine over SSH, with their threads shown in the app.</p>
-          </details>
-          <details>
-            <summary>Something went wrong. Now what?</summary>
-            <p><strong style="color:var(--fg);font-weight:550">Help › Show Logs</strong> opens the log, ready to attach to an <a href="https://github.com/Benitdev/bencode/issues">issue</a>.</p>
-          </details>
-        </div>
-      </div>
+    <section class="keysband" aria-label="Keyboard shortcuts">
+      <h2 class="watch"><span class="line-mask"><span>Every action is a key</span></span></h2>
+      <ul class="caps" id="caps">
+        <li><span class="cap">⌘T</span>New thread</li>
+        <li><span class="cap">⌘K</span>Search</li>
+        <li><span class="cap">⌘P</span>Go to file</li>
+        <li><span class="cap">⌘.</span>Switch model</li>
+        <li><span class="cap">⌘D</span>Split the pane</li>
+        <li><span class="cap">⌘J</span>Terminal</li>
+        <li><span class="cap">⌘I</span>Your bot</li>
+        <li><span class="cap">⌥⌘A</span>Next agent</li>
+      </ul>
     </section>
 
-    <section class="close">
-      <div class="page reveal">
-        <img src="icon.svg" alt="" width="76" height="76">
-        <h2>Bring your agents home.</h2>
-        <div class="actions">
-          <a class="btn ember" href="https://github.com/Benitdev/bencode/releases/latest/download/BenCode-arm64.dmg">Download for Apple Silicon</a>
-          <a class="btn" href="https://github.com/Benitdev/bencode/releases/latest/download/BenCode-x86_64.dmg">Intel</a>
-        </div>
-        <p class="fine"><span data-release>Free and open source</span> · macOS 11 or later</p>
-      </div>
+    <section class="log" aria-label="Recent releases">
+      <h2 class="watch"><span class="line-mask"><span>41 releases in its first month</span></span></h2>
+      <ol>
+        <li><a href="https://github.com/Benitdev/bencode/releases/tag/v0.1.41"><span>v0.1.41</span><span class="date">Oct 30</span>Projects wear figures, as bots do. One quieter fill for what is selected.</a></li>
+        <li><a href="https://github.com/Benitdev/bencode/releases/tag/v0.1.40"><span>v0.1.40</span><span class="date">Oct 30</span>Automations open on an overview. Skip a run, or pause them all until a date.</a></li>
+        <li><a href="https://github.com/Benitdev/bencode/releases/tag/v0.1.39"><span>v0.1.39</span><span class="date">Oct 29</span>Bots with figures and moods. ⌥Space brings one up over any app.</a></li>
+        <li><a href="https://github.com/Benitdev/bencode/releases/tag/v0.1.38"><span>v0.1.38</span><span class="date">Oct 29</span>The Inbox works from the keyboard. Review a pull request with an agent.</a></li>
+        <li><a href="https://github.com/Benitdev/bencode/releases/tag/v0.1.36"><span>v0.1.36</span><span class="date">Oct 27</span>A pill asks an agent to stage, commit or push only the files it changed.</a></li>
+      </ol>
+    </section>
+
+    <section class="install" id="install">
+      <h2 class="watch" style="font-size:clamp(54px,7.6vw,140px)"><span class="line-mask" style="--i:0"><span>Running in</span></span><span class="line-mask" style="--i:1"><span>a minute</span></span></h2>
+      <ol>
+        <li><div><h3>Download it</h3><p><a href="https://github.com/Benitdev/bencode/releases/latest/download/BenCode-arm64.dmg">Apple Silicon</a> for M1 and later, or <a href="https://github.com/Benitdev/bencode/releases/latest/download/BenCode-x86_64.dmg">Intel</a>. Then drag BenCode into Applications. It keeps itself up to date from there.</p></div></li>
+        <!-- While builds are not notarized by Apple (docs/releasing.md), macOS
+             asks users to confirm the first launch. Remove this step once
+             releases are signed with a Developer ID. -->
+        <li><div><h3>Confirm the first launch</h3><p>The build is not notarized by Apple yet. Open BenCode once, then choose <strong>System Settings › Privacy &amp; Security › Open Anyway</strong>. If macOS says the app is damaged, run:</p>
+          <div class="cmd"><code id="xattr">xattr -dr com.apple.quarantine /Applications/BenCode.app</code><button type="button" data-copy="xattr">Copy</button></div></div></li>
+        <li><div><h3>Bring an agent</h3><p>BenCode needs <code>git</code> and one CLI, installed and signed in: <code>claude</code>, <code>codex</code>, <code>agy</code>, <code>grok</code> or <code>opencode</code>. Add <code>gh</code> for the Inbox and pull requests. macOS 11 or later.</p></div></li>
+      </ol>
     </section>
   </main>
 
-  <footer>
-    <div class="page">
-      <span>BenCode · MIT License</span>
+  <footer class="end">
+    <div class="end-get">
+      <a class="get" href="https://github.com/Benitdev/bencode/releases/latest/download/BenCode-arm64.dmg">Download for Apple Silicon</a>
+      <a class="get line" href="https://github.com/Benitdev/bencode/releases/latest/download/BenCode-x86_64.dmg">Intel</a>
+      <span data-release>Free, open source</span>
+    </div>
+    <canvas id="runner" aria-hidden="true"></canvas>
+    <div class="giant" aria-hidden="true">BenCode</div>
+    <div class="end-foot">
+      <span>MIT License. Made with Rust and GPUI.</span>
       <nav aria-label="Footer">
         <a href="https://github.com/Benitdev/bencode">GitHub</a>
         <a href="https://github.com/Benitdev/bencode/releases">Releases</a>
@@ -576,218 +475,529 @@
 
   <script>
     const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+    const ease = (t) => t * t * (3 - 2 * t);
 
-    // The bar's rule shows once the page has scrolled.
-    const bar = document.getElementById('bar');
-    const onScroll = () => bar.classList.toggle('stuck', scrollY > 8);
-    addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
+    // Run `tick` only while `el` is on screen.
+    function whileSeen(el, onSeen, onGone) {
+      new IntersectionObserver(([e]) => (e.isIntersecting ? onSeen() : onGone())).observe(el);
+    }
 
-    const reveal = new IntersectionObserver((seen) => {
-      for (const entry of seen) {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('in');
-          reveal.unobserve(entry.target);
-        }
-      }
-    }, { rootMargin: '0px 0px -6% 0px' });
-    document.querySelectorAll('.reveal').forEach((el) => reveal.observe(el));
+    // The bar reads dark while the poster is under it.
+    {
+      const bar = document.querySelector('.bar');
+      new IntersectionObserver(([e]) => bar.classList.toggle('on-ember', e.isIntersecting), { rootMargin: '-20px 0px -96% 0px' }).observe(document.querySelector('.poster'));
+    }
+
+    // Reveals: display lines rise, once.
+    document.querySelectorAll('.now-in').forEach((el) => requestAnimationFrame(() => el.classList.add('in')));
+    const watcher = new IntersectionObserver((seen) => {
+      for (const e of seen) if (e.isIntersecting) { e.target.classList.add('in'); watcher.unobserve(e.target); }
+    }, { rootMargin: '0px 0px -8% 0px' });
+    document.querySelectorAll('.watch').forEach((el) => watcher.observe(el));
 
     // The latest release's version and size. Offline or rate-limited, the
     // static words stay.
     (async () => {
       try {
-        const res = await fetch('https://api.github.com/repos/Benitdev/bencode/releases/latest', {
-          headers: { Accept: 'application/vnd.github+json' },
-        });
+        const res = await fetch('https://api.github.com/repos/Benitdev/bencode/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
         if (!res.ok) return;
         const release = await res.json();
         const dmg = (release.assets || []).find((a) => a.name === 'BenCode-arm64.dmg');
         const mb = dmg && Math.round(dmg.size / 1048576);
-        document.querySelectorAll('[data-release]').forEach((el) => {
-          el.textContent = `Free · ${release.tag_name}${mb ? ` · ${mb} MB` : ''}`;
-        });
+        document.querySelectorAll('[data-release]').forEach((el) => { el.textContent = `Free, ${release.tag_name}${mb ? `, ${mb} MB` : ''}`; });
         if (mb) document.querySelectorAll('[data-size]').forEach((el) => { el.textContent = mb; });
-      } catch (err) {
-        // Keep what is there.
-      }
+      } catch (err) { /* keep what is there */ }
     })();
 
     document.querySelectorAll('[data-copy]').forEach((button) => {
       button.addEventListener('click', async () => {
-        const text = document.getElementById(button.dataset.copy).textContent;
         try {
-          await navigator.clipboard.writeText(text);
+          await navigator.clipboard.writeText(document.getElementById(button.dataset.copy).textContent);
           button.textContent = 'Copied';
-        } catch (err) {
-          button.textContent = 'Select it';
-        }
+        } catch (err) { button.textContent = 'Select it'; }
         setTimeout(() => { button.textContent = 'Copy'; }, 1600);
       });
     });
 
-    // The showcase's tabs; arrows move between them.
+    /* The sign. The app's icon as a shader: the same turned bronze B (the
+       geometry is packaging/macos/icon.mjs's) with its prompt in neon, lit
+       by where the pointer is. */
     (() => {
-      const tabs = [...document.querySelectorAll('#tabs [role=tab]')];
-      const pick = (tab, focus) => {
-        for (const other of tabs) {
-          const on = other === tab;
-          other.setAttribute('aria-selected', on);
-          other.tabIndex = on ? 0 : -1;
-          const show = document.getElementById(other.getAttribute('aria-controls'));
-          show.classList.toggle('on', on);
-          show.inert = !on;
-          if (on) show.querySelector('img').loading = 'eager';
-        }
-        // Keep it in its own strip, without moving the page.
-        const strip = tab.parentElement;
-        strip.scrollLeft = Math.max(0, tab.offsetLeft - (strip.clientWidth - tab.offsetWidth) / 2);
-        if (focus) tab.focus();
+      const canvas = document.getElementById('sign');
+      const gl = canvas.getContext('webgl', { antialias: false, alpha: false, powerPreference: 'low-power', preserveDrawingBuffer: calm });
+      if (!gl) { canvas.remove(); return; }
+      const vert = 'attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}';
+      const frag = `precision highp float;
+uniform vec2 res,ptr,centre;uniform float time,power,size;
+float box(vec2 p,vec2 a,vec2 b,float r){vec2 c=(a+b)*.5,h=(b-a)*.5-r,q=abs(p-c)-h;return length(max(q,0.))+min(max(q.x,q.y),0.)-r;}
+float bowl(vec2 p,float t,float b,float w){float r=(b-t)*.5;return min(max(box(p,vec2(358.,t),vec2(358.+w+200.,b),32.),p.x-358.-w),length(p-vec2(358.+w,(t+b)*.5))-r);}
+float shape(vec2 p){return min(bowl(p,276.,500.,160.),bowl(p,500.,748.,176.));}
+float seg(vec2 p,vec2 a,vec2 b){vec2 pa=p-a,ba=b-a;return length(pa-ba*clamp(dot(pa,ba)/dot(ba,ba),0.,1.));}
+float tubes(vec2 p){return min(min(seg(p,vec2(446.,344.),vec2(534.,388.)),seg(p,vec2(534.,388.),vec2(446.,432.))),seg(p,vec2(454.,658.),vec2(584.,658.)));}
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);}
+vec3 bronze(float x){x=clamp(x,0.,1.);
+vec3 a=vec3(.18,.137,.122),b=vec3(.416,.298,.243),c=vec3(.655,.486,.388),d=vec3(.863,.718,.612),e=vec3(.965,.894,.82);
+if(x<.3)return mix(a,b,x/.3);if(x<.55)return mix(b,c,(x-.3)/.25);if(x<.8)return mix(c,d,(x-.55)/.25);return mix(d,e,(x-.8)/.2);}
+void main(){
+vec2 fc=gl_FragCoord.xy;vec2 s=vec2(fc.x,res.y-fc.y);
+vec2 p=(s-centre)/size+vec2(512.);float px=1./size;
+float d=shape(p);float dn=tubes(p);
+vec3 ember=vec3(1.,.29,0.),hot=vec3(1.,.48,.1);
+vec2 lp=vec2(502.,512.)+ptr*vec2(520.,420.);
+vec3 wall=vec3(.04,.031,.027);
+float grain=noise(p*.018)*.5+noise(p*.07)*.3+noise(p*.31)*.2;
+wall*=.65+.75*grain;
+float halo=exp(-max(d,0.)/26.)*.62+exp(-max(d,0.)/120.)*.2;
+wall+=ember*halo*power;
+wall+=vec3(.05,.035,.03)*exp(-length(p-lp)/420.);
+vec3 col=wall;
+float inside=smoothstep(px,-px,d);
+vec2 c=vec2(502.,512.),q=p-c;float a=atan(q.y,q.x);
+float phase=.7+ptr.x*1.15+ptr.y*.35+sin(time*.21)*.1;
+float v=.5+.34*cos(2.*(a-phase))+.13*cos(4.*(a-phase*1.7)+.6);
+float brush=hash(vec2(floor(a*520.),3.))*.5+hash(vec2(floor(a*190.),9.))*.5;
+vec3 metal=bronze(v*.9-.06+(brush-.5)*.1)*(.3+.62*smoothstep(0.,420.,560.-length(p-lp)));
+vec2 e=vec2(1.5,0.);vec2 n=normalize(vec2(shape(p+e.xy)-shape(p-e.xy),shape(p+e.yx)-shape(p-e.yx))+1e-5);
+vec2 L=normalize(lp-p+vec2(1e-3));
+float rim=smoothstep(-8.,-1.,d)*(1.-smoothstep(-1.,1.,d));
+metal+=rim*(.22+.8*max(dot(n,L),0.))*vec3(1.,.89,.78)*.8;
+float rec=smoothstep(29.,25.,dn);
+vec3 pit=mix(vec3(.17,.07,.03),vec3(.5,.14,.02),exp(-dn/10.))*(.2+.8*power);
+metal=mix(metal,pit,rec);
+metal+=ember*exp(-dn/30.)*.85*power*(1.-rec);
+col=mix(col,metal,inside);
+col+=ember*exp(-dn/13.)*1.5*power;
+col+=vec3(1.,.4,.1)*smoothstep(7.5,4.5,dn)*power;
+col+=vec3(.08,.03,.02)*smoothstep(7.5,4.5,dn);
+col=mix(col,mix(vec3(.35,.17,.1),vec3(1.,.945,.862),power),smoothstep(3.,1.6,dn));
+col=pow(col,vec3(.94));
+col+=(hash(fc+fract(time))-.5)/170.;
+gl_FragColor=vec4(col,1.);}`;
+      const shader = (type, source) => {
+        const s = gl.createShader(type);
+        gl.shaderSource(s, source);
+        gl.compileShader(s);
+        return s;
       };
-      tabs.forEach((tab, ix) => {
-        tab.addEventListener('click', () => pick(tab));
-        tab.addEventListener('keydown', (event) => {
-          const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
-          if (!step) return;
-          event.preventDefault();
-          pick(tabs[(ix + step + tabs.length) % tabs.length], true);
-        });
-      });
-      pick(tabs[0]);
-      // The others are ready before they are asked for.
-      new IntersectionObserver(([entry], watcher) => {
-        if (!entry.isIntersecting) return;
-        watcher.disconnect();
-        document.querySelectorAll('.show img').forEach((img) => { img.loading = 'eager'; });
-      }, { rootMargin: '400px' }).observe(document.getElementById('tabs'));
+      const program = gl.createProgram();
+      gl.attachShader(program, shader(gl.VERTEX_SHADER, vert));
+      gl.attachShader(program, shader(gl.FRAGMENT_SHADER, frag));
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { canvas.remove(); return; }
+      gl.useProgram(program);
+      gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.bindAttribLocation(program, 0, 'a');
+      gl.linkProgram(program);
+      gl.useProgram(program);
+      gl.vertexAttribPointer(gl.getAttribLocation(program, 'a'), 2, gl.FLOAT, false, 0, 0);
+      const u = Object.fromEntries(['res', 'ptr', 'centre', 'time', 'power', 'size'].map((n) => [n, gl.getUniformLocation(program, n)]));
+      canvas.parentElement.classList.add('sign-on');
+
+      const hero = canvas.parentElement;
+      const fit = () => {
+        const dpr = Math.min(devicePixelRatio || 1, 1.5);
+        const w = hero.clientWidth, h = hero.clientHeight;
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        // The B sits high and to the right; on a phone, behind the type.
+        const wide = w > 820;
+        const size = (wide ? Math.min(h * 1.5, w * .92) : Math.min(w * 1.55, h * .95)) / 1024 * dpr;
+        gl.uniform1f(u.size, size);
+        gl.uniform2f(u.centre, (wide ? w * .73 : w * .6) * dpr, (wide ? h * .42 : h * .3) * dpr);
+        gl.uniform2f(u.res, canvas.width, canvas.height);
+      };
+      addEventListener('resize', fit);
+      fit();
+
+      const target = [.25, -.2], ptr = [.25, -.2];
+      addEventListener('pointermove', (e) => {
+        target[0] = e.clientX / innerWidth * 2 - 1;
+        target[1] = e.clientY / innerHeight * 2 - 1;
+      }, { passive: true });
+
+      // A tube striking, then a steady hum with the odd stutter.
+      const started = performance.now();
+      const STRIKE = [[0, 0], [.18, .75], [.24, .08], [.42, .95], [.47, .15], [.58, .3], [.72, 1]];
+      let stutter = 8 + Math.random() * 8;
+      const power = (t) => {
+        if (calm) return 1;
+        if (t < .72) { let v = 0; for (const [at, level] of STRIKE) if (t >= at) v = level; return v; }
+        if (t > stutter && t < stutter + .13) return t - stutter < .05 ? .45 : .82;
+        if (t > stutter + .13) stutter = t + 7 + Math.random() * 11;
+        return .97 + Math.sin(t * 61) * .012 + Math.sin(t * 17) * .012;
+      };
+
+      const fps = document.getElementById('fps');
+      let frames = 0, mark = performance.now(), raf = 0;
+      function paint(now) {
+        const t = (now - started) / 1000;
+        ptr[0] += (target[0] - ptr[0]) * .06;
+        ptr[1] += (target[1] - ptr[1]) * .06;
+        gl.uniform2f(u.ptr, ptr[0], ptr[1]);
+        gl.uniform1f(u.time, t);
+        gl.uniform1f(u.power, power(t));
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+      function frame(now) {
+        paint(now);
+        if (++frames, now - mark > 1000) {
+          fps.textContent = `This sign is lit by your GPU, ${Math.round(frames * 1000 / (now - mark))} fps`;
+          frames = 0; mark = now;
+        }
+        raf = requestAnimationFrame(frame);
+      }
+      // Under Reduce Motion the sign is drawn lit, and only again to fit.
+      if (calm) {
+        paint(performance.now());
+        addEventListener('resize', () => paint(performance.now()));
+        return;
+      }
+      whileSeen(hero, () => { cancelAnimationFrame(raf); mark = performance.now(); frames = 0; raf = requestAnimationFrame(frame); }, () => cancelAnimationFrame(raf));
     })();
 
-    // A working copy of the Agents section: agents go on, ask, and wait for
-    // the visitor's answer, those waiting first, as in the app.
+    // The strip of agents drifts, and runs with the page's scroll.
     (() => {
-      const rows = document.getElementById('rows');
-      const waiting = document.getElementById('waiting');
-      const count = document.getElementById('count');
-      const SECOND = 1000;
-      const now = () => Date.now();
-      const agents = [
-        { logo: 'claude', title: 'Rate limit the forecast endpoint', project: 'orbit', steps: ['Edit src/limits.rs', 'Read src/server.rs'], asks: ['npm run test -- --watch=false', 'git push origin rate-limit'] },
-        { logo: 'codex', title: 'Cache upstream weather responses', project: 'orbit', steps: ['Edit src/cache.rs', 'Search upstream'], asks: ['cargo test cache'] },
-        { logo: 'antigravity', title: 'Review forecast.ts retries', project: 'aurora', steps: ['Read src/lib/forecast.ts', 'Search fetchForecast'], asks: ['npx vitest run forecast'] },
-        { logo: 'grok', title: 'Keyboard pass over the dashboard', project: 'aurora', steps: ['Read src/App.tsx', 'Edit src/App.tsx'], asks: ['npm run lint'] },
-        { logo: 'opencode', title: 'Empty state for an unknown city', project: 'aurora', steps: ['Edit src/App.tsx', 'Edit tests/app.test.ts'], asks: ['npm run build'] },
-      ].map((agent, ix) => ({ ...agent, state: 'work', step: 0, ask: 0, started: now() - (47 + ix * 83) * SECOND, until: now() + (3 + ix * 3.5) * SECOND, line: agent.steps[0] }));
+      const strip = document.getElementById('strip');
+      const copies = strip.innerHTML;
+      for (let i = 0; i < 3; i++) strip.insertAdjacentHTML('beforeend', copies);
+      [...strip.children].slice(5).forEach((li) => li.setAttribute('aria-hidden', 'true'));
+      if (calm) return;
+      let x = 0, last = scrollY, raf = 0, drift = 1;
+      const tick = () => {
+        const v = scrollY - last; last = scrollY;
+        drift += ((1 + Math.abs(v) * .32) - drift) * .1;
+        x -= drift * (v < 0 ? -1 : 1);
+        const w = strip.scrollWidth / 4;
+        strip.style.transform = `translate3d(${((x % w) - w) % w}px,0,0)`;
+        raf = requestAnimationFrame(tick);
+      };
+      whileSeen(strip, () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(tick); }, () => cancelAnimationFrame(raf));
+    })();
 
-      // The page opens on one waiting and one finished.
-      Object.assign(agents[0], { state: 'wait', line: agents[0].asks[0] });
-      Object.assign(agents[4], { state: 'done', line: 'Done', until: now() + 9 * SECOND });
+    /* BenCode's figures, from src/bots/figure.rs: a body, eyes and gear on a
+       12x12 grid, in the moods the app shows. */
+    const Figures = (() => {
+      const ART = {
+        blob: { rows: ['............','............','............','....####....','..########..','.##########.','.##########.','############','############','############','.##########.','..########..'], eyes: [4, 7, 7], crown: 6, brim: 5, neck: 10 },
+        bean: { rows: ['............','............','....####....','...######...','..########..','..########..','..########..','..########..','..########..','...######...','...##..##...','...##..##...'], eyes: [4, 7, 5], crown: 6, brim: 4, neck: 8 },
+        flame: { rows: ['............','......#.....','.....##.....','.....###....','....####....','...######...','..########..','..########..','.##########.','.##########.','..########..','...######...'], flicker: ['............','.....#......','.....##.....','....###.....'], eyes: [4, 7, 7], crown: 6, brim: 5, neck: 10 },
+        block: { rows: ['............','............','..########..','.##########.','.##########.','.##########.','.##########.','.##########.','.##########.','.##########.','..########..','..##....##..'], eyes: [3, 8, 6], crown: 6, brim: 3, neck: 9 },
+        bun: { rows: ['............','............','..#......#..','.###....###.','.##########.','.##########.','############','############','############','############','.##########.','..########..'], eyes: [4, 7, 7], crown: 6, brim: 4, neck: 10 },
+      };
+      const FIXED = { glint: '#fff', glow0: '#a0705c', glow1: '#ff8f6b', glow2: '#ffb054', glow3: '#ffe39a', graphite: '#343a46', steel: '#6b7385', hat: '#f5c342', hatShade: '#c48a17', leaf: '#6ccb5f', leafDark: '#2f8a3e', scarf: '#e5484d', scarfShade: '#a8252b', alert: '#ff7a1a', spark: '#ffd84d', smoke: '#8e8882', haze: '#c4beb8' };
+      const hsl = (h, s, l) => `hsl(${h} ${clamp(s) * 100}% ${clamp(l) * 100}%)`;
+      const tones = ([h, s, l]) => ({ ...FIXED, body: hsl(h, s, l), shade: hsl(h, s * 1.05, l * .7), light: hsl(h, s * .9, l + (1 - l) * .4), eye: hsl(h, Math.min(s, .4), .13) });
+
+      function compose(figure, frame) {
+        const art = ART[figure.body], mood = frame.mood, cells = new Map();
+        const mask = art.rows.map((row, y) => [...((frame.flicker && art.flicker && art.flicker[y]) || row)].map((c) => c === '#'));
+        const filled = (x, y) => x >= 0 && x < 12 && y >= 0 && y < 12 && mask[y][x];
+        const put = (x, y, tone) => cells.set(`${x},${y}`, [x, y, tone]);
+        const over = (x, y, tone) => { if (cells.has(`${x},${y}`)) put(x, y, tone); };
+        const [left, right, row] = art.eyes;
+        for (let y = 0; y < 12; y++) for (let x = 0; x < 12; x++) {
+          if (!filled(x, y)) continue;
+          put(x, y, !filled(x, y + 1) || (!filled(x + 1, y) && y > row) ? 'shade' : (!filled(x, y - 1) && x < 6) || (!filled(x - 1, y) && y < row) ? 'light' : 'body');
+        }
+        const top = (x) => { for (let y = 0; y < 12; y++) if (filled(x, y)) return y; return 0; };
+        if (figure.gear === 'hardhat') {
+          for (let y = 0; y < art.brim; y++) for (let x = 0; x < 12; x++) if (filled(x, y)) put(x, y, 'hat');
+          const brim = [...Array(12).keys()].filter((x) => filled(x, art.brim));
+          for (let x = brim[0] - 1; x <= brim[brim.length - 1] + 1; x++) put(x, art.brim, 'hatShade');
+        }
+        if (figure.gear === 'scarf') {
+          const wrap = [...Array(12).keys()].filter((x) => filled(x, art.neck));
+          wrap.forEach((x) => put(x, art.neck, 'scarf'));
+          over(wrap[wrap.length - 1] - 2, art.neck + 1, 'scarfShade');
+        }
+        const look = figure.eyes === 'visor' ? 0 : frame.look || 0, l = left + look, r = right + look, shut = frame.blink;
+        if (mood === 'done') {
+          if (figure.eyes === 'visor') {
+            for (let x = l - 1; x <= r + 1; x++) put(x, row, 'eye');
+            for (const x of [l, r]) { put(x, row - 1, 'eye'); put(x, row, 'body'); }
+          } else if (figure.eyes === 'cyclops') {
+            const c = (l + r) >> 1;
+            [[c - 1, 0], [c, -1], [c + 1, -1], [c + 2, 0]].forEach(([x, y]) => put(x, row + y, 'eye'));
+          } else {
+            [[l, l - 1], [r, r + 1]].forEach(([x, out]) => { put(out, row, 'eye'); put(x, row - 1, 'eye'); });
+          }
+        } else if (figure.eyes === 'dot') {
+          for (const x of [l, r]) put(x, row, shut ? 'shade' : 'eye');
+        } else if (figure.eyes === 'tall') {
+          for (const x of [l, r]) { put(x, row, 'eye'); if (!shut) put(x, row - 1, 'eye'); }
+        } else if (figure.eyes === 'big') {
+          for (const x0 of [l - 1, r]) {
+            for (let x = x0; x <= x0 + 1; x++) { put(x, row, 'eye'); if (!shut) put(x, row - 1, 'eye'); }
+            if (!shut) put(x0, row - 1, 'glint');
+          }
+        } else if (figure.eyes === 'visor') {
+          for (let x = l - 1; x <= r + 1; x++) put(x, row, shut ? 'shade' : 'eye');
+          if (mood === 'work' && !shut) put(l - 1 + (((frame.look || 0) + 1) * (r + 1 - (l - 1))) / 2 | 0, row, 'glint');
+        }
+        const glow = `glow${frame.glow}`, cheeks = row + 1;
+        over(left - 1, cheeks, glow);
+        over(right + 1, cheeks, glow);
+        if (mood === 'done' || frame.talk) { over(5, cheeks, 'eye'); over(6, cheeks, 'eye'); }
+        const crown = art.crown, crownTop = top(crown);
+        if (figure.gear === 'antenna') {
+          put(crown, crownTop - 1, 'steel'); put(crown, crownTop - 2, 'steel'); put(crown, crownTop - 3, `glow${Math.max(frame.glow, 1)}`);
+        }
+        if (figure.gear === 'sprout') {
+          [[0, -1, 'leafDark'], [-1, -2, 'leaf'], [-2, -2, 'leafDark'], [1, -2, 'leaf'], [1, -3, 'leaf'], [2, -3, 'leafDark']].forEach(([dx, dy, t]) => put(crown + dx, crownTop + dy, t));
+        }
+        if (figure.gear === 'headphones') {
+          const cols = [...Array(12).keys()].filter((x) => filled(x, row)), first = cols[0], last = cols[cols.length - 1];
+          for (let x = first; x <= last; x++) put(x, top(x) - 1, 'steel');
+          for (const x0 of [first - 1, last]) for (let x = x0; x <= x0 + 1; x++) for (let y = row - 1; y <= row + 1; y++) put(x, y, 'graphite');
+        }
+        const alt = frame.alt ? 1 : 0;
+        if (mood === 'wait') [[10, -4], [11, -4], [10, -3], [11, -3], [10, -2], [11, -2], [10, 0], [11, 0]].forEach(([x, y]) => put(x, y - alt, 'alert'));
+        if (mood === 'done') (frame.alt ? [[0, 1], [11, 3], [9, -1]] : [[1, -1], [10, 0], [12, 5]]).forEach(([x, y]) => put(x, y, 'spark'));
+        const lift = frame.up ? 1 : 0;
+        return [...cells.values()].map(([x, y, t]) => [x, y - lift, t]);
+      }
+
+      // `mood` at time `s`: the hop, the mouth, the glance, the blink.
+      function frameAt(mood, s, offset = 0) {
+        const t = s + offset;
+        const beat = (t / .46) % 1 >= .5, talk = (t / .3) % 1 >= .5, breath = (t / 1.5) % 1 >= .5;
+        const blink = (t / 4.2) % 1 >= .96;
+        if (mood === 'work') return { mood, up: beat, talk, blink, flicker: beat, look: [0, 1, 0, -1][Math.floor(t / .9) % 4], glow: talk ? 3 : 2 };
+        if (mood === 'wait') return { mood, blink, flicker: breath, glow: breath ? 3 : 2, alt: breath };
+        return { mood, alt: beat, glow: 3, up: breath };
+      }
+      return { compose, frameAt, tones };
+    })();
+
+    /* The floor. The Agents section's logic, on the figures: they work, ask,
+       and wait for the visitor's answer. */
+    (() => {
+      const crew = document.getElementById('crew');
+      const WORDS = ['No one', 'One', 'Two', 'Three', 'Four', 'Five'];
+      const now = () => performance.now() / 1000;
+      const agents = [
+        { logo: 'claude', name: 'Claude Code', title: 'Rate limit the forecast endpoint', project: 'orbit', fig: { body: 'flame', eyes: 'big', gear: 'none' }, hue: [25, .85, .58], steps: ['Edit src/limits.rs', 'Read src/server.rs'], asks: ['npm test -- limits', 'git push origin rate-limit'], state: 'wait', ago: 53 },
+        { logo: 'codex', name: 'Codex', title: 'Cache upstream weather responses', project: 'orbit', fig: { body: 'block', eyes: 'visor', gear: 'headphones' }, hue: [175, .55, .48], steps: ['Edit src/cache.rs', 'Search upstream'], asks: ['cargo test cache'], state: 'work', ago: 136 },
+        { logo: 'antigravity', name: 'Antigravity', title: 'Review the forecast retries', project: 'aurora', fig: { body: 'blob', eyes: 'dot', gear: 'antenna' }, hue: [211, .92, .62], steps: ['Read src/lib/forecast.ts', 'Search fetchForecast'], asks: ['npx vitest run forecast'], state: 'work', ago: 199 },
+        { logo: 'grok', name: 'Grok Build', title: 'Keyboard pass over the dashboard', project: 'aurora', fig: { body: 'bun', eyes: 'tall', gear: 'scarf' }, hue: [280, .55, .62], steps: ['Read src/App.tsx', 'Edit src/App.tsx'], asks: ['npm run lint'], state: 'work', ago: 322 },
+        { logo: 'opencode', name: 'OpenCode', title: 'Empty state for an unknown city', project: 'aurora', fig: { body: 'bean', eyes: 'dot', gear: 'sprout' }, hue: [142, .55, .5], steps: ['Edit src/App.tsx', 'Edit tests/app.test.ts'], asks: ['npm run build'], state: 'done', ago: 0 },
+      ];
+      agents.forEach((a, i) => Object.assign(a, { step: 0, ask: 0, offset: i * .37, tones: Figures.tones(a.hue), started: now() - a.ago, until: now() + 4 + i * 3.5, line: a.state === 'wait' ? a.asks[0] : a.state === 'done' ? 'Done' : a.steps[0] }));
+      if (agents[0].state === 'wait') agents[0].ask = 1;
 
       const clock = (from) => {
-        const s = Math.max(0, Math.floor((now() - from) / SECOND));
+        const s = Math.max(0, Math.floor(now() - from));
         return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
       };
 
-      const order = { wait: 0, work: 1, done: 2 };
-      function draw(focusNext) {
-        const sorted = [...agents].sort((a, b) => order[a.state] - order[b.state]);
-        rows.replaceChildren(...sorted.map((agent) => {
-          const li = document.createElement('li');
-          li.className = `row ${agent.state}`;
-          const logo = document.createElement('i');
-          logo.className = `logo ${agent.logo}`;
-          const title = document.createElement('b');
-          title.textContent = agent.title;
-          const time = document.createElement('time');
-          time.dataset.from = agent.started;
-          time.textContent = agent.state === 'done' ? '' : clock(agent.started);
-          const what = document.createElement('div');
-          what.className = 'what';
-          const dot = document.createElement('i');
-          dot.className = 'dot';
-          const line = document.createElement('span');
-          line.textContent = agent.state === 'wait' ? `Bash: ${agent.line}` : agent.line;
-          what.append(dot, line);
-          const where = document.createElement('span');
-          where.className = 'where';
-          where.textContent = agent.project;
-          li.append(logo, title, time, what, where);
-          if (agent.state === 'wait') {
-            const choice = document.createElement('div');
-            choice.className = 'choice';
-            const allow = document.createElement('button');
-            allow.className = 'allow';
-            allow.type = 'button';
-            allow.textContent = 'Allow';
-            allow.setAttribute('aria-label', `Allow ${agent.line}`);
-            allow.onclick = () => answer(agent, true);
-            const deny = document.createElement('button');
-            deny.type = 'button';
-            deny.textContent = 'Deny';
-            deny.setAttribute('aria-label', `Deny ${agent.line}`);
-            deny.onclick = () => answer(agent, false);
-            choice.append(allow, deny);
-            li.append(choice);
-          }
-          return li;
-        }));
-        const held = agents.filter((a) => a.state === 'wait').length;
-        waiting.hidden = held === 0;
-        waiting.textContent = `${held} waiting`;
-        count.textContent = agents.filter((a) => a.state !== 'done').length;
-        if (focusNext) (rows.querySelector('.allow') || rows).focus();
+      for (const a of agents) {
+        const hand = document.createElement('article');
+        hand.className = 'hand';
+        hand.innerHTML = `<canvas width="16" height="20" aria-hidden="true"></canvas><div class="ground"></div><div class="who"><i class="logo ${a.logo}"></i><span>${a.name}</span><span data-time></span></div><h3></h3><p class="now"></p><div class="answer"><button class="yes" type="button">Allow</button><button type="button">Deny</button></div>`;
+        hand.querySelector('h3').textContent = a.title;
+        const [yes, no] = hand.querySelectorAll('button');
+        yes.onclick = () => answer(a, true);
+        no.onclick = () => answer(a, false);
+        Object.assign(a, { el: hand, ctx: hand.querySelector('canvas').getContext('2d'), now: hand.querySelector('.now'), time: hand.querySelector('[data-time]'), box: hand.querySelector('.answer'), yes, no });
+        crew.append(hand);
       }
-      rows.tabIndex = -1;
 
-      function answer(agent, allowed) {
-        const fromKeyboard = document.activeElement && document.activeElement.tagName === 'BUTTON' && document.activeElement.matches(':focus-visible');
-        agent.state = 'work';
-        agent.line = allowed ? `Run ${agent.line}` : 'Told not to run that; trying another way';
-        agent.finishing = true;
-        agent.until = now() + 2.6 * SECOND;
-        draw(fromKeyboard);
+      function show() {
+        for (const a of agents) {
+          a.el.className = `hand ${a.state}`;
+          a.now.textContent = a.state === 'wait' ? `Allow Bash? ${a.line}` : a.line;
+          a.box.hidden = a.state !== 'wait';
+          a.yes.setAttribute('aria-label', `Allow ${a.line}`);
+          a.no.setAttribute('aria-label', `Deny ${a.line}`);
+        }
+        const busy = agents.filter((a) => a.state !== 'done').length, held = agents.filter((a) => a.state === 'wait').length;
+        document.getElementById('at-work').textContent = `${WORDS[busy]} at work.`;
+        document.getElementById('need-you').textContent = held ? `${WORDS[held]} ${held > 1 ? 'need' : 'needs'} you.` : 'No one needs you.';
       }
+
+      function answer(a, allowed) {
+        const refocus = a.yes.matches(':focus-visible') || a.no.matches(':focus-visible');
+        a.state = 'work';
+        a.line = allowed ? `Ran ${a.line}` : 'Told not to; trying another way';
+        a.finishing = true;
+        a.until = now() + 2.8;
+        show();
+        if (refocus) (agents.find((o) => o.state === 'wait') || { yes: crew }).yes.focus();
+      }
+      crew.tabIndex = -1;
 
       function advance() {
         let changed = false;
-        for (const agent of agents) {
-          if (agent.state === 'wait' || now() < agent.until) continue;
+        for (const a of agents) {
+          if (a.state === 'wait' || now() < a.until) continue;
           changed = true;
-          if (agent.state === 'done') {
-            agent.state = 'work';
-            agent.started = now();
-            agent.step = (agent.step + 1) % agent.steps.length;
-            agent.line = agent.steps[agent.step];
-            agent.until = now() + 5 * SECOND;
-          } else if (agent.finishing) {
-            agent.finishing = false;
-            agent.state = 'done';
-            agent.line = 'Done';
-            agent.until = now() + 8 * SECOND;
-          } else if (agents.filter((a) => a.state === 'wait').length < 2) {
-            agent.state = 'wait';
-            agent.line = agent.asks[agent.ask];
-            agent.ask = (agent.ask + 1) % agent.asks.length;
+          if (a.state === 'done') {
+            Object.assign(a, { state: 'work', started: now(), step: (a.step + 1) % a.steps.length, until: now() + 5 });
+            a.line = a.steps[a.step];
+          } else if (a.finishing) {
+            Object.assign(a, { finishing: false, state: 'done', line: 'Done', until: now() + 8 });
+          } else if (agents.filter((o) => o.state === 'wait').length < 2) {
+            Object.assign(a, { state: 'wait', line: a.asks[a.ask], ask: (a.ask + 1) % a.asks.length });
           } else {
-            agent.until = now() + 4 * SECOND;
+            a.until = now() + 4;
           }
         }
-        // Never redraw under a pointer about to press a button.
-        if (changed) draw(false);
+        if (changed) show();
       }
 
-      draw(false);
-      let timer = null;
-      const tick = () => {
-        rows.querySelectorAll('time').forEach((time) => {
-          if (time.textContent) time.textContent = clock(Number(time.dataset.from));
-        });
-        // Under Reduce Motion it only moves when answered.
-        if (!calm || agents.some((a) => a.finishing)) advance();
-      };
-      new IntersectionObserver(([entry]) => {
+      function draw() {
+        const s = calm ? 0 : now();
+        for (const a of agents) {
+          const { ctx } = a;
+          ctx.clearRect(0, 0, 16, 20);
+          for (const [x, y, tone] of Figures.compose(a.fig, Figures.frameAt(a.state, s, a.offset))) {
+            ctx.fillStyle = a.tones[tone];
+            ctx.fillRect(x + 1, y + 7, 1, 1);
+          }
+          a.time.textContent = a.state === 'done' ? a.project : `${a.project} ${clock(a.started)}`;
+        }
+      }
+
+      show();
+      draw();
+      let timer = 0, step = 0;
+      whileSeen(crew, () => {
         clearInterval(timer);
-        timer = entry.isIntersecting ? setInterval(tick, SECOND) : null;
-      }).observe(document.getElementById('panel'));
+        timer = setInterval(() => {
+          draw();
+          if (++step % 5 === 0 && (!calm || agents.some((a) => a.finishing))) advance();
+        }, 100);
+      }, () => clearInterval(timer));
+    })();
+
+    /* The camera: while its section is pinned, the scroll moves through the
+       window, dollying in to what each step is about. */
+    (() => {
+      const section = document.getElementById('camera');
+      const stage = section.querySelector('.cam-stage');
+      const steps = [...section.querySelectorAll('.step')];
+      const ticks = document.getElementById('ticks');
+      const wide = matchMedia('(min-width: 1000px) and (min-height: 560px)');
+      if (calm) return;
+      steps.forEach((step, i) => {
+        const r = step.dataset.rect.split(',').map(Number);
+        Object.assign(step, { rect: r, shot: step.querySelector('.shot'), spot: step.querySelector('.spot') });
+        Object.assign(step.spot.style, { left: `${r[0] * 100}%`, top: `${r[1] * 100}%`, width: `${r[2] * 100}%`, height: `${r[3] * 100}%` });
+        if (i === 0) step.spot.style.display = 'none';
+        const li = document.createElement('li');
+        const a = document.createElement('a');
+        a.href = '#camera';
+        a.onclick = (e) => {
+          e.preventDefault();
+          scrollTo({ top: section.offsetTop + (i + .5) / steps.length * (section.offsetHeight - innerHeight), behavior: 'smooth' });
+        };
+        li.append(a);
+        ticks.append(li);
+      });
+      const marks = [...ticks.querySelectorAll('a')];
+
+      const MAX_ZOOM = 2.1;
+      let W, H, free, shotW;
+      const layout = () => {
+        const on = wide.matches;
+        document.documentElement.classList.toggle('cam', on);
+        section.style.setProperty('--steps', steps.length);
+        if (!on) {
+          steps.forEach((s) => { s.style.visibility = ''; s.shot.style.transform = ''; s.shot.style.width = ''; });
+          return;
+        }
+        W = stage.clientWidth; H = stage.clientHeight;
+        const copy = Math.round(clamp(W * .31, 360, 540));
+        section.style.setProperty('--copy', `${copy}px`);
+        free = { x: copy, y: 0, w: W - copy, h: H };
+        shotW = free.w * .9;
+        // Laid out at its largest and scaled down, so it stays sharp up close.
+        steps.forEach((s) => { s.shot.style.width = `${shotW * MAX_ZOOM}px`; });
+      };
+      wide.addEventListener('change', layout);
+      addEventListener('resize', layout);
+      layout();
+
+      let current = 0, raf = 0;
+      function frame() {
+        raf = requestAnimationFrame(frame);
+        if (!wide.matches) return;
+        const span = section.offsetHeight - innerHeight;
+        const wanted = clamp((scrollY - section.offsetTop) / span) * steps.length;
+        current += (wanted - current) * .14;
+        if (Math.abs(wanted - current) < .0005) current = wanted;
+        const index = Math.min(steps.length - 1, Math.floor(current));
+        const shotH = shotW / 1.6;
+        steps.forEach((step, i) => {
+          const local = current - i;
+          const shownNext = i === index + 1 && local > -.1;
+          const seen = i === index || shownNext;
+          step.style.visibility = seen ? 'visible' : 'hidden';
+          if (!seen) return;
+          // In over the last tenth of the step before; settled by its middle.
+          const fadeIn = i === 0 ? 1 : ease(clamp((local + .1) / .1));
+          step.style.opacity = fadeIn;
+          const dolly = ease(clamp((local - .05) / .42));
+          const [rx, ry, rw, rh] = step.rect;
+          const fit = Math.min(free.w * .94 / (rw * shotW), free.h * .86 / (rh * shotH), MAX_ZOOM);
+          const scale = 1 + (Math.max(fit, 1) - 1) * dolly;
+          const from = [free.x + (free.w - shotW) * .5, (H - shotH) * .5];
+          // Centred on what it is about, but never showing past the window's edge.
+          const zoom = Math.max(fit, 1);
+          const cx = Math.max(free.x + free.w * .5 - (rx + rw / 2) * shotW * zoom, W - shotW * zoom - 14);
+          const cy = Math.min(Math.max(H * .5 - (ry + rh / 2) * shotH * zoom, Math.min(H - shotH * zoom - 20, 60)), 60);
+          const x = from[0] + (cx - from[0]) * dolly, y = from[1] + (cy - from[1]) * dolly;
+          step.shot.style.transform = `translate3d(${x}px,${y}px,0) scale(${scale / MAX_ZOOM})`;
+          step.spot.style.opacity = i === 0 ? 0 : clamp((dolly - .35) / .4);
+        });
+        marks.forEach((m, i) => m.classList.toggle('on', i === index));
+      }
+      whileSeen(section, () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(frame); }, () => cancelAnimationFrame(raf));
+    })();
+
+    // The keycaps press themselves in turn until the page has moved on.
+    (() => {
+      const caps = [...document.querySelectorAll('#caps .cap')];
+      if (calm) return;
+      let at = 0, timer = 0;
+      whileSeen(document.getElementById('caps'), () => {
+        clearInterval(timer);
+        timer = setInterval(() => {
+          const cap = caps[at++ % caps.length];
+          cap.classList.add('hit');
+          setTimeout(() => cap.classList.remove('hit'), 190);
+        }, 620);
+      }, () => clearInterval(timer));
+    })();
+
+    // At the end a figure runs along the top of the name, as in the composer.
+    (() => {
+      const canvas = document.getElementById('runner');
+      const ctx = canvas.getContext('2d');
+      const fig = { body: 'flame', eyes: 'big', gear: 'none' }, tones = Figures.tones([18, 1, .55]);
+      const CELL = 4;
+      const fit = () => { canvas.width = Math.round(canvas.clientWidth / CELL); canvas.height = Math.round(canvas.clientHeight / CELL); };
+      addEventListener('resize', fit);
+      fit();
+      const draw = () => {
+        const s = calm ? 3 : performance.now() / 1000;
+        const span = canvas.width + 30;
+        const x0 = Math.floor((s * 9) % span) - 15, y0 = canvas.height - 13;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (const [x, y, tone] of Figures.compose(fig, Figures.frameAt('work', s))) {
+          ctx.fillStyle = tones[tone];
+          ctx.fillRect(x0 + x, y0 + y, 1, 1);
+        }
+      };
+      draw();
+      if (calm) return;
+      let timer = 0;
+      whileSeen(canvas, () => { clearInterval(timer); timer = setInterval(draw, 90); }, () => clearInterval(timer));
     })();
   </script>
 </body>
