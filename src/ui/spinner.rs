@@ -130,6 +130,9 @@ pub fn terminal_spinner(color: Hsla, cx: &App) -> impl IntoElement {
                 .flex_none()
                 .text_size(Text::Sm.px())
                 .line_height(px(11.0))
+                // The glyph is narrower than its box: centred, it sits
+                // where a tile or an icon slot centres the box.
+                .text_align(TextAlign::Center)
                 .text_color(color)
                 .child(frame_at(epoch().elapsed(), cx.reduce_motion()))
                 .into_any_element()
