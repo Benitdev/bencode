@@ -179,3 +179,20 @@ fn a_filter_matches_labels_ignoring_case() {
     assert_eq!(names("  "), FRUITS.to_vec());
     assert!(names("zz").is_empty());
 }
+
+#[gpui::test]
+fn escape_leaves_the_filter_and_reopening_starts_it_empty(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| Fruits(None));
+    cx.update(|window, cx| window.focus_next(cx));
+    let trigger = cx.update(|window, cx| window.focused(cx));
+    // Nothing matches; Escape closes and gives the select back the keys.
+    cx.simulate_keystrokes("down z z escape");
+    cx.run_until_parked();
+    assert_eq!(cx.update(|window, cx| window.focused(cx)), trigger);
+    cx.simulate_keystrokes("down enter");
+    assert_eq!(
+        view.read_with(cx, |view, _| view.0.clone()),
+        Some("Banana".into())
+    );
+}

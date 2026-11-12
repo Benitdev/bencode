@@ -1041,6 +1041,9 @@ impl BenCodeApp {
                         this.open_tab_menu(&menu_id, event.position, cx);
                     }),
                 )
+                .gap(px(6.0))
+                // Its project's figure tells two pins of one agent apart.
+                .children(self.pinned_tab_figure(&tab.id))
                 .child(self.tab_harnesses(tab, active, cx));
             claim_press(card.aria_label(format!("{headline}, pinned"))).into_any_element()
         });
@@ -1056,6 +1059,20 @@ impl BenCodeApp {
             .border_color(fg.fill(Fill::Line))
             .children(cards)
             .into_any_element()
+    }
+
+    /// The figure of the project a pinned tab's focused thread is in.
+    fn pinned_tab_figure(&self, tab_id: &str) -> Option<AnyElement> {
+        let tab = self.tabs.tabs().iter().find(|t| t.id == tab_id)?;
+        let cwd = &self.sessions.iter().find(|s| s.id == tab.focused)?.cwd;
+        Some(
+            crate::ui::figure::figure_still(
+                self.project_figure(cwd),
+                12.0,
+                self.project_color(cwd),
+            )
+            .into_any_element(),
+        )
     }
 
     /// The strip itself, scrolling sideways when the tabs do not fit.

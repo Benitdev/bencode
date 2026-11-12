@@ -681,24 +681,16 @@ impl BenCodeApp {
         }
     }
 
-    /// After the current project changed: its colours (or Appearance's)
-    /// fade in, unless they are those shown already; at once with reduced
-    /// motion, which `Theme`'s fade follows.
+    /// After the current project changed: its colours (or Appearance's),
+    /// unless they are those shown already. At once: a fade repaints every
+    /// region afresh each of its frames (no view cache holds over a palette
+    /// change), the longest thread included, where one switch repaints once.
     pub(crate) fn follow_project_colors(&mut self, cx: &mut Context<Self>) {
-        let shown = self.shown_colors();
-        if self.shown_colors.as_ref() == Some(&shown) {
+        if self.shown_colors.as_ref() == Some(&self.shown_colors()) {
             return;
         }
-        // The launch's first project: no fade from Appearance's colours.
-        if self.shown_colors.is_none() {
-            self.apply_palettes(cx);
-            AppearanceTokens::set(self.shown_tokens(), cx);
-            return;
-        }
-        let (tint, accent) = &shown;
-        crate::ui::theme::fade_palettes(tint, accent.as_deref().and_then(UserAccent::parse), cx);
+        self.apply_palettes(cx);
         AppearanceTokens::set(self.shown_tokens(), cx);
-        self.shown_colors = Some(shown);
     }
 
     /// The project menu's Theme colors: `None` gives `path` Appearance's

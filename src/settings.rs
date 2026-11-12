@@ -383,6 +383,7 @@ mod tests {
                 vec![crate::ui::terminal_pane::SavedTerminal {
                     session: "t1".into(),
                     cwd: "/repo".into(),
+                    in_tab: true,
                 }],
             )]),
             pinned_projects: vec!["/repo".into()],

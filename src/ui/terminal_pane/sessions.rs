@@ -12,11 +12,14 @@ use serde::{Deserialize, Serialize};
 use crate::app::BenCodeApp;
 use crate::pty_host::{self, SessionInfo};
 
-/// A saved dock tab: its host session and the folder it started in.
+/// A saved dock tab: its host session, the folder it started in, and
+/// whether it was in a tab beside the chat (`moved.rs`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedTerminal {
     pub session: String,
     pub cwd: String,
+    #[serde(default, rename = "inTab", skip_serializing_if = "std::ops::Not::not")]
+    pub in_tab: bool,
 }
 
 /// How long a new session has to show up in the host's list.
@@ -66,6 +69,7 @@ impl BenCodeApp {
                     .map(|tab| SavedTerminal {
                         session: tab.session.clone(),
                         cwd: tab.cwd.clone(),
+                        in_tab: tab.in_pane,
                     })
                     .collect();
                 (project.clone(), tabs)
@@ -97,13 +101,16 @@ impl BenCodeApp {
                     Ok(live) => {
                         let (keep, orphans) = plan_restore(&saved, &live);
                         for (project, tab, pid, alive) in keep {
-                            this.add_terminal_tab(
+                            let id = this.add_terminal_tab(
                                 &project,
                                 tab.session,
                                 &tab.cwd,
                                 alive.then_some(pid),
                                 cx,
                             );
+                            if tab.in_tab {
+                                this.restore_terminal_tab(id, cx);
+                            }
                         }
                         if owner && !orphans.is_empty() {
                             cx.background_executor()
@@ -126,6 +133,9 @@ impl BenCodeApp {
                                     cx,
                                 );
                                 this.find_terminal_process(id, tab.session.clone(), cx);
+                                if tab.in_tab {
+                                    this.restore_terminal_tab(id, cx);
+                                }
                             }
                         }
                     }
@@ -237,6 +247,7 @@ mod tests {
         SavedTerminal {
             session: session.into(),
             cwd: "/p".into(),
+            in_tab: false,
         }
     }
 

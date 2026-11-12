@@ -30,6 +30,7 @@ mod search_popover;
 mod suggestions;
 pub mod thread_card;
 pub mod tokens;
+mod transfer_notice;
 pub mod usage_limit;
 
 use bencode_ui::buttons::ButtonVariant;
@@ -524,6 +525,11 @@ impl BenCodeApp {
                         session
                             .filter(|_| focused)
                             .and_then(|s| self.render_usage_limit(&s.id, cx)),
+                    )
+                    .children(
+                        session
+                            .filter(|_| focused)
+                            .and_then(|s| self.render_transfer_notice(s, cx)),
                     )
                     .children(queue.filter(|_| focused))
                     .when(focused, |el| {

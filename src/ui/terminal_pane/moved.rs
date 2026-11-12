@@ -7,7 +7,7 @@
 //! the others, and a fresh shell when none is left (MonoCode keeps the
 //! panel's shell). Closing the tab ends the shell, asking first while a job
 //! runs in it; Move to Terminal Panel takes it back. A restart shows it in
-//! the dock again.
+//! its tab again (`inTab` in `terminalSessions`).
 
 use bencode_ui::primitives::{Icon, IconName};
 use bencode_ui::theme::{ActiveTheme, IconSize};
@@ -38,7 +38,32 @@ impl BenCodeApp {
 
     /// Moves dock terminal `id` to a tab beside the chat, with the keyboard.
     pub(crate) fn move_terminal_to_tab(&mut self, id: u64, cx: &mut Context<Self>) {
-        let moved = self.terminals_mut(cx, |docks| {
+        let Some(project) = self.take_terminal_out_of_dock(id, cx) else {
+            return;
+        };
+        // MonoCode `ensure_dock_terminal`: the open panel keeps a shell.
+        let emptied =
+            (self.terminals(cx).dock(&project)).is_some_and(|dock| dock.docked().next().is_none());
+        if project == self.current_cwd && emptied && self.is_terminal_open(cx) {
+            self.new_terminal(cx);
+        }
+        self.show_terminal_tab(id, cx);
+        // Where it is shows again after a restart.
+        self.save_settings(cx);
+    }
+
+    /// A launch showing again a terminal saved in a tab: its tab opens,
+    /// without the keyboard; the restore starts the dock's shell itself.
+    pub(super) fn restore_terminal_tab(&mut self, id: u64, cx: &mut Context<Self>) {
+        if self.take_terminal_out_of_dock(id, cx).is_some() {
+            self.open_pane_tab(PaneTab::Terminal { id }, true, cx);
+        }
+    }
+
+    /// Marks terminal `id` as shown in a tab, out of its dock's splits and
+    /// active slot; the project whose dock holds it.
+    fn take_terminal_out_of_dock(&mut self, id: u64, cx: &mut Context<Self>) -> Option<String> {
+        self.terminals_mut(cx, |docks| {
             let (project, dock) = (docks.docks.iter_mut())
                 .find(|(_, dock)| dock.tabs.iter().any(|tab| tab.id == id))?;
             let ix = dock.tabs.iter().position(|tab| tab.id == id)?;
@@ -50,17 +75,7 @@ impl BenCodeApp {
                 }
             }
             Some(project.clone())
-        });
-        let Some(project) = moved else {
-            return;
-        };
-        // MonoCode `ensure_dock_terminal`: the open panel keeps a shell.
-        let emptied =
-            (self.terminals(cx).dock(&project)).is_some_and(|dock| dock.docked().next().is_none());
-        if project == self.current_cwd && emptied && self.is_terminal_open(cx) {
-            self.new_terminal(cx);
-        }
-        self.show_terminal_tab(id, cx);
+        })
     }
 
     /// Move Terminal to Tab: the current project's active dock terminal.
@@ -85,6 +100,7 @@ impl BenCodeApp {
             Some(project.clone())
         });
         self.drop_pane_tab(&PaneTab::Terminal { id }.key(), cx);
+        self.save_settings(cx);
         if let Some(project) = project.filter(|project| *project == self.current_cwd) {
             self.terminals_state.as_mut(cx).set_open(&project, true);
             self.save_settings(cx);

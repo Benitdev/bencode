@@ -4,8 +4,11 @@
 //! footprint only grows over a long session. A trim empties them and
 //! redraws every window once: only what is on screen comes back. It runs
 //! 10s after every window went to the background (the close button hides
-//! BenCode), or after 2 minutes without a key in an active one, and again
-//! every 5 minutes while agents keep drawing and nobody types.
+//! BenCode), and again every 5 minutes while it stays there. Never in a
+//! window in use: the first frame after a trim rasterizes what it shows
+//! again, tens of milliseconds on a long thread and more now and then
+//! (the frame bench's "repainted after a GPU trim"), a hitch the person
+//! would see.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -15,7 +18,6 @@ use gpui::App;
 
 const CHECK: Duration = Duration::from_secs(5);
 const BACKGROUND_AFTER: Duration = Duration::from_secs(10);
-const QUIET_AFTER: Duration = Duration::from_secs(120);
 const AGAIN_AFTER: Duration = Duration::from_secs(300);
 
 /// Watches the keyboard and the windows' focus; started once, after the
@@ -81,10 +83,9 @@ impl Quiet {
             self.inactive_since.get_or_insert(now);
         }
         let activity = typed.max(self.activated);
-        let quiet = match self.inactive_since {
-            Some(since) => now.duration_since(since.max(activity)) >= BACKGROUND_AFTER,
-            None => now.duration_since(activity) >= QUIET_AFTER,
-        };
+        let quiet = self
+            .inactive_since
+            .is_some_and(|since| now.duration_since(since.max(activity)) >= BACKGROUND_AFTER);
         let again = self
             .trimmed
             .is_none_or(|at| at < activity || now.duration_since(at) >= AGAIN_AFTER);
@@ -113,16 +114,12 @@ mod tests {
     }
 
     #[test]
-    fn an_active_window_trims_after_two_quiet_minutes_and_a_key_resets_it() {
+    fn a_window_in_use_never_trims() {
         let start = Instant::now();
         let mut quiet = Quiet::new(start);
-        assert!(!quiet.due(start + 60 * SEC, true, start));
-        let typed = start + 60 * SEC;
-        assert!(!quiet.due(start + 150 * SEC, true, typed));
-        assert!(quiet.due(start + 185 * SEC, true, typed));
-        // Typing again makes the next quiet spell trim again.
-        let typed = start + 200 * SEC;
-        assert!(quiet.due(start + 330 * SEC, true, typed));
+        for minutes in [1, 5, 30] {
+            assert!(!quiet.due(start + minutes * 60 * SEC, true, start));
+        }
     }
 
     #[test]

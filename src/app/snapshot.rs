@@ -1656,7 +1656,7 @@ fn staged_run(id: u64, pending: Option<PermissionRequest>) -> AgentRun {
     let (cancel_tx, _) = tokio::sync::oneshot::channel();
     AgentRun {
         id: u64::MAX - id,
-        handle: HarnessProcessHandle::new(stdin_tx, cancel_tx, None, None),
+        handle: HarnessProcessHandle::new(stdin_tx, cancel_tx, None, None, Default::default()),
         pending_permission: pending,
         outcome: None,
         automation: None,

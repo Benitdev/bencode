@@ -1430,6 +1430,16 @@ impl BenCodeApp {
             }
             self.persist_session(session_id);
         }
+        // MonoCode: each stopped child gets its SIGTERM grace before BenCode
+        // goes (Claude may be saving a refreshed sign-in), at most once
+        // over for all of them.
+        let deadline = std::time::Instant::now() + crate::harness::process::RETIRE_GRACE;
+        for (session_id, run) in &runs {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if run.remote.is_none() && !run.handle.wait_ended(left) {
+                log::warn!("thread {session_id}: its agent was still stopping at quit");
+            }
+        }
         // Without runs too: other saves may still be queued.
         if let Some(writer) = &self.db_writer
             && !writer.flush(Duration::from_secs(3))

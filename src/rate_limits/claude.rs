@@ -76,9 +76,12 @@ fn expired_token_error(has_refresh_token: bool) -> String {
 /// `config_dir` is an account profile's `CLAUDE_CONFIG_DIR`; None reads the
 /// default profile.
 fn read_credentials(config_dir: Option<&Path>) -> Option<Credentials> {
+    // A Keychain item there is the sign-in, even blank: Claude Code blanks
+    // it when a refresh fails, and an old `.credentials.json` beside it
+    // would promise a renewal and hide Sign in (MonoCode `2ec5b66c`).
     #[cfg(target_os = "macos")]
-    if let Some(creds) = keychain::read(config_dir) {
-        return Some(creds);
+    if let Some(item) = keychain::read(config_dir) {
+        return item;
     }
     let dir = match config_dir {
         Some(dir) => dir.to_path_buf(),
@@ -133,18 +136,28 @@ mod keychain {
     const FALLBACK_USER: &str = "claude-code-user";
 
     /// Claude Code has stored the item under no account, the login name and
-    /// a fixed fallback over time; the first that parses wins.
-    pub fn read(config_dir: Option<&Path>) -> Option<Credentials> {
+    /// a fixed fallback over time; the first that parses wins. `None` when
+    /// there is no item; `Some(None)` when there is one, but blank or
+    /// unreadable as a sign-in.
+    pub fn read(config_dir: Option<&Path>) -> Option<Option<Credentials>> {
         let service = crate::keychain::claude_service(config_dir);
         let accounts = [None, Some(user()), Some(FALLBACK_USER.to_string())];
-        accounts.iter().find_map(|account| {
+        let mut found = false;
+        for account in &accounts {
             let mut args = vec!["find-generic-password", "-s", service.as_str()];
             if let Some(account) = account {
                 args.extend(["-a", account]);
             }
             args.push("-w");
-            credentials_from_blob(&security(&args)?)
-        })
+            let Some(stdout) = security(&args) else {
+                continue;
+            };
+            found = true;
+            if let Some(creds) = credentials_from_blob(&stdout) {
+                return Some(Some(creds));
+            }
+        }
+        found.then_some(None)
     }
 
     fn user() -> String {
@@ -159,11 +172,12 @@ mod keychain {
         }
     }
 
-    /// `security`'s stdout, or None when it fails or hangs on a locked
-    /// Keychain past the timeout.
+    /// `security`'s stdout (empty for a blank item), or None when there is
+    /// no such item, or it fails or hangs on a locked Keychain past the
+    /// timeout.
     fn security(args: &[&str]) -> Option<String> {
         let output = crate::keychain::run(args).ok()?;
-        (output.ok && !output.stdout.is_empty()).then_some(output.stdout)
+        output.ok.then_some(output.stdout)
     }
 }
 

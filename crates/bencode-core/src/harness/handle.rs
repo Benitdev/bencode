@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot};
 
@@ -50,12 +51,39 @@ enum Control {
     },
 }
 
+/// Set once a local child is gone (its pump returned), for a quit that
+/// waits for the children it stopped.
+#[derive(Default)]
+pub struct Ended {
+    done: Mutex<bool>,
+    changed: Condvar,
+}
+
+impl Ended {
+    pub fn finish(&self) {
+        *self.done.lock().unwrap_or_else(|p| p.into_inner()) = true;
+        self.changed.notify_all();
+    }
+
+    /// Whether it ended within `timeout`.
+    fn wait(&self, timeout: Duration) -> bool {
+        let done = self.done.lock().unwrap_or_else(|p| p.into_inner());
+        let (done, _) = self
+            .changed
+            .wait_timeout_while(done, timeout, |done| !*done)
+            .unwrap_or_else(|p| p.into_inner());
+        *done
+    }
+}
+
 /// Cheap, cloneable control handle for one running harness process. Every
 /// method is synchronous and safe to call from the GPUI thread.
 #[derive(Clone)]
 pub struct HarnessProcessHandle {
     control: Control,
     cancel_tx: Arc<Mutex<Option<oneshot::Sender<()>>>>,
+    /// A local child's end; none for a turn on another machine.
+    ended: Option<Arc<Ended>>,
 }
 
 impl HarnessProcessHandle {
@@ -64,6 +92,7 @@ impl HarnessProcessHandle {
         cancel_tx: oneshot::Sender<()>,
         permission_responder: Option<PermissionResponder>,
         steer_tx: Option<mpsc::UnboundedSender<Steer>>,
+        ended: Arc<Ended>,
     ) -> Self {
         Self {
             control: Control::Local {
@@ -72,7 +101,15 @@ impl HarnessProcessHandle {
                 steer_tx,
             },
             cancel_tx: Arc::new(Mutex::new(Some(cancel_tx))),
+            ended: Some(ended),
         }
+    }
+
+    /// Blocks until the child is gone, at most `timeout` (a quit giving
+    /// the children it stopped their grace); true when it is. A turn on
+    /// another machine has nothing here to wait for.
+    pub fn wait_ended(&self, timeout: Duration) -> bool {
+        self.ended.as_ref().is_none_or(|ended| ended.wait(timeout))
     }
 
     /// A handle on a turn another machine runs: what it is asked goes to
@@ -91,6 +128,7 @@ impl HarnessProcessHandle {
                 can_steer,
             },
             cancel_tx: Arc::new(Mutex::new(Some(cancel_tx))),
+            ended: None,
         }
     }
 

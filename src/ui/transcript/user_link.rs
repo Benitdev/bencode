@@ -39,8 +39,13 @@ const VIOLET: usize = 4;
 enum Load {
     Loading,
     Ready(Box<(WorkItem, Details)>),
-    Unavailable(String),
+    /// What `gh` said, and when: a card shown again after `RETRY` asks
+    /// again (signed in since, back online).
+    Unavailable(String, std::time::Instant),
 }
+
+/// How long a failed lookup stands before a card asks `gh` again.
+const RETRY: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Every card's item, by its key, for the app's life.
 #[derive(Default)]
@@ -50,7 +55,17 @@ impl Global for Cards {}
 
 /// The link a message's chip shows, and whether the message is that link
 /// alone.
+/// Drawn with every message row: most messages name no github.com, and
+/// learn it from one pass without copying the text.
 pub(super) fn message_link(text: &str) -> Option<(LinkedWorkItem, bool)> {
+    const HOST: &[u8] = b"github.com/";
+    if !text
+        .as_bytes()
+        .windows(HOST.len())
+        .any(|window| window.eq_ignore_ascii_case(HOST))
+    {
+        return None;
+    }
     let (range, item) = LinkedWorkItem::github_link_in(text)?;
     let alone = text.trim() == &text[range];
     Some((item, alone))
@@ -138,7 +153,10 @@ impl WorkItemCard {
         let key = link.item_key();
         let known = cx
             .try_global::<Cards>()
-            .is_some_and(|cards| cards.0.contains_key(&key));
+            .is_some_and(|cards| match cards.0.get(&key) {
+                Some(Load::Unavailable(_, at)) => at.elapsed() < RETRY,
+                found => found.is_some(),
+            });
         if !known {
             cx.default_global::<Cards>()
                 .0
@@ -159,7 +177,7 @@ impl WorkItemCard {
                     Ok(found) => Load::Ready(Box::new(found)),
                     Err(err) => {
                         log::warn!("link card {key}: {err}");
-                        Load::Unavailable(err)
+                        Load::Unavailable(err, std::time::Instant::now())
                     }
                 };
                 let landed = card.update(cx, |_, cx| {
@@ -206,7 +224,7 @@ impl Render for WorkItemCard {
                         .child("Loading…"),
                 );
             }
-            Load::Unavailable(err) => {
+            Load::Unavailable(err, _) => {
                 return frame.child(
                     div()
                         .mt_1()
@@ -360,6 +378,7 @@ mod tests {
         assert!(!alone);
         assert_eq!(item.number, 12);
         assert!(message_link("no link here").is_none());
+        assert!(message_link("HTTPS://GitHub.com/acme/app/issues/3").is_some());
     }
 
     #[test]

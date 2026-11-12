@@ -74,6 +74,13 @@ const FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/app.rs");
 /// changed lines.
 const COMMIT: &str = "4ddb50b09cbcf9f872d26cc07f4a9ade047ed27c";
 
+/// The thread with the most blocks, as the bench opens first.
+fn longest_thread(app: &BenCodeApp) -> Option<String> {
+    (app.sessions.iter())
+        .max_by_key(|s| s.blocks.len())
+        .map(|s| s.id.clone())
+}
+
 /// The subagent run with the longest trail: its thread and block.
 fn longest_run(app: &BenCodeApp) -> Option<(String, usize)> {
     app.sessions
@@ -337,6 +344,26 @@ fn cases(thread: Option<String>) -> Vec<Case> {
             "a long subagent run open, a step streamed in",
             Box::new(nothing),
             stream_into_run,
+        ),
+        // The frame after a quiet spell gave the GPU memory back
+        // (`gpu_trim.rs`), against a repaint that keeps the atlases.
+        case(
+            "long thread: everything repainted",
+            Box::new(|app, cx| {
+                if let Some(id) = longest_thread(app) {
+                    app.open_session(id, cx);
+                }
+            }),
+            |_, cx| cx.refresh_windows(),
+        ),
+        case(
+            "long thread: repainted after a GPU trim",
+            Box::new(nothing),
+            |_, cx| {
+                #[cfg(target_os = "macos")]
+                gpui_apple::metal_renderer::trim();
+                cx.refresh_windows();
+            },
         ),
     ]
 }

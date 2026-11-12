@@ -15,13 +15,15 @@ use tokio::sync::{mpsc, oneshot};
 use crate::harness::accounts::AccountProfile;
 use crate::harness::attachments::Attachment;
 use crate::harness::events::{AgentEvent, DoneStatus};
-use crate::harness::handle::{HarnessProcessHandle, PermissionResponder, StdinMsg, Steer};
+use crate::harness::handle::{Ended, HarnessProcessHandle, PermissionResponder, StdinMsg, Steer};
 use crate::harness::runtime::runtime;
 
 const STDERR_TAIL_LINES: usize = 20;
 /// How long a child may keep running once its turn is `Done` and its stdin
 /// closed; an agent server that ignores EOF is killed after this.
 const EXIT_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+/// How long a child asked to stop (SIGTERM) has before it is killed.
+pub const RETIRE_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Turns one stdout line into zero or more events. Implementations are pure
 /// state machines so they can be unit-tested with recorded transcripts.
@@ -127,11 +129,13 @@ pub fn spawn(
     } else {
         (None, None)
     };
+    let ended = Arc::new(Ended::default());
     let handle = HarnessProcessHandle::new(
         stdin_tx.clone(),
         cancel_tx,
         spec.permission_responder,
         steer_tx,
+        ended.clone(),
     );
     tokio::spawn(pump(PumpCtx {
         child,
@@ -143,6 +147,7 @@ pub fn spawn(
         steer_rx,
         stderr_task,
         stderr_tail,
+        _ended: EndOnDrop(ended),
     }));
 
     Ok((handle, event_rx))
@@ -187,6 +192,16 @@ struct PumpCtx<P> {
     steer_rx: Option<mpsc::UnboundedReceiver<Steer>>,
     stderr_task: tokio::task::JoinHandle<()>,
     stderr_tail: StderrTail,
+    /// Marks the child gone however the pump returns.
+    _ended: EndOnDrop,
+}
+
+struct EndOnDrop(Arc<Ended>);
+
+impl Drop for EndOnDrop {
+    fn drop(&mut self) {
+        self.0.finish();
+    }
 }
 
 /// The next follow-up; never resolves for a harness that takes none.
@@ -222,6 +237,37 @@ fn forward(
     }
 }
 
+/// Stops a child gently (MonoCode `retire_child`): stdin closes, the child
+/// gets SIGTERM and `RETIRE_GRACE` to exit, then SIGKILL. Claude Code
+/// saves a refreshed sign-in through a `security` child of its own; a kill
+/// in the middle of that left the Keychain holding a spent token, and the
+/// account signed out.
+async fn retire(child: &mut Child, stdin_tx: &mpsc::UnboundedSender<StdinMsg>) {
+    let _ = stdin_tx.send(StdinMsg::Close);
+    if let Ok(Some(_)) = child.try_wait() {
+        return;
+    }
+    #[cfg(unix)]
+    if let Some(pid) = child.id().and_then(|pid| libc::pid_t::try_from(pid).ok()) {
+        // SAFETY: `kill` takes a pid and a signal; the pid is our child's,
+        // not yet reaped (`try_wait` above), so it names no other process.
+        if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
+            log::debug!(
+                "SIGTERM to harness {pid}: {}",
+                std::io::Error::last_os_error()
+            );
+        }
+        if let Ok(exit) = tokio::time::timeout(RETIRE_GRACE, child.wait()).await {
+            log::debug!("harness {pid} stopped: {exit:?}");
+            return;
+        }
+        log::debug!("harness {pid} ignored SIGTERM for {RETIRE_GRACE:?}; killing it");
+    }
+    if let Err(err) = child.kill().await {
+        log::debug!("killing harness: {err}");
+    }
+}
+
 /// Restarts the parser's quiet timer; whether one is running.
 fn rearm_quiet<P: LineParser>(
     parser: &P,
@@ -246,15 +292,15 @@ async fn pump<P: LineParser>(mut ctx: PumpCtx<P>) {
     loop {
         tokio::select! {
             () = &mut exit_deadline, if done => {
-                log::debug!("harness still running {EXIT_GRACE:?} after its turn; killing it");
-                let _ = ctx.child.kill().await;
+                log::debug!("harness still running {EXIT_GRACE:?} after its turn; stopping it");
+                retire(&mut ctx.child, &ctx.stdin_tx).await;
                 break;
             }
             Ok(()) = &mut ctx.cancel_rx => {
-                let _ = ctx.child.kill().await;
                 if !done {
                     let _ = ctx.event_tx.send(AgentEvent::Done(DoneStatus::Cancelled));
                 }
+                retire(&mut ctx.child, &ctx.stdin_tx).await;
                 return;
             }
             steer = next_steer(&mut ctx.steer_rx), if !done => match steer {
@@ -403,6 +449,32 @@ mod tests {
         let (handle, rx) = spawn(sh("sleep 30"), EchoParser).unwrap();
         handle.cancel();
         assert_eq!(collect(rx), vec![AgentEvent::Done(DoneStatus::Cancelled)]);
+    }
+
+    #[test]
+    fn a_quit_can_wait_for_a_cancelled_child() {
+        let (handle, rx) = spawn(sh("sleep 30"), EchoParser).unwrap();
+        assert!(!handle.wait_ended(std::time::Duration::from_millis(50)));
+        handle.cancel();
+        assert!(handle.wait_ended(RETIRE_GRACE * 2));
+        drop(rx);
+    }
+
+    #[test]
+    fn a_cancelled_child_may_finish_saving_before_it_goes() {
+        let saved = std::env::temp_dir().join(format!("bencode-retire-{}", std::process::id()));
+        let _ = std::fs::remove_file(&saved);
+        let script = format!(
+            "trap 'sleep 0.2; echo ok > {}; exit 0' TERM; while :; do sleep 0.05; done",
+            saved.display()
+        );
+        let (handle, rx) = spawn(sh(&script), EchoParser).unwrap();
+        // Let the shell set its trap first.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        handle.cancel();
+        assert_eq!(collect(rx), vec![AgentEvent::Done(DoneStatus::Cancelled)]);
+        assert_eq!(std::fs::read_to_string(&saved).unwrap().trim(), "ok");
+        std::fs::remove_file(&saved).unwrap();
     }
 
     #[test]

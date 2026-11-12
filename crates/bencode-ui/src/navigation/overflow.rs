@@ -48,7 +48,7 @@ pub(crate) fn list_button(
         id,
         rows,
         selected,
-        focused,
+        focus: &focus,
     };
     listing(list, trigger, on_pick, window, cx)
 }

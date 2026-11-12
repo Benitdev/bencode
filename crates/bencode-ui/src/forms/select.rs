@@ -1,13 +1,13 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, Bounds, Div, ElementId, Entity, FocusHandle, InteractiveElement, IntoElement,
-    KeyDownEvent, MouseButton, ParentElement, Pixels, RenderOnce, Role, ScrollHandle, SharedString,
-    Stateful, Styled, Window, canvas, div, prelude::*, transparent_black,
+    AnyElement, App, Bounds, Div, ElementId, Entity, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, KeyDownEvent, MouseButton, ParentElement, Pixels, RenderOnce, Role, ScrollHandle,
+    SharedString, Stateful, Styled, Window, canvas, div, prelude::*, transparent_black,
 };
 
 use super::{
-    Choice,
+    Choice, Down, Enter, TextInput, Up,
     input::text_size,
     options::{OnValue, Pick, Popup, Run, reveal, step},
 };
@@ -186,37 +186,25 @@ pub(crate) fn matching(rows: &[Choice], query: &str) -> Vec<usize> {
         .collect()
 }
 
-/// What a key typed into an open list's filter does to `query`: a printable
-/// character is added, Backspace takes the last one off. `None` when the key
-/// is not for the filter (a space only once something is typed: before,
-/// it picks).
-pub(crate) fn typed(event: &KeyDownEvent, query: &str) -> Option<String> {
-    let keystroke = &event.keystroke;
-    let modifiers = &keystroke.modifiers;
-    if modifiers.platform || modifiers.control || modifiers.function {
-        return None;
-    }
-    if keystroke.key == "backspace" {
-        let mut query = query.to_string();
-        return query.pop().map(|_| query);
-    }
-    let typed = keystroke.key_char.as_deref()?;
-    if typed.chars().any(char::is_control) || (typed == " " && query.is_empty()) {
-        return None;
-    }
-    Some(format!("{query}{typed}"))
+/// A long list's filter: a text field of its own, so an input method
+/// (Vietnamese Telex, say) composes in it as anywhere else.
+pub(crate) struct Filter {
+    pub input: Entity<TextInput>,
 }
 
-/// The filter row atop a long list: the search icon and what was typed, or
-/// the hint that typing filters.
-fn filter_row(query: &str, cx: &App) -> AnyElement {
-    let theme = cx.theme();
-    let colors = &theme.colors;
-    let (text, color) = if query.is_empty() {
-        (i18n::text(cx, "select.filter", &[]), colors.fg_subtle)
-    } else {
-        (SharedString::from(query.to_string()), colors.fg)
-    };
+/// The filter row atop a long list: the search icon and the field, which
+/// has the keyboard while the list is open. Up and Down walk the list,
+/// Enter picks, Escape closes; the field keeps the rest.
+fn filter_row(
+    filter: &Entity<TextInput>,
+    walk: impl Fn(isize, &mut Window, &mut App) + 'static,
+    enter: impl Fn(&mut Window, &mut App) + 'static,
+    escape: impl Fn(&mut Window, &mut App) + 'static,
+    cx: &App,
+) -> AnyElement {
+    let colors = &cx.theme().colors;
+    let walk = Rc::new(walk);
+    let (up, down) = (walk.clone(), walk);
     div()
         .flex()
         .flex_none()
@@ -227,18 +215,31 @@ fn filter_row(query: &str, cx: &App) -> AnyElement {
         .mb_1()
         .border_b_1()
         .border_color(colors.border)
+        // Ahead of the field's own Up, Down and Enter.
+        .capture_action(move |_: &Up, window, cx| {
+            cx.stop_propagation();
+            up(-1, window, cx);
+        })
+        .capture_action(move |_: &Down, window, cx| {
+            cx.stop_propagation();
+            down(1, window, cx);
+        })
+        .capture_action(move |_: &Enter, window, cx| {
+            cx.stop_propagation();
+            enter(window, cx);
+        })
+        .on_key_down(move |event, window, cx| {
+            if event.keystroke.key == "escape" {
+                cx.stop_propagation();
+                escape(window, cx);
+            }
+        })
         .child(
             Icon::new(IconName::Search)
                 .size(IconSize::Sm)
                 .color(colors.fg_subtle),
         )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .text_color(color)
-                .child(Ellipsis::new(text)),
-        )
+        .child(div().flex_1().min_w_0().child(filter.clone()))
         .into_any_element()
 }
 
@@ -247,7 +248,9 @@ pub(crate) struct Listing<'a> {
     pub id: &'a ElementId,
     pub rows: Rc<Vec<Choice>>,
     pub selected: Option<&'a SharedString>,
-    pub focused: bool,
+    /// The trigger's focus: it holds the keyboard unless a filter does,
+    /// and gets it back when the list closes from the filter.
+    pub focus: &'a FocusHandle,
 }
 
 /// Opens `list` from `trigger`: a press or Down toggles it, arrows walk it, Enter picks, Escape or blur closes.
@@ -262,20 +265,52 @@ pub(crate) fn listing(
         id,
         rows,
         selected,
-        focused,
+        focus,
     } = list;
     let picker = window.use_keyed_state((id.clone(), "picker"), cx, |_, _| Picker::default());
-    if picker.read(cx).open && !focused {
+    // A long list filters through a field of its own.
+    let all = rows;
+    let searchable = all.len() > SEARCHABLE;
+    let filter = searchable.then(|| {
+        window
+            .use_keyed_state((id.clone(), "filter"), cx, |window, cx| Filter {
+                input: cx.new(|cx| {
+                    TextInput::new(window, cx).placeholder(i18n::text(cx, "select.filter", &[]))
+                }),
+            })
+            .read(cx)
+            .input
+            .clone()
+    });
+    let filter_focused = filter
+        .as_ref()
+        .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+    if picker.read(cx).open && !focus.is_focused(window) && !filter_focused {
         log::info!("list {id:?}: closed on blur");
         picker.update(cx, |picker, _| {
             picker.open = false;
             picker.query.clear();
         });
     }
-    // A long list shows only the rows its filter matches; `highlighted`
-    // and picks count those rows.
-    let all = rows;
-    let searchable = all.len() > SEARCHABLE;
+    // What the filter holds now: the list shows the rows it matches, the
+    // first of them lit once it changes; `highlighted` and picks count
+    // those rows.
+    let typed = filter
+        .as_ref()
+        .filter(|_| picker.read(cx).open)
+        .map(|input| input.read(cx).text().to_string())
+        .unwrap_or_default();
+    if typed != picker.read(cx).query {
+        let first = matching(&all, &typed)
+            .iter()
+            .position(|&ix| !all[ix].disabled)
+            .unwrap_or(0);
+        picker.update(cx, |picker, _| {
+            picker.query = typed;
+            picker.highlighted = first;
+            picker.revealed = None;
+        });
+    }
     let query = picker.read(cx).query.clone();
     let shown = Rc::new(matching(&all, &query));
     let rows: Rc<Vec<Choice>> = Rc::new(shown.iter().map(|&ix| all[ix].clone()).collect());
@@ -307,18 +342,73 @@ pub(crate) fn listing(
         })
     };
     let chosen: Vec<SharedString> = selected.cloned().into_iter().collect();
-    let (toggle, keys, close, keyed_rows, enter) = (
-        picker.clone(),
-        picker.clone(),
-        picker.clone(),
-        rows.clone(),
-        pick.clone(),
+    // Opens the list; a long one empties its filter and hands it the keyboard.
+    let open_list: Run = {
+        let (picker, filter) = (picker.clone(), filter.clone());
+        Rc::new(move |window, cx| {
+            Picker::show(&picker, true, start, cx);
+            if let Some(input) = &filter {
+                input.update(cx, |input, cx| input.set_text("", cx));
+                window.focus(&input.read(cx).focus_handle(cx), cx);
+            }
+        })
+    };
+    // Closes it; from the filter, the keyboard goes back to the trigger.
+    let close_list: Run = {
+        let (picker, focus) = (picker.clone(), focus.clone());
+        Rc::new(move |window, cx| {
+            let at = picker.read(cx).highlighted;
+            Picker::show(&picker, false, at, cx);
+            if !focus.is_focused(window) {
+                window.focus(&focus, cx);
+            }
+        })
+    };
+    let pick: Pick = {
+        let (pick, focus) = (pick, focus.clone());
+        Rc::new(move |ix, window, cx| {
+            pick(ix, window, cx);
+            if !focus.is_focused(window) {
+                window.focus(&focus, cx);
+            }
+        })
+    };
+    let (keys, keyed_rows, enter) = (picker.clone(), rows.clone(), pick.clone());
+    let (toggle_open, toggle_close, key_open, key_close) = (
+        open_list.clone(),
+        close_list.clone(),
+        open_list,
+        close_list.clone(),
     );
-    let unfiltered = all.clone();
+    let header = filter.as_ref().filter(|_| open).map(|input| {
+        let (walk_picker, walk_rows) = (picker.clone(), rows.clone());
+        let (enter_picker, enter_pick) = (picker.clone(), pick.clone());
+        let escape = close_list.clone();
+        filter_row(
+            input,
+            move |by, _, cx| {
+                if walk_rows.is_empty() {
+                    return;
+                }
+                let at = walk_picker.read(cx).highlighted.min(walk_rows.len() - 1);
+                Picker::show(&walk_picker, true, step(&walk_rows, at, by), cx);
+            },
+            move |window, cx| {
+                let at = enter_picker.read(cx).highlighted;
+                enter_pick(at, window, cx);
+            },
+            move |window, cx| escape(window, cx),
+            cx,
+        )
+    });
     trigger
         .aria_expanded(open)
-        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-            Picker::show(&toggle, !open, start, cx)
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            if open {
+                toggle_close(window, cx);
+            } else {
+                toggle_open(window, cx);
+            }
         })
         .on_key_down(move |event, window, cx| {
             let at = keys.read(cx).highlighted;
@@ -326,24 +416,11 @@ pub(crate) fn listing(
             if !open {
                 if matches!(key, "down" | "up" | "enter" | "space") {
                     cx.stop_propagation();
-                    Picker::show(&keys, true, start, cx);
+                    key_open(window, cx);
                 }
                 return;
             }
-            if searchable && let Some(query) = typed(event, &keys.read(cx).query) {
-                cx.stop_propagation();
-                // The first match that can be picked, counted among the matches.
-                let first = matching(&unfiltered, &query)
-                    .iter()
-                    .position(|&ix| !unfiltered[ix].disabled)
-                    .unwrap_or(0);
-                keys.update(cx, |picker, cx| {
-                    picker.query = query;
-                    picker.highlighted = first;
-                    picker.revealed = None;
-                    cx.notify();
-                });
-            } else if let Some(to) = moved(event, &keyed_rows, at) {
+            if let Some(to) = moved(event, &keyed_rows, at) {
                 cx.stop_propagation();
                 Picker::show(&keys, true, to, cx);
             } else if matches!(key, "enter" | "space") {
@@ -351,7 +428,7 @@ pub(crate) fn listing(
                 enter(at, window, cx);
             } else if key == "escape" {
                 cx.stop_propagation();
-                Picker::show(&keys, false, at, cx);
+                key_close(window, cx);
             }
         })
         .child(measure_anchor(picker))
@@ -364,13 +441,10 @@ pub(crate) fn listing(
                     highlighted: Some(highlighted),
                     checked: Some(&chosen),
                     pick,
-                    dismiss: Some(Rc::new(move |_, cx| {
-                        let at = close.read(cx).highlighted;
-                        Picker::show(&close, false, at, cx)
-                    })),
+                    dismiss: Some(Rc::new(move |window, cx| close_list(window, cx))),
                     scroll: Some(&scroll),
                     reveal,
-                    header: searchable.then(|| filter_row(&query, cx)),
+                    header,
                     empty: Some(i18n::text(cx, "select.no_matches", &[])),
                 }
                 .render(window, cx),
@@ -517,7 +591,7 @@ impl RenderOnce for Select {
             id: &self.id,
             rows: choices,
             selected: self.selected.as_ref(),
-            focused: focus.is_focused(window),
+            focus: &focus,
         };
         listing(
             list,

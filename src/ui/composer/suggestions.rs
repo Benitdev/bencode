@@ -569,8 +569,9 @@ fn command_look(item: &Suggestion, colors: &bencode_ui::theme::Palette) -> (Icon
             colors.fg.ink(Ink::Secondary),
         ),
         Command::Stage => (Icon::new(IconName::Plus), colors.success),
+        // Lucide's git-commit is a hairline at this size; a check reads.
         Command::Commit => (
-            Icon::new(IconName::GitCommitHorizontal),
+            Icon::new(IconName::CircleCheck),
             colors.hue(RUST, "/commit"),
         ),
     }
