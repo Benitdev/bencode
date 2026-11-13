@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [0.1.47] - Unreleased
+## [0.1.47] - 2026-11-13
 
 - Agents reach the Backlog space connected in Settings: while it is
   connected, a thread on Claude, Codex, OpenCode or Grok Build can find
