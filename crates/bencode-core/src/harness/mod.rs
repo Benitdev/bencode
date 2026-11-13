@@ -130,9 +130,11 @@ pub struct SpawnRequest {
     pub settings: std::collections::BTreeMap<String, String>,
     /// The thread's account profile; None runs under the default one.
     pub account: Option<accounts::AccountProfile>,
-    /// The in-app browser's MCP server, offered to the agent while a
-    /// browser tab is open (`app/browser.rs`).
-    pub browser_mcp: Option<crate::mcp::McpLaunch>,
+    /// The MCP servers BenCode offers this turn's agent, beside the user's
+    /// own: the in-app browser's while a browser tab is open
+    /// (`app/browser.rs`), Backlog's while it is connected
+    /// (`app/backlog.rs`).
+    pub mcp_servers: Vec<crate::mcp::McpLaunch>,
     /// BenCode's `app` CLI for this turn (MonoCode's `MONOCODE_APP_*`):
     /// a Mono's turns reach the app through it (`bencode app …`).
     pub app: Option<AppAccess>,
@@ -277,7 +279,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
-            browser_mcp: None,
+            mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,
         };

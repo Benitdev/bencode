@@ -2,7 +2,7 @@
 //! assignee, priority, milestones, resolution, start and due dates, and
 //! estimated and actual hours. `fields` reads them off an issue, `options`
 //! lists what a project's issues can be set to, and `update` changes one
-//! (`PATCH /issues/:key`, an empty value clearing it).
+//! (`PATCH /issues/:key`, an empty value clearing it; `update_all`, several).
 
 use serde_json::Value;
 
@@ -155,13 +155,25 @@ pub fn options(project_id: &str) -> Result<FieldOptions, String> {
 
 /// Applies `change` to the issue; returns it as it is now.
 pub fn update(key: &str, change: &Change) -> Result<(WorkItem, IssueFields), String> {
-    let config = require_config()?;
-    let key = require_issue_key(key)?;
-    patch(&config, key, change)
+    update_all(key, std::slice::from_ref(change))
 }
 
-fn patch(config: &Config, key: &str, change: &Change) -> Result<(WorkItem, IssueFields), String> {
-    let form = change.form();
+/// Applies `changes` to the issue at once; returns it as it is now.
+pub fn update_all(key: &str, changes: &[Change]) -> Result<(WorkItem, IssueFields), String> {
+    let config = require_config()?;
+    let key = require_issue_key(key)?;
+    patch(&config, key, changes)
+}
+
+fn patch(
+    config: &Config,
+    key: &str,
+    changes: &[Change],
+) -> Result<(WorkItem, IssueFields), String> {
+    let form: Vec<(&str, String)> = changes.iter().flat_map(Change::form).collect();
+    if form.is_empty() {
+        return Err("Nothing to change".into());
+    }
     let form: Vec<(&str, &str)> = form.iter().map(|(k, v)| (*k, v.as_str())).collect();
     let data = call(config, Some("PATCH"), &format!("/issues/{key}"), &[], &form)?;
     let row: IssueRow =

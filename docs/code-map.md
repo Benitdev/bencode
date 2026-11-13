@@ -45,7 +45,8 @@ bencode/
     ├── github_accounts.rs    the accounts `gh` is signed in with; the one a project's `gh` runs as
     ├── backlog.rs            Nulab Backlog through its REST API (Inbox issues, comments, status)
     ├── backlog/images.rs     the pictures an issue attaches, saved and drawn inline
-    ├── backlog/fields.rs     an issue's editable fields, their choices, and changing one
+    ├── backlog/fields.rs     an issue's editable fields, their choices, and changing them
+    ├── backlog/mcp.rs        the agents' MCP server for the connected space (`--backlog-mcp`)
     ├── browser/              the in-app browser: the WKWebView (wry), its scripts, the agents' MCP server (`--browser-mcp`) and its socket
     ├── work_items.rs         the Inbox's items, whichever tracker they come from
     ├── work_items/attention.rs  "Needs you": the trackers' notifications to the user, by item key, and the rule
@@ -53,7 +54,7 @@ bencode/
     ├── work_items/translate.rs  an item or comment in another language, one model turn
     ├── work_items/translate/cache.rs   translations kept on disk by key, language and source hash
     ├── work_items/translate/script.rs  whether a text is already in a language ("Always translate")
-    ├── mcp/                  MCP server discovery
+    ├── mcp/                  MCP server discovery; `server.rs`, the stdio side of BenCode's own servers
     ├── project_search.rs     search in files: core's, here or on the project's machine
     ├── rate_limits/          provider usage windows (the usage chip): parsers and fetchers
     ├── skills/               SKILL.md discovery and `/skill` injection
@@ -199,7 +200,7 @@ bencode/
 | `features/automations/` | `ui/automations/`, `app/automations.rs`, `app/automation_runs.rs`, `schedule.rs`, `db/schedule.rs` | Templates, time triggers (BenCode adds several weekdays and monthly), session settings, run history, 30s scheduler, skip, pause all; BenCode lands on an overview (running, needs you, recent results, upcoming) and badges the rail. No event triggers |
 | `features/inbox/` | `ui/inbox_view*`, `github.rs`, `work_items.rs` | GitHub issues and PRs, checks, CI repair, comments; the list's rows (`inbox_view/row.rs`: short keys, due and priority marks) and keys (`inbox_view/keyboard.rs`); the virtual list with group headers (`inbox_view/list.rs`), its grouping and sort (`inbox_view/grouping.rs`) and its toolbar, menus and filter chips (`inbox_view/toolbar.rs`); BenCode's own "Needs you" (`work_items/attention.rs`, asked by `app/inbox_attention.rs`); the detail's properties column or rows (`inbox_view/properties.rs`, Backlog's in `backlog_fields.rs`); the threads linked to each item (`app/item_threads.rs`: the index and their state; `inbox_view/threads.rs`: the rows' mark and the Threads section) and Backlog links (`db/work_item.rs`, `app/work_item_link.rs`); translations kept on disk (`work_items/translate/cache.rs`) and "Always translate" (`inbox_view/translate.rs`); a PR's Files changed (`gh pr diff` in `ui/diff_viewer.rs`'s review, hunks only: no Full file mode); BenCode's own: pull requests linked to the tickets they are named after (`work_items/tickets.rs`), and an item in a tab beside the chat (`inbox_view/tab.rs`, `PaneTab::WorkItem`) drawing the same detail per view (`inbox_view/detail.rs`'s `DetailView`); a pull request's checks and review on its row (`PrStatus` in `work_items.rs`, read with the list) and Review with agent (`composer/inbox_card.rs`'s `CardTask`); items picked in the list (`inbox_view/picks.rs`) and sent to agents together after a confirmation (`inbox_view/batch.rs`) |
 | none (MonoCode runs `gh` as its active account) | `github_accounts.rs`, `app/github_accounts.rs`, `ui/settings_integrations.rs` | A `gh` account per project. BenCode's own: Automatic falls back to another signed-in account when the active one cannot see the repository |
-| `features/inbox/model/jira.ts`, `src-tauri/src/jira.rs` (as the pattern) | `backlog.rs`, `app/backlog.rs`, `ui/settings_integrations.rs` | Nulab Backlog issues in the Inbox: comments, status change, Send to agent. BenCode's own; MonoCode has Jira, Linear, GitLab and Azure DevOps instead |
+| `features/inbox/model/jira.ts`, `src-tauri/src/jira.rs` (as the pattern) | `backlog.rs`, `app/backlog.rs`, `ui/settings_integrations.rs` | Nulab Backlog issues in the Inbox: comments, status change, Send to agent; while it is connected every turn's agent but Antigravity's reads, searches, comments on and changes its issues through the `bencode-backlog` MCP server (`backlog/mcp.rs`). BenCode's own; MonoCode has Jira, Linear, GitLab and Azure DevOps instead |
 | `features/search/` | `ui/search_view/`, `ui/quick_open.rs` | Universal search; Go to File (⌘P) |
 | `features/settings/` | `ui/settings_modal.rs`, `settings.rs` | Providers, MCP, skills |
 | `features/settings/model/appearance.ts`, `uiScale.ts`, `AppearancePage` | `ui/settings_appearance.rs`, `ui/appearance.rs`, `ui/scale.rs`, `ui/theme.rs`, `ui/project_theme.rs` | Tint, accent, diff palette, interface scale, excluded files; a project's own tint and accent (MonoCode GPUI's project theme), from its rail menu |

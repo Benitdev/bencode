@@ -120,9 +120,9 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     if let Some(tier) = req.settings.get("serviceTier").filter(|t| *t != "default") {
         args.extend(["-c".into(), format!("service_tier=\"{tier}\"")]);
     }
-    if let Some(launch) = &req.browser_mcp {
+    for launch in &req.mcp_servers {
         // TOML values; a JSON string or array of strings is one.
-        let key = format!("mcp_servers.{}", crate::mcp::MCP_SERVER_NAME);
+        let key = format!("mcp_servers.{}", launch.name);
         let command = serde_json::to_string(&launch.command).unwrap_or_default();
         let launch_args = serde_json::to_string(&launch.args).unwrap_or_default();
         args.extend([
@@ -415,10 +415,11 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
-            browser_mcp: Some(crate::mcp::McpLaunch {
+            mcp_servers: vec![crate::mcp::McpLaunch {
+                name: "bencode-browser".into(),
                 command: "/Apps/Ben Code/bencode".into(),
                 args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
-            }),
+            }],
             app: None,
             system_prompt: None,
         };
@@ -457,7 +458,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
-            browser_mcp: None,
+            mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,
         };
@@ -487,7 +488,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
-            browser_mcp: None,
+            mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,
         };

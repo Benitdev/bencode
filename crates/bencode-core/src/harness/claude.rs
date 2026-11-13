@@ -68,20 +68,21 @@ fn build_args(req: &SpawnRequest, shared_mcp: Option<&std::path::Path>) -> Vec<S
     .to_vec();
     // Added to the user's own servers. The flag takes several values, so
     // it goes before the others.
-    let browser = req.browser_mcp.as_ref().map(|launch| {
-        serde_json::json!({
-            "mcpServers": {
-                crate::mcp::MCP_SERVER_NAME: {
+    let offered = (!req.mcp_servers.is_empty()).then(|| {
+        let servers: serde_json::Map<String, serde_json::Value> = (req.mcp_servers.iter())
+            .map(|launch| {
+                let server = serde_json::json!({
                     "type": "stdio",
                     "command": launch.command,
                     "args": launch.args,
-                },
-            },
-        })
-        .to_string()
+                });
+                (launch.name.clone(), server)
+            })
+            .collect();
+        serde_json::json!({ "mcpServers": servers }).to_string()
     });
     let shared = shared_mcp.map(|path| path.to_string_lossy().into_owned());
-    let configs: Vec<String> = shared.into_iter().chain(browser).collect();
+    let configs: Vec<String> = shared.into_iter().chain(offered).collect();
     if !configs.is_empty() {
         args.push("--mcp-config".into());
         args.extend(configs);
@@ -692,7 +693,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
-            browser_mcp: None,
+            mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,
         }
@@ -715,15 +716,23 @@ mod tests {
     }
 
     #[test]
-    fn an_open_browser_tab_adds_its_mcp_server() {
+    fn offered_mcp_servers_go_in_one_config() {
         assert!(
             !build_args(&request(PermissionPolicy::Ask), None).contains(&"--mcp-config".into())
         );
         let req = SpawnRequest {
-            browser_mcp: Some(crate::mcp::McpLaunch {
-                command: "/bin/bencode".into(),
-                args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
-            }),
+            mcp_servers: vec![
+                crate::mcp::McpLaunch {
+                    name: "bencode-browser".into(),
+                    command: "/bin/bencode".into(),
+                    args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
+                },
+                crate::mcp::McpLaunch {
+                    name: "bencode-backlog".into(),
+                    command: "/bin/bencode".into(),
+                    args: vec!["--backlog-mcp".into()],
+                },
+            ],
             ..request(PermissionPolicy::Ask)
         };
         let args = build_args(&req, None);
@@ -737,6 +746,10 @@ mod tests {
                 "args": ["--browser-mcp", "/tmp/b.sock"],
             })
         );
+        assert_eq!(
+            config["mcpServers"]["bencode-backlog"]["args"],
+            serde_json::json!(["--backlog-mcp"])
+        );
         // The flag takes several values: an option must follow it.
         assert!(args[at + 2].starts_with("--"));
     }
@@ -744,10 +757,11 @@ mod tests {
     #[test]
     fn another_account_gets_the_shared_servers_beside_the_browser() {
         let req = SpawnRequest {
-            browser_mcp: Some(crate::mcp::McpLaunch {
+            mcp_servers: vec![crate::mcp::McpLaunch {
+                name: "bencode-browser".into(),
                 command: "/bin/bencode".into(),
                 args: vec![],
-            }),
+            }],
             ..request(PermissionPolicy::Ask)
         };
         let shared = std::path::Path::new("/profile/bencode-mcp.json");
@@ -1283,7 +1297,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
-            browser_mcp: None,
+            mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,
         };

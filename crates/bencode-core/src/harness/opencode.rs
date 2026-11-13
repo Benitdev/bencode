@@ -48,18 +48,23 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
     process::spawn(spec, OpenCodeParser::default())
 }
 
-/// The in-app browser's MCP server as OpenCode's inline config, which it
+/// The MCP servers BenCode offers as OpenCode's inline config, which it
 /// merges over the user's own.
 fn inline_config(req: &SpawnRequest) -> Option<(String, String)> {
-    let launch = req.browser_mcp.as_ref()?;
-    let command: Vec<&str> = std::iter::once(launch.command.as_str())
-        .chain(launch.args.iter().map(String::as_str))
+    if req.mcp_servers.is_empty() {
+        return None;
+    }
+    let servers: serde_json::Map<String, serde_json::Value> = (req.mcp_servers.iter())
+        .map(|launch| {
+            let command: Vec<&str> = std::iter::once(launch.command.as_str())
+                .chain(launch.args.iter().map(String::as_str))
+                .collect();
+            let server =
+                serde_json::json!({ "type": "local", "command": command, "enabled": true });
+            (launch.name.clone(), server)
+        })
         .collect();
-    let config = serde_json::json!({
-        "mcp": {
-            crate::mcp::MCP_SERVER_NAME: { "type": "local", "command": command, "enabled": true },
-        },
-    });
+    let config = serde_json::json!({ "mcp": servers });
     Some(("OPENCODE_CONFIG_CONTENT".into(), config.to_string()))
 }
 
@@ -252,15 +257,16 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
-            browser_mcp: None,
+            mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,
         };
         assert!(inline_config(&req).is_none());
-        req.browser_mcp = Some(crate::mcp::McpLaunch {
+        req.mcp_servers = vec![crate::mcp::McpLaunch {
+            name: "bencode-browser".into(),
             command: "/bin/bencode".into(),
             args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
-        });
+        }];
         let (key, value) = inline_config(&req).unwrap();
         assert_eq!(key, "OPENCODE_CONFIG_CONTENT");
         let config: serde_json::Value = serde_json::from_str(&value).unwrap();
@@ -287,7 +293,7 @@ mod tests {
                 .into_iter()
                 .collect(),
             account: None,
-            browser_mcp: None,
+            mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,
         };

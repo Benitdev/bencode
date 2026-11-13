@@ -21,8 +21,7 @@ mod snapshot;
 
 const MCP_ARG: &str = "--browser-mcp";
 
-/// The MCP server's name, as the agents list its tools (`mcp__bencode-browser__…`).
-pub use bencode_core::mcp::{MCP_SERVER_NAME, McpLaunch};
+pub use bencode_core::mcp::{BROWSER_SERVER, McpLaunch};
 
 /// Runs the MCP server when `main` was started as one; returns the exit
 /// code. `None`: this is the app.
@@ -40,6 +39,7 @@ pub fn mcp_launch(socket: &std::path::Path) -> anyhow::Result<McpLaunch> {
     use anyhow::Context as _;
     let exe = std::env::current_exe().context("cannot find BenCode's executable")?;
     Ok(McpLaunch {
+        name: BROWSER_SERVER.to_string(),
         command: exe.to_string_lossy().into_owned(),
         args: vec![MCP_ARG.to_string(), socket.to_string_lossy().into_owned()],
     })

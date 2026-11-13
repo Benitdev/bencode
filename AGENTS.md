@@ -342,6 +342,10 @@ Monos under BenCode's own name, look and words
   account; tokens travel in `GH_TOKEN`, never argv or logs. A new tracker
   is a module like `backlog.rs` plus a `Provider` variant; HTTP goes
   through `rate_limits::http` with secrets on stdin.
+- An MCP server BenCode offers agents is `bencode --<name>-mcp` on
+  `mcp::server`, added to the turn's `SpawnRequest::mcp_servers` only
+  while it can answer (a browser tab open, Backlog connected). It reads
+  its secrets itself, never from argv or a CLI's config.
 - Discovery touching PATH or config files is cached in `self.integrations`.
 
 ## 8. Workflow

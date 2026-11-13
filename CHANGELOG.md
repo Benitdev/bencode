@@ -6,6 +6,12 @@ tagging (`docs/releasing.md`).
 
 ## [0.1.47] - Unreleased
 
+- Agents reach the Backlog space connected in Settings: while it is
+  connected, a thread on Claude, Codex, OpenCode or Grok Build can find
+  issues, read one with its comments, comment on it and change its
+  status and fields, as you, without a Backlog MCP server of its own.
+  The API key stays in BenCode's data folder. Antigravity takes MCP
+  servers only from its own config, so it does not get them.
 - ⌘L puts the cursor back in the prompt of the thread in view (a Bot's
   too), from the transcript, a file, the terminal or the navigator.
 - A title-bar tab holding a saved draft has a dashed outline, as its

@@ -97,18 +97,22 @@ pub fn initialize_params() -> Value {
     })
 }
 
-/// The MCP servers a session gets, in ACP's stdio shape: the in-app
-/// browser's while a browser tab is open, else none.
-fn mcp_servers(browser: Option<&crate::mcp::McpLaunch>) -> Value {
-    match browser {
-        Some(launch) => json!([{
-            "name": crate::mcp::MCP_SERVER_NAME,
-            "command": launch.command,
-            "args": launch.args,
-            "env": [],
-        }]),
-        None => json!([]),
-    }
+/// The MCP servers a session gets, in ACP's stdio shape: those BenCode
+/// offers this turn (`SpawnRequest::mcp_servers`), maybe none.
+fn mcp_servers(offered: &[crate::mcp::McpLaunch]) -> Value {
+    Value::Array(
+        offered
+            .iter()
+            .map(|launch| {
+                json!({
+                    "name": launch.name,
+                    "command": launch.command,
+                    "args": launch.args,
+                    "env": [],
+                })
+            })
+            .collect(),
+    )
 }
 
 /// MonoCode `grokSessionNewParams`.
@@ -228,7 +232,7 @@ impl GrokParser {
     fn new(req: &SpawnRequest) -> Self {
         Self {
             cwd: req.cwd.clone(),
-            mcp_servers: mcp_servers(req.browser_mcp.as_ref()),
+            mcp_servers: mcp_servers(&req.mcp_servers),
             prompt: crate::harness::attachments::acp_prompt_blocks(&req.prompt, &req.attachments),
             resume_id: req.resume_id.clone().filter(|id| !id.trim().is_empty()),
             model: req.model.clone(),
@@ -1465,7 +1469,7 @@ mod tests {
             compact: false,
             settings: [("effort".to_string(), "high".to_string())].into(),
             account: None,
-            browser_mcp: None,
+            mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,
         }
@@ -1579,10 +1583,11 @@ mod tests {
     #[test]
     fn an_open_browser_tab_gives_the_session_its_tools() {
         let launch = crate::mcp::McpLaunch {
+            name: "bencode-browser".into(),
             command: "/Applications/BenCode.app/Contents/MacOS/bencode".into(),
             args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
         };
-        let servers = mcp_servers(Some(&launch));
+        let servers = mcp_servers(&[launch]);
         assert_eq!(
             servers,
             json!([{
@@ -1596,7 +1601,7 @@ mod tests {
             session_new_params("/repo", PermissionPolicy::Ask, false, &servers)["mcpServers"],
             servers
         );
-        assert_eq!(mcp_servers(None), json!([]));
+        assert_eq!(mcp_servers(&[]), json!([]));
     }
 
     #[test]

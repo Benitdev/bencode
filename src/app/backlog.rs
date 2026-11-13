@@ -43,6 +43,15 @@ pub struct BacklogState {
 }
 
 impl BenCodeApp {
+    /// How a turn's agent reaches Backlog: only while it is connected, so
+    /// the tools cost no tokens otherwise.
+    pub(crate) fn backlog_mcp_launch(&self) -> Option<bencode_core::mcp::McpLaunch> {
+        self.backlog.account.as_ref()?;
+        backlog::mcp::launch()
+            .map_err(|err| log::warn!("Backlog tools are off for this turn: {err:#}"))
+            .ok()
+    }
+
     /// Reads the saved connection off the UI thread (once at launch).
     pub fn load_backlog_account(&mut self, cx: &mut Context<Self>) {
         let generation = self.backlog.generation;

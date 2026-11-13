@@ -22,8 +22,11 @@ use crate::work_items::{Comment, Details, Kind, Label, Provider, Thread, WorkIte
 
 mod fields;
 mod images;
+pub mod mcp;
 
-pub use fields::{Change, FieldOptions, IssueFields, Named as FieldChoice, options, update};
+pub use fields::{
+    Change, FieldOptions, IssueFields, Named as FieldChoice, options, update, update_all,
+};
 
 const CONFIG_FILE: &str = "backlog-config.json";
 const TIMEOUT: Duration = Duration::from_secs(20);
@@ -646,20 +649,108 @@ pub fn notifications() -> Option<Result<crate::work_items::attention::Found, Str
 /// The issue's description, who opened it and its fields; the pictures
 /// it shows are saved and pointed at (`images`).
 pub fn details(key: &str) -> Result<Details, String> {
+    read_issue(key).map(|(_, details)| details)
+}
+
+/// The issue as the Inbox lists it, with its `details`.
+pub fn read_issue(key: &str) -> Result<(WorkItem, Details), String> {
     let config = require_config()?;
     let key = require_issue_key(key)?;
     let data = call(&config, None, &format!("/issues/{key}"), &[], &[])?;
     let row: IssueRow =
         serde_json::from_value(data).map_err(|_| "Backlog sent an unreadable issue".to_string())?;
     let body = row.description.clone().unwrap_or_default();
-    Ok(Details {
+    let details = Details {
         body: images::Pictures::new(&config, key).inline(&body),
         author: (row.created_user.as_ref())
             .map(|user| user.name.clone())
             .unwrap_or_default(),
         backlog: Some(fields::fields(&row)),
         ..Default::default()
-    })
+    };
+    Ok((work_item(&row, &config.space), details))
+}
+
+/// What an agent looks for (`mcp.rs`).
+#[derive(Clone, Debug, Default)]
+pub struct Search {
+    /// A project's key; every active project when `None`.
+    pub project: Option<String>,
+    pub keyword: Option<String>,
+    pub assigned_to_me: bool,
+    pub include_closed: bool,
+    /// At most Backlog's page.
+    pub count: usize,
+}
+
+/// The issues `search` names, most recently updated first.
+pub fn search(search: &Search) -> Result<Vec<WorkItem>, String> {
+    let config = require_config()?;
+    let catalog = catalog(&config)?;
+    let hidden: Vec<String> = match &search.project {
+        Some(key) => {
+            let project = project_by_key(&catalog.projects, key)?;
+            (catalog.projects.iter())
+                .filter(|other| other.id != project.id)
+                .map(|other| other.id.clone())
+                .collect()
+        }
+        None => Vec::new(),
+    };
+    let me = search.assigned_to_me.then_some(config.user_id);
+    let Some(mut query) = issue_query(&catalog, &hidden, me) else {
+        return Ok(Vec::new());
+    };
+    if search.include_closed {
+        query.retain(|(name, _)| *name != "statusId[]");
+    }
+    if let Some(keyword) = search.keyword.as_deref().map(str::trim)
+        && !keyword.is_empty()
+    {
+        query.push(("keyword", keyword.to_string()));
+    }
+    let count = search.count.clamp(1, PAGE).to_string();
+    for (name, value) in &mut query {
+        if *name == "count" {
+            *value = count.clone();
+        }
+    }
+    parse_issues(call(&config, None, "/issues", &query, &[])?, &config.space)
+}
+
+/// An active project by its key, whatever its case.
+fn project_by_key<'a>(projects: &'a [Project], key: &str) -> Result<&'a Project, String> {
+    let key = key.trim();
+    projects
+        .iter()
+        .find(|project| project.key.eq_ignore_ascii_case(key))
+        .ok_or_else(|| {
+            let keys: Vec<&str> = projects.iter().map(|p| p.key.as_str()).collect();
+            format!(
+                "No active Backlog project {key}; the space has: {}",
+                keys.join(", ")
+            )
+        })
+}
+
+/// The space's active projects, each with its workflow's statuses.
+pub fn projects_with_statuses() -> Result<Vec<(Project, Vec<StatusOption>)>, String> {
+    let catalog = catalog(&require_config()?)?;
+    Ok((catalog.projects.into_iter())
+        .map(|project| {
+            let statuses = (catalog.statuses.get(&project.id))
+                .cloned()
+                .unwrap_or_default();
+            (project, statuses)
+        })
+        .collect())
+}
+
+/// A project's statuses, by its id.
+pub fn statuses(project_id: &str) -> Result<Vec<StatusOption>, String> {
+    let catalog = catalog(&require_config()?)?;
+    (catalog.statuses.get(project_id).cloned())
+        .ok_or_else(|| format!("Backlog listed no statuses for project {project_id}"))
 }
 
 /// One issue as the Inbox lists it, for a thread's link to an issue the

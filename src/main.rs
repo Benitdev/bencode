@@ -45,8 +45,12 @@ fn main() {
     if let Some(code) = pty_host::run_from_args() {
         std::process::exit(code);
     }
-    // So is the MCP server that gives agents the in-app browser.
+    // So are the MCP servers that give agents the in-app browser and the
+    // connected Backlog space.
     if let Some(code) = browser::run_from_args() {
+        std::process::exit(code);
+    }
+    if let Some(code) = backlog::mcp::run_from_args() {
         std::process::exit(code);
     }
     // And `bencode app`, which a Bot's agent runs to reach the app.

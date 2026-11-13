@@ -5,8 +5,11 @@
 //! Claude Desktop, Cursor, and project-local JSON configurations.
 //!
 //! This module only *discovers* configured servers. It does not supervise
-//! server processes or speak JSON-RPC to them. Codex (`~/.codex/config.toml`)
+//! server processes or speak JSON-RPC to them; `server` is the other side,
+//! the servers BenCode itself offers agents. Codex (`~/.codex/config.toml`)
 //! is not read: BenCode has no direct TOML dependency.
+
+pub mod server;
 
 use std::collections::HashMap;
 use std::io::Read as _;

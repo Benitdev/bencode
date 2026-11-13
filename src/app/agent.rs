@@ -1016,11 +1016,18 @@ impl BenCodeApp {
                 attachments: request.attachments.clone(),
                 plan: request.plan,
                 compact: request.purpose == RunPurpose::Compact,
-                // The browser is on this computer, out of a machine's reach.
-                browser_mcp: (request.purpose == RunPurpose::Turn
-                    && !crate::remote::is_remote(&session.cwd))
-                .then(|| self.browser_mcp_launch())
-                .flatten(),
+                // The browser and the Backlog connection are on this
+                // computer, out of a machine's reach.
+                mcp_servers: if request.purpose == RunPurpose::Turn
+                    && !crate::remote::is_remote(&session.cwd)
+                {
+                    [self.browser_mcp_launch(), self.backlog_mcp_launch()]
+                        .into_iter()
+                        .flatten()
+                        .collect()
+                } else {
+                    Vec::new()
+                },
                 app,
                 system_prompt,
                 ..spawn
@@ -1577,7 +1584,7 @@ fn spawn_request(
         } else {
             AccountProfile::resolve(&session.harness, session.provider_account_id.as_deref())
         },
-        browser_mcp: None,
+        mcp_servers: Vec::new(),
         app: None,
         system_prompt: None,
     })

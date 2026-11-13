@@ -6,6 +6,10 @@
 //! The result's `usage` adds up every model call of the turn, so the
 //! context meter reads the last call's instead; a result that is not
 //! `SUCCESS` says why in its `error`.
+//!
+//! `agy` reads MCP servers only from its own config files and refuses
+//! them in `--settings`, so the servers BenCode offers a turn
+//! (`SpawnRequest::mcp_servers`: the browser, Backlog) do not reach it.
 
 use anyhow::Result;
 use std::collections::HashSet;

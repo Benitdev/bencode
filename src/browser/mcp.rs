@@ -1,99 +1,53 @@
 //! `bencode --browser-mcp <socket>`: the MCP server the agent CLIs start
-//! (stdio, newline-delimited JSON-RPC). It knows the tools; each call goes
-//! to the app over `socket` (`bridge.rs`) and acts on the open browser tab.
-//! Its stdout is the protocol, so it logs nothing there.
+//! (stdio, `mcp/server.rs`). It knows the tools; each call goes to the app
+//! over `socket` (`bridge.rs`) and acts on the open browser tab.
 
-use std::io::{BufRead, Write};
 use std::path::Path;
 
 use serde_json::{Value, json};
 
 use super::bridge::{self, ToolRequest};
-
-const PROTOCOL_VERSION: &str = "2025-06-18";
+use crate::mcp::server::{self, Reply, Server};
 
 pub fn run(socket: &Path) -> i32 {
-    let stdin = std::io::stdin();
-    let mut stdout = std::io::stdout();
-    for line in stdin.lock().lines() {
-        let Ok(line) = line else {
-            break;
-        };
-        if line.trim().is_empty() {
-            continue;
-        }
-        let Some(reply) = handle(socket, &line) else {
-            continue;
-        };
-        let written = serde_json::to_vec(&reply)
-            .map_err(std::io::Error::other)
-            .and_then(|mut out| {
-                out.push(b'\n');
-                stdout.write_all(&out)?;
-                stdout.flush()
-            });
-        if written.is_err() {
-            break;
-        }
-    }
-    0
+    server::run(&Browser { socket })
 }
 
-/// The answer to one message; `None` for notifications.
-fn handle(socket: &Path, line: &str) -> Option<Value> {
-    let message: Value = match serde_json::from_str(line) {
-        Ok(message) => message,
-        Err(err) => {
-            return Some(json!({
-                "jsonrpc": "2.0",
-                "id": null,
-                "error": { "code": -32700, "message": format!("parse error: {err}") },
-            }));
-        }
-    };
-    let id = message.get("id").cloned()?;
-    let method = message.get("method").and_then(Value::as_str).unwrap_or("");
-    let params = message.get("params").cloned().unwrap_or(Value::Null);
-    let result = match method {
-        "initialize" => Ok(json!({
-            "protocolVersion": params
-                .get("protocolVersion")
-                .and_then(Value::as_str)
-                .unwrap_or(PROTOCOL_VERSION),
-            "capabilities": { "tools": {} },
-            "serverInfo": { "name": super::MCP_SERVER_NAME, "version": env!("CARGO_PKG_VERSION") },
-            "instructions": "These tools drive the browser tab open in BenCode, the app the user is \
-                talking to you from; the user sees the same page. Use them to check a web app you \
-                are working on: browser_navigate to its address (localhost dev servers work), \
-                browser_snapshot to read the page and number its elements, then browser_click / \
-                browser_type with those numbers, browser_screenshot to see it, browser_console for \
-                its errors.",
-        })),
-        "ping" => Ok(json!({})),
-        "tools/list" => Ok(json!({ "tools": tools() })),
-        "tools/call" => Ok(call_tool(socket, &params)),
-        _ => Err(json!({ "code": -32601, "message": format!("unknown method {method}") })),
-    };
-    Some(match result {
-        Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
-        Err(error) => json!({ "jsonrpc": "2.0", "id": id, "error": error }),
-    })
+struct Browser<'a> {
+    socket: &'a Path,
 }
 
-fn call_tool(socket: &Path, params: &Value) -> Value {
-    let tool = params
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-    let args = params.get("arguments").cloned().unwrap_or(json!({}));
-    let reply = bridge::call(socket, &ToolRequest { tool, args })
-        .unwrap_or_else(|err| bridge::ToolReply::error(format!("{err:#}")));
-    let mut content = vec![json!({ "type": "text", "text": reply.text })];
-    if let Some(image) = reply.image {
-        content.push(json!({ "type": "image", "data": image, "mimeType": "image/png" }));
+impl Server for Browser<'_> {
+    fn name(&self) -> &'static str {
+        super::BROWSER_SERVER
     }
-    json!({ "content": content, "isError": !reply.ok })
+
+    fn instructions(&self) -> &'static str {
+        "These tools drive the browser tab open in BenCode, the app the user is \
+        talking to you from; the user sees the same page. Use them to check a web app you \
+        are working on: browser_navigate to its address (localhost dev servers work), \
+        browser_snapshot to read the page and number its elements, then browser_click / \
+        browser_type with those numbers, browser_screenshot to see it, browser_console for \
+        its errors."
+    }
+
+    fn tools(&self) -> Value {
+        tools()
+    }
+
+    fn call(&self, tool: &str, args: &Value) -> Reply {
+        let request = ToolRequest {
+            tool: tool.to_string(),
+            args: args.clone(),
+        };
+        let reply = bridge::call(self.socket, &request)
+            .unwrap_or_else(|err| bridge::ToolReply::error(format!("{err:#}")));
+        Reply {
+            ok: reply.ok,
+            text: reply.text,
+            image: reply.image,
+        }
+    }
 }
 
 fn element_args() -> Value {
@@ -192,20 +146,16 @@ mod tests {
     use super::*;
 
     fn ask(line: &str) -> Option<Value> {
-        handle(Path::new("/nonexistent/bencode.sock"), line)
+        let browser = Browser {
+            socket: Path::new("/nonexistent/bencode.sock"),
+        };
+        server::handle(&browser, line)
     }
 
     #[test]
-    fn initialize_echoes_the_clients_version() {
-        let reply = ask(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}"#)
-            .unwrap();
-        assert_eq!(reply["result"]["protocolVersion"], "2025-03-26");
+    fn introduces_itself_as_the_browser() {
+        let reply = ask(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#).unwrap();
         assert_eq!(reply["result"]["serverInfo"]["name"], "bencode-browser");
-    }
-
-    #[test]
-    fn notifications_get_no_answer() {
-        assert!(ask(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#).is_none());
     }
 
     #[test]
@@ -227,11 +177,5 @@ mod tests {
                 .unwrap()
                 .contains("not reachable")
         );
-    }
-
-    #[test]
-    fn unknown_methods_are_errors() {
-        let reply = ask(r#"{"jsonrpc":"2.0","id":4,"method":"resources/list"}"#).unwrap();
-        assert_eq!(reply["error"]["code"], -32601);
     }
 }
