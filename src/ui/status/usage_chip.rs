@@ -470,7 +470,16 @@ impl BenCodeApp {
                 )
             });
 
-        let body = if windows.is_empty() {
+        // Antigravity's groups have limits of their own: one that failed
+        // (or that the server left out) does not hide the others.
+        let antigravity_groups = provider == RateLimitProvider::Antigravity
+            && antigravity::GROUPS.iter().any(|group| {
+                self.usage_data
+                    .read(cx)
+                    .limits(provider, group)
+                    .has_windows()
+            });
+        let body = if windows.is_empty() && !antigravity_groups {
             // MonoCode `EmptyUsageState`.
             card(div())
                 .px_3()
@@ -503,7 +512,7 @@ impl BenCodeApp {
                             .child(error),
                     )
                 })
-        } else if provider == RateLimitProvider::Antigravity {
+        } else if antigravity_groups {
             // Each model group has its own limits; the thread's comes first.
             let mut groups = antigravity::GROUPS;
             groups.sort_by_key(|group| *group != chip.active_id);
@@ -512,7 +521,10 @@ impl BenCodeApp {
                 .flex_col()
                 .gap(px(6.0))
                 .children(groups.into_iter().flat_map(|group| {
-                    let windows = self.usage_data.read(cx).limits(provider, group).windows();
+                    let limits = self.usage_data.read(cx).limits(provider, group);
+                    let windows = limits.windows();
+                    // A group with nothing to show says why, when it knows.
+                    let error = windows.is_empty().then(|| limits.error.clone()).flatten();
                     let title = div()
                         .px_1()
                         .pt_1()
@@ -520,9 +532,18 @@ impl BenCodeApp {
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(fg.ink(Ink::Muted))
                         .child(antigravity::group_title(group));
-                    (!windows.is_empty())
+                    let error = error.map(|error| {
+                        div()
+                            .px_1()
+                            .text_size(Text::Xs.px())
+                            .line_height(px(16.0))
+                            .text_color(fg.ink(Ink::Faint))
+                            .child(error)
+                    });
+                    (!windows.is_empty() || error.is_some())
                         .then_some(title)
                         .into_iter()
+                        .chain(error)
                         .chain(windows.into_iter().map(|(kind, window)| {
                             card(usage_window_card(kind, window, now, colors))
                         }))

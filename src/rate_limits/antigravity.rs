@@ -3,6 +3,11 @@
 //! of its Keychain sign-in. Models share limits in groups (Gemini; Claude
 //! and GPT), so a snapshot is one group's. The token is `agy`'s to
 //! refresh: once it has expired, usage waits for the next Antigravity turn.
+//!
+//! The summary (`retrieveUserQuotaSummary`) gives a group's 5-hour and
+//! weekly buckets, but since 2026-11 it lists the Claude and GPT group
+//! alone; a group it leaves out takes its 5-hour window from the per-model
+//! quotas (`retrieveUserQuota`), which have no weekly one.
 
 use std::time::Duration;
 
@@ -67,13 +72,17 @@ pub fn fetch(group: &str, now: i64) -> Fetched {
         Some(project) => serde_json::json!({ "project": project }),
         None => serde_json::json!({}),
     };
-    match post(
-        &token.access_token,
-        "retrieveUserQuotaSummary",
-        &request.to_string(),
-    ) {
+    let request = request.to_string();
+    let summary = match post(&token.access_token, "retrieveUserQuotaSummary", &request) {
+        Ok(body) => parse_quota_summary(&body, group, now),
+        Err(error) => return Fetched::Error(error),
+    };
+    if summary.has_windows() {
+        return Fetched::Limits(summary);
+    }
+    match post(&token.access_token, "retrieveUserQuota", &request) {
         Ok(body) => {
-            let limits = parse_quota_summary(&body, group, now);
+            let limits = parse_model_quotas(&body, group, now);
             if limits.has_windows() {
                 Fetched::Limits(limits)
             } else {
@@ -152,6 +161,33 @@ fn parse_quota_summary(body: &Value, group: &str, now: i64) -> ProviderRateLimit
     )
 }
 
+/// `group`'s 5-hour window out of the per-model quotas: the model of the
+/// group with the least left (they share one limit, so they agree but for
+/// rounding). Entries without a reset time (`chat_…`, `tab_…`) are the
+/// editor's own and limit nothing.
+fn parse_model_quotas(body: &Value, group: &str, now: i64) -> ProviderRateLimits {
+    let session = body
+        .get("buckets")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|bucket| {
+            bucket.get("resetTime").is_some()
+                && bucket
+                    .get("modelId")
+                    .and_then(Value::as_str)
+                    .is_some_and(|model| group_of(model) == group)
+        })
+        .filter_map(|bucket| Some((number_field(bucket, "remainingFraction")?, bucket)))
+        .min_by(|(a, _), (b, _)| a.total_cmp(b))
+        .map(|(remaining, bucket)| RateLimitWindow {
+            used_percent: clamp_used_percent((1.0 - remaining) * 100.0),
+            window_minutes: SESSION_WINDOW_MINUTES,
+            resets_at: bucket.get("resetTime").and_then(parse_reset_timestamp),
+        });
+    ok_limits(session, None, None, now)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +224,31 @@ mod tests {
         assert!(!parse_quota_summary(&serde_json::json!({}), GEMINI_GROUP, 7).has_windows());
     }
 
+    #[test]
+    fn a_group_the_summary_leaves_out_reads_the_model_quotas() {
+        // `retrieveUserQuota` as of 2026-11-13.
+        let body = serde_json::json!({ "buckets": [
+            { "tokenType": "WTUS", "modelId": "chat_20706", "remainingFraction": 1 },
+            { "tokenType": "WTUS", "modelId": "gemini-2.5-flash",
+              "resetTime": "2026-11-13T07:26:43Z", "remainingFraction": 0.95 },
+            { "tokenType": "WTUS", "modelId": "gemini-3.8-flash-tiered",
+              "resetTime": "2026-11-13T07:26:43Z", "remainingFraction": 0.9 },
+            { "tokenType": "WTUS", "modelId": "claude-opus-5-5-high",
+              "resetTime": "2026-11-13T07:50:21Z", "remainingFraction": 1 },
+        ]});
+        let gemini = parse_model_quotas(&body, GEMINI_GROUP, 7);
+        let session = gemini.session.unwrap();
+        assert!((session.used_percent - 10.0).abs() < 1e-6);
+        assert_eq!(session.window_minutes, SESSION_WINDOW_MINUTES);
+        assert_eq!(session.resets_at, Some(1_794_554_803_000));
+        assert!(gemini.weekly.is_none());
+
+        let third = parse_model_quotas(&body, THIRD_PARTY_GROUP, 7);
+        assert_eq!(third.session.unwrap().used_percent, 0.0);
+
+        assert!(!parse_model_quotas(&serde_json::json!({}), GEMINI_GROUP, 7).has_windows());
+    }
+
     /// Live: reads the Keychain and Google's endpoint.
     #[test]
     #[ignore]
@@ -195,11 +256,9 @@ mod tests {
         let now = jiff::Timestamp::now().as_millisecond();
         for group in GROUPS {
             match fetch(group, now) {
+                // A group read from the model quotas has no weekly window.
                 Fetched::Limits(limits) => {
-                    assert!(
-                        limits.session.is_some() && limits.weekly.is_some(),
-                        "{limits:?}"
-                    );
+                    assert!(limits.session.is_some(), "{limits:?}");
                     println!("{group}: {limits:?}");
                 }
                 other => panic!("{group}: {other:?}"),
