@@ -26,6 +26,9 @@ pub struct TitleTab {
     /// Shown as a card ahead of the strip, kept by Close Others and the
     /// rest.
     pub pinned: bool,
+    /// A thread in the tab holds a saved draft (MonoCode's dashed plate,
+    /// as its card in the navigator has).
+    pub draft: bool,
 }
 
 /// MonoCode `sessionMeta`.

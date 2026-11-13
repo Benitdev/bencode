@@ -447,7 +447,8 @@ impl BenCodeApp {
             .phase_open
             .get(&phase.id)
             .copied()
-            .unwrap_or(active);
+            // A running group opens itself, unless Settings keeps them closed.
+            .unwrap_or(active && !self.collapse_tool_groups);
         let title = turns::phase_title(trail.blocks, phase, active);
         let group = format!("phase-{}", phase.id);
         let label = if active {

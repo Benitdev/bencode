@@ -49,6 +49,13 @@ pub struct AppSettings {
     /// MonoCode `monocode.liveAgentsEnabled` switched off: no Working
     /// agents card. On by default.
     pub live_agents_off: bool,
+    /// MonoCode "Collapse tool groups": tool groups stay closed, even while
+    /// they run, until clicked open. Off by default.
+    pub collapse_tool_groups: bool,
+    /// MonoCode "Fold finished work" switched off: a finished reply keeps
+    /// its text and tool groups inline instead of under "worked for". Off
+    /// by default: work folds.
+    pub finished_work_unfolded: bool,
     /// Resume the turns a quit, restart or crash cut off at launch, without
     /// asking. Off by default: BenCode asks.
     pub resume_interrupted_auto: bool,
@@ -286,6 +293,8 @@ mod tests {
             claude_hooks_disabled: true,
             composer_mascot_off: true,
             live_agents_off: true,
+            collapse_tool_groups: true,
+            finished_work_unfolded: true,
             resume_interrupted_auto: true,
             delete_cli_sessions: true,
             sounds_off: true,

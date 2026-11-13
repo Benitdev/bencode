@@ -232,6 +232,7 @@ an [issue](https://github.com/Benitdev/bencode/issues).
 | ⇧⌘F | Search in files |
 | ⌘F / ⌘G / ⇧⌘G | Find in conversation / next / previous match |
 | F12 / ⌥⌘H | Go to Definition / File History |
+| ⌘L | Focus the prompt of the thread in view |
 | ⌘. | Switch model |
 | ⌘S | Save the open file |
 | ⌘W | Close the file pane's tab (when that pane has focus), otherwise close the thread |

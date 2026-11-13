@@ -165,6 +165,7 @@ impl BenCodeApp {
                     .first()
                     .is_none_or(|s| !s.blocks.iter().any(|b| b.role == "user")),
             pinned: tab.pinned,
+            draft: sessions.iter().any(|s| s.is_draft()),
             ..Default::default()
         };
         for session in &sessions {
@@ -731,6 +732,19 @@ impl BenCodeApp {
             .when(can_close, |el| el.pr(px(28.0)))
             .when(!can_close, |el| el.pr(px(10.0)))
             .rounded(px(6.0))
+            // A saved draft dashes the plate, as on the thread's card;
+            // overlaid, so the dashes take no room from the content.
+            .when(tab.draft, |el| {
+                el.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .rounded(px(6.0))
+                        .border_1()
+                        .border_dashed()
+                        .border_color(fg.opacity(if active { 0.30 } else { 0.25 })),
+                )
+            })
             .map(|el| {
                 if active {
                     el.bg(fg.fill(Fill::Selected)).text_color(fg)

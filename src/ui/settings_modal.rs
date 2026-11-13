@@ -344,6 +344,8 @@ impl BenCodeApp {
                     )
             });
 
+        let chat = self.render_settings_chat(cx);
+
         let editors = SettingsGroup::new("External editors")
             .description("IDEs found on this Mac. Files and workspaces open in the default one.");
         let preferred = self.preferred_editor().map(|editor| editor.id);
@@ -374,7 +376,52 @@ impl BenCodeApp {
             .group(alerts)
             .group(threads)
             .group(workspace)
+            .group(chat)
             .group(editors)
+    }
+
+    /// MonoCode Chat › "Collapse tool groups" and "Fold finished work".
+    fn render_settings_chat(&self, cx: &Context<Self>) -> SettingsGroup {
+        let entity = cx.entity().downgrade();
+        let collapse = Switch::new("collapse-tool-groups", self.collapse_tool_groups).on_change(
+            move |on, _, cx| {
+                if let Err(err) = entity.update(cx, |this, cx| {
+                    this.set_collapse_tool_groups(on, cx);
+                    this.play_cue(crate::sounds::Cue::Switch);
+                }) {
+                    log::debug!("tool groups toggle after app drop: {err:#}");
+                }
+            },
+        );
+        let entity = cx.entity().downgrade();
+        let fold = Switch::new("fold-finished-work", !self.finished_work_unfolded).on_change(
+            move |on, _, cx| {
+                if let Err(err) = entity.update(cx, |this, cx| {
+                    this.set_fold_finished_work(on, cx);
+                    this.play_cue(crate::sounds::Cue::Switch);
+                }) {
+                    log::debug!("fold work toggle after app drop: {err:#}");
+                }
+            },
+        );
+        SettingsGroup::new("Chat")
+            .description("How a thread shows the agent's work.")
+            .row(
+                SettingsRow::new("Collapse tool groups")
+                    .description(
+                        "Keep tool groups closed, even while they run. Click a group to see its \
+                         steps.",
+                    )
+                    .control(collapse),
+            )
+            .row(
+                SettingsRow::new("Fold finished work")
+                    .description(
+                        "Fold a finished reply's tool calls under \"worked for\". Turn off to \
+                         keep text and tool groups inline.",
+                    )
+                    .control(fold),
+            )
     }
 
     /// MonoCode General › Alerts: Sounds and Notifications.

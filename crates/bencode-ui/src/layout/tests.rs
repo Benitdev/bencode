@@ -61,7 +61,8 @@ fn drag_divider(cx: &mut VisualTestContext) -> Point<Pixels> {
     let grab = point((first.right() + second.left()) / 2.0, px(50.0));
     cx.simulate_mouse_move(grab, None, Modifiers::none());
     cx.simulate_mouse_down(grab, MouseButton::Left, Modifiers::none());
-    for step in [8.0, 8.0, 16.0] {
+    // Past the 12px the middle snaps within (the drag anchors at 8px).
+    for step in [8.0, 8.0, 40.0] {
         cx.simulate_mouse_move(
             grab + point(px(step), px(0.0)),
             MouseButton::Left,
@@ -117,4 +118,42 @@ fn invalid_sizes_after_a_drag_split_evenly(cx: &mut TestAppContext) {
     let first = cx.debug_bounds("first").expect("first").size.width;
     let second = cx.debug_bounds("second").expect("second").size.width;
     assert_eq!(first, second);
+}
+
+#[gpui::test]
+fn a_double_click_on_the_divider_evens_out_its_panes(cx: &mut TestAppContext) {
+    cx.update(Theme::init);
+    let (_, cx) = cx.add_window_view(|_, _| Changing {
+        grown: false,
+        invalid: false,
+    });
+    let grab = drag_divider(cx);
+    cx.simulate_mouse_up(
+        grab + point(px(40.0), px(0.0)),
+        MouseButton::Left,
+        Modifiers::none(),
+    );
+    cx.run_until_parked();
+    let first = cx.debug_bounds("first").expect("first");
+    let second = cx.debug_bounds("second").expect("second");
+    assert!(first.size.width > second.size.width);
+    let divider = point((first.right() + second.left()) / 2.0, px(50.0));
+    cx.simulate_click(divider, Modifiers::none());
+    cx.simulate_event(gpui::MouseDownEvent {
+        position: divider,
+        button: MouseButton::Left,
+        modifiers: Modifiers::none(),
+        click_count: 2,
+        first_mouse: false,
+    });
+    cx.simulate_event(gpui::MouseUpEvent {
+        position: divider,
+        button: MouseButton::Left,
+        modifiers: Modifiers::none(),
+        click_count: 2,
+    });
+    cx.run_until_parked();
+    let first = cx.debug_bounds("first").expect("first").size.width;
+    let second = cx.debug_bounds("second").expect("second").size.width;
+    assert!((first - second).abs() < px(1.0), "{first:?} vs {second:?}");
 }

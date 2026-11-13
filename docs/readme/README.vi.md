@@ -232,6 +232,7 @@ Gặp lỗi? **Help › Show Logs** mở file log để bạn đính kèm vào m
 | ⇧⌘F | Tìm trong file |
 | ⌘F / ⌘G / ⇧⌘G | Tìm trong hội thoại / kết quả sau / kết quả trước |
 | F12 / ⌥⌘H | Go to Definition / File History |
+| ⌘L | Đưa con trỏ về ô prompt của thread đang xem |
 | ⌘. | Đổi model |
 | ⌘S | Lưu file đang mở |
 | ⌘W | Đóng tab của file pane (khi pane đó đang focus), nếu không thì đóng thread |

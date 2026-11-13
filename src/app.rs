@@ -343,6 +343,10 @@ pub struct BenCodeApp {
     /// setting.
     pub live_agents_ui: crate::ui::rail::LiveAgentsUi,
     pub live_agents_off: bool,
+    /// Settings › Chat: tool groups closed even while they run.
+    pub collapse_tool_groups: bool,
+    /// Settings › Chat: a finished reply's work stays inline, not folded.
+    pub finished_work_unfolded: bool,
     /// Settings › General: resume interrupted turns at launch without asking.
     pub resume_interrupted_auto: bool,
     /// The turns a quit, restart or crash cut off, offered at launch.
@@ -1479,6 +1483,8 @@ impl BenCodeApp {
             composer_mascot_off: false,
             live_agents_ui: Default::default(),
             live_agents_off: false,
+            collapse_tool_groups: false,
+            finished_work_unfolded: false,
             resume_interrupted_auto: false,
             resume: Default::default(),
             sidebar_opacity: crate::ui::glass::OPACITY_DEFAULT,

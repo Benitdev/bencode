@@ -44,6 +44,7 @@ actions!(
         OpenProject,
         CloseView,
         SwitchModel,
+        FocusPrompt,
         FindInConversation,
         FindInProject,
         GoToFile,
@@ -146,6 +147,7 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("escape", CloseView, None),
         KeyBinding::new("cmd-.", SwitchModel, None),
         KeyBinding::new("cmd-f", FindInConversation, None),
+        KeyBinding::new("cmd-l", FocusPrompt, None),
         KeyBinding::new("cmd-shift-f", FindInProject, None),
         KeyBinding::new("cmd-p", GoToFile, None),
         KeyBinding::new("cmd-alt-h", ShowFileHistory, None),
@@ -371,6 +373,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Explorer", ShowExplorer),
             MenuItem::action("Changes", ShowChanges),
             MenuItem::action("Switch Model…", SwitchModel),
+            MenuItem::action("Focus Prompt", FocusPrompt),
             MenuItem::action("Find in Conversation", FindInConversation),
             MenuItem::action("Find in Files…", FindInProject),
             MenuItem::action("Toggle Terminal", ToggleTerminal),
@@ -625,6 +628,7 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &OpenProject, _, cx| this.open_project_dialog(cx)))
         .on_action(cx.listener(|this, _: &SwitchModel, _, cx| this.toggle_recent_models(cx)))
         .on_action(cx.listener(|this, _: &FindInConversation, _, cx| this.open_find(cx)))
+        .on_action(cx.listener(|this, _: &FocusPrompt, window, cx| this.focus_prompt(window, cx)))
         .on_action(cx.listener(|this, _: &FindInProject, _, cx| this.open_project_search(cx)))
         .on_action(cx.listener(|this, _: &GoToFile, _, cx| this.open_quick_open(cx)))
         .on_action(

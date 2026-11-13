@@ -4,8 +4,10 @@
 //!
 //! GPUI cannot blur what lies behind an element; BenCode's vendored Metal
 //! renderer can (`vendor/gpui-pre-apple`): a quad whose border colour is
-//! `backdrop_blur_marker(sigma)` first has what is already drawn beneath it
-//! blurred, then its own fill laid on as the tint. The light theme and other
+//! `backdrop_blur_marker(sigma, tint_alpha)` first has what is already drawn
+//! beneath it blurred, then its own fill laid on as the tint. A card fading
+//! in or out by opacity fades its blur with it (the renderer reads the fade
+//! off the tint). The light theme and other
 //! platforms paint the opaque fill instead.
 //!
 //! A frost is the first child of its card, filling it inside its border.
@@ -51,8 +53,9 @@ fn surface(radius: Pixels, tint: Option<Hsla>, opaque: Hsla) -> impl IntoElement
                 Some(tint) => {
                     // The rem follows the interface scale; 16px is 1rem at 100%.
                     let sigma = BLUR * f32::from(window.rem_size()) / 16.0 * window.scale_factor();
-                    gpui::fill(bounds, tint)
-                        .border_color(gpui_apple::metal_renderer::backdrop_blur_marker(sigma))
+                    gpui::fill(bounds, tint).border_color(
+                        gpui_apple::metal_renderer::backdrop_blur_marker(sigma, tint.a),
+                    )
                 }
                 _ => gpui::fill(bounds, opaque),
             };

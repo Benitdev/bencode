@@ -124,6 +124,8 @@ impl BenCodeApp {
         self.claude_hooks_disabled = saved.claude_hooks_disabled;
         self.composer_mascot_off = saved.composer_mascot_off;
         self.live_agents_off = saved.live_agents_off;
+        self.collapse_tool_groups = saved.collapse_tool_groups;
+        self.finished_work_unfolded = saved.finished_work_unfolded;
         self.resume_interrupted_auto = saved.resume_interrupted_auto;
         self.alerts.sounds = !saved.sounds_off;
         self.alerts.sounds_enabled_at = saved.sounds_enabled_at;
@@ -193,6 +195,8 @@ impl BenCodeApp {
             claude_hooks_disabled: self.claude_hooks_disabled,
             composer_mascot_off: self.composer_mascot_off,
             live_agents_off: self.live_agents_off,
+            collapse_tool_groups: self.collapse_tool_groups,
+            finished_work_unfolded: self.finished_work_unfolded,
             resume_interrupted_auto: self.resume_interrupted_auto,
             sounds_off: !self.alerts.sounds,
             sounds_enabled_at: self.alerts.sounds_enabled_at,
@@ -605,6 +609,22 @@ impl BenCodeApp {
     /// Settings › "Agents section" (MonoCode's "Working agents").
     pub fn set_live_agents(&mut self, enabled: bool, cx: &mut Context<Self>) {
         self.live_agents_off = !enabled;
+        self.save_settings(cx);
+        cx.notify();
+    }
+
+    /// Settings › Chat › "Collapse tool groups" (MonoCode's): a group the
+    /// reader opened or closed keeps that.
+    pub fn set_collapse_tool_groups(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.collapse_tool_groups = on;
+        self.transcript_ui.reflow += 1;
+        self.save_settings(cx);
+        cx.notify();
+    }
+
+    /// Settings › Chat › "Fold finished work" (MonoCode's).
+    pub fn set_fold_finished_work(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.finished_work_unfolded = !on;
         self.save_settings(cx);
         cx.notify();
     }

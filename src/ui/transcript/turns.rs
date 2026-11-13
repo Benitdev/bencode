@@ -868,6 +868,7 @@ pub struct LayoutKey {
     fingerprint: u64,
     running: bool,
     trailer: bool,
+    unfolded: bool,
 }
 
 impl LayoutKey {
@@ -924,7 +925,21 @@ impl LayoutKey {
             fingerprint: hasher.finish(),
             running,
             trailer,
+            unfolded: false,
         }
+    }
+
+    /// The layout was `unfold`ed (Settings › Chat › Fold finished work off).
+    pub fn unfolded(self, unfolded: bool) -> Self {
+        Self { unfolded, ..self }
+    }
+}
+
+/// MonoCode "Fold finished work" switched off: every turn keeps its work
+/// inline, under its "worked for" line, instead of folded behind it.
+pub fn unfold(turns: &mut [TurnLayout]) {
+    for turn in turns {
+        turn.fold = None;
     }
 }
 
@@ -1271,6 +1286,33 @@ mod tests {
 
     fn key(blocks: &[Arc<Block>]) -> LayoutKey {
         LayoutKey::new(blocks, false, false, &HashSet::new(), false)
+    }
+
+    #[test]
+    fn unfolded_work_stays_inline_under_its_line() {
+        let mut blocks = vec![
+            finished_user("go"),
+            block("assistant", "Let me look."),
+            tool("execute", "ls", "completed"),
+            block("assistant", "Done."),
+        ];
+        Arc::make_mut(&mut blocks[0]).duration_ms = Some(5);
+        let open = HashSet::new();
+        let folded = layout_turns(&blocks, false, false);
+        assert!(folded[0].fold.is_some());
+        let folded_rows = build_rows(&blocks, &folded, &open, false);
+
+        let mut turns = folded.clone();
+        unfold(&mut turns);
+        assert!(turns[0].fold.is_none());
+        let rows = build_rows(&blocks, &turns, &open, false);
+        // The work is drawn, not hidden behind the line, which stays.
+        assert!(rows.len() > folded_rows.len());
+        assert!(rows.contains(&Row::FoldLine { turn: 0 }));
+        assert!(!rows.iter().any(|r| matches!(r, Row::FoldItem { .. })));
+
+        let key = LayoutKey::new(&blocks, false, false, &open, false);
+        assert_ne!(key.unfolded(true), key);
     }
 
     #[test]

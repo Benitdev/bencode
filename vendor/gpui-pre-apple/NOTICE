@@ -4,9 +4,9 @@ Copyright 2022 - 2025 Zed Industries, Inc., Apache-2.0 (LICENSE-APACHE).
 Modified for BenCode with MonoCode's backdrop blur (MonoCode's
 `vendor/gpui-pre-apple`, branch `mc/migrate-monocode-to-gpui`):
 
-- src/metal_renderer.rs: `backdrop_blur_marker(sigma)` marks a quad as
-  frosted glass; before drawing it, the renderer copies what is already drawn
-  behind it, blurs it with `MPSImageGaussianBlur` and writes it back inside
+- src/metal_renderer.rs: `backdrop_blur_marker(sigma, tint_alpha)` marks a
+  quad as frosted glass; before drawing it, the renderer copies what is
+  already drawn behind it, blurs it with `MPSImageGaussianBlur` and writes it back inside
   the quad's rounded bounds (`blur_backdrop`). The layer stays readable
   (`framebuffer_only = false`) in every build so the drawable can be copied.
 - src/shaders.metal: `backdrop_composite_vertex` / `_fragment`.
@@ -28,6 +28,10 @@ BenCode's `src/gpu_trim.rs` calling it):
 And so streaming text shapes cheaper (MonoCode's f8540190):
 src/text_system.rs keeps the sized CoreText fonts it shapes with
 (`sized_fonts`, up to 512) instead of copying a font for every run.
+
+And so a card fading by opacity fades its frost too (MonoCode da39885e eases
+the blur by hand): the marker carries its tint's alpha, and the renderer
+scales the blur by how far the element's opacity has faded that tint.
 
 Everything else is the crates.io source unchanged. To move to a new
 gpui-pre, copy its `gpui-pre-apple` here and carry those changes over.

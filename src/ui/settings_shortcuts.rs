@@ -143,6 +143,8 @@ fn groups() -> Vec<Group<Entry>> {
             rows: vec![
                 entry("New Thread", I::SquarePen, cmd::NewThread),
                 entry("Switch Model", I::Cpu, cmd::SwitchModel),
+                entry("Focus Prompt", I::Keyboard, cmd::FocusPrompt)
+                    .note("Back to the prompt of the thread in view."),
                 entry("Stop the Turn", I::CircleStop, cmd::CloseView)
                     .note("Closes an open popover, search or overlay first."),
                 entry("Find in Conversation", I::Search, cmd::FindInConversation),

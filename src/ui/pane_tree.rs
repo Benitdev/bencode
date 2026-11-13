@@ -10,8 +10,8 @@ use bencode_ui::primitives::{DragGhost, Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, Axis, Context, DragMoveEvent, FollowMode, IntoElement, ListState, ObjectFit,
-    ParentElement, SharedString, Stateful, Styled, div, img, list, relative,
+    AnyElement, Axis, Context, DragMoveEvent, FollowMode, IntoElement, ListState, MouseButton,
+    ObjectFit, ParentElement, SharedString, Stateful, Styled, div, img, list, relative,
 };
 
 use crate::app::BenCodeApp;
@@ -538,6 +538,38 @@ impl BenCodeApp {
                     .text_size(Text::Sm.px())
                     .text_color(fg.ink(Ink::Muted))
                     .child(model),
+            )
+            // MonoCode's split buttons: a new thread beside or under this
+            // one, as ⌘D and ⇧⌘D do for the focused pane.
+            .children(
+                [
+                    (
+                        SplitDir::Right,
+                        IconName::Columns2,
+                        "Split Right (⌘D)",
+                        "right",
+                    ),
+                    (SplitDir::Down, IconName::Rows2, "Split Down (⇧⌘D)", "down"),
+                ]
+                .map(|(dir, icon, tip, name)| {
+                    let pane_id = session.id.clone();
+                    div()
+                        .id(SharedString::from(format!("split-{name}-{}", session.id)))
+                        .size(px(20.0))
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(4.0))
+                        .cursor_pointer()
+                        .hover(move |s| s.bg(hover))
+                        .tooltip(Tooltip::text(tip))
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.split_pane_from(&pane_id, dir, cx)
+                        }))
+                        .child(Icon::new(icon).size(IconSize::Xs).color(colors.fg_muted))
+                }),
             )
             .child(
                 div()

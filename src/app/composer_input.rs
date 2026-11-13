@@ -2,7 +2,7 @@
 //! tokens and their pickers, inserting skills and mentions, the composer's
 //! key interceptor, and files attached by drag and drop.
 
-use gpui::Context;
+use gpui::{Context, Focusable as _, Window};
 
 use crate::app::BenCodeApp;
 use crate::ui::composer::TokenPicker;
@@ -10,6 +10,18 @@ use crate::ui::composer::mcp_tags::McpTag;
 use crate::ui::drag_drop::{DragBase, DraggedFile};
 
 impl BenCodeApp {
+    /// ⌘L (MonoCode `FocusPrompt`): back to the prompt of the thread in
+    /// view, a Bot's included, from the transcript, a file, the terminal or
+    /// the navigator, without reaching for the mouse. A surface (Inbox,
+    /// Notes, Automations, Settings) covers the prompt and keeps the keys.
+    pub fn focus_prompt(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.surface.is_some() || self.selected_session_id.is_none() {
+            return;
+        }
+        let focus = self.prompt_input.read(cx).focus_handle(cx);
+        window.focus(&focus, cx);
+    }
+
     pub fn on_prompt_changed(&mut self, cx: &mut Context<Self>) {
         self.composer_error = None;
         self.skill_draft = None;

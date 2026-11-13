@@ -479,7 +479,11 @@ impl BenCodeApp {
         let open = &self.transcript_ui.open_folds;
         let reflow = self.transcript_ui.reflow;
         let trailer = waiting || review || git_pill;
-        let key = session.map(|s| turns::LayoutKey::new(&s.blocks, running, trailer, open, bot));
+        // A Bot's chat keeps its shape; the setting is the threads'.
+        let unfolded = self.finished_work_unfolded && !bot;
+        let key = session.map(|s| {
+            turns::LayoutKey::new(&s.blocks, running, trailer, open, bot).unfolded(unfolded)
+        });
         let view = self.transcripts.entry(session_id.to_string()).or_default();
         let fresh = view.session_id.as_deref() != Some(session_id);
         let relayout = fresh || key.is_none() || view.layout_key != key;
@@ -493,7 +497,10 @@ impl BenCodeApp {
         let (turns, mut rows) = if relayout {
             match session {
                 Some(s) => {
-                    let turns = turns::layout_turns(&s.blocks, running, bot);
+                    let mut turns = turns::layout_turns(&s.blocks, running, bot);
+                    if unfolded {
+                        turns::unfold(&mut turns);
+                    }
                     let rows = turns::build_rows(&s.blocks, &turns, open, trailer);
                     (turns, rows)
                 }
