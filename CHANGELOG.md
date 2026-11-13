@@ -4,8 +4,14 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [0.1.46] - Unreleased
+## [0.1.46] - 2026-11-13
 
+- Antigravity's usage shows again for Gemini models. Google's summary of
+  the limits now lists only the Claude and GPT group, so a Gemini thread
+  read "Antigravity usage response was unexpected"; Gemini's 5-hour
+  window now comes from the per-model quotas (Google gives it no weekly
+  one). A group that cannot be read no longer hides the others in the
+  usage details.
 - An Inbox item's properties use the room a wide window leaves on their
   right, so long branch names fit, and labels there show in full instead
   of being cut at a list row's width.
@@ -13,6 +19,20 @@ tagging (`docs/releasing.md`).
   The 4-hour update check counted only the time the Mac was awake, so a
   night asleep added nothing; it now goes by the clock, and a check that
   fails (no network yet after a wake) is tried again in 15 minutes.
+- A window that stopped repainting while it still took input (around a
+  screenshot dropped onto it, say) draws again by itself. The watch for
+  stalled frames gave up while macOS called the window covered; it now
+  keeps trying until a frame is drawn.
+- Asking Claude for its models no longer risks its sign-in: the CLI
+  BenCode starts for the list is stopped gently, as a turn is, and asked
+  again only every 6 hours (or after Claude Code updates), not each time
+  the model picker opens.
+- A usage limit from the background tasks Claude answers on resume is no
+  longer reported as the prompt's own.
+- The prompt outline shows once a thread is first drawn wide enough, or
+  resized past the width it needs, without waiting for another redraw.
+- Opening a thread shapes its text faster: fonts at each size are kept
+  instead of copied for every run of text.
 
 ## [0.1.45] - 2026-11-12
 
