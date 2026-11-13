@@ -25,7 +25,7 @@ bencode-core = { path = "crates/bencode-core" }
 
 # BenCode's components (crates/bencode-ui).
 bencode-ui = { path = "crates/bencode-ui" }
-gpui = { package = "gpui-pre", version = "=0.3.10" }
+gpui = { package = "gpui-pre", version = "=0.3.10", default-features = false, features = ["font-kit"] }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.10", features = ["font-kit"] }
 
 # Async runtime & Utilities

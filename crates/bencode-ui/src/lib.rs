@@ -63,7 +63,6 @@ fn setup(cx: &mut App) {
     editor::bind_keys(cx);
     #[cfg(not(target_family = "wasm"))]
     terminal::bind_keys(cx);
-    documents::bind_keys(cx);
 }
 
 /// A key binding spelled at run time or with `secondary-` (Command on the
