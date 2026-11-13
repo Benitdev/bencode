@@ -11,6 +11,17 @@ use crate::app::BenCodeApp;
 use crate::harness::{ALL_HARNESSES, HarnessKind, HarnessResolver, catalog, discovery};
 
 const PROBE_COOLDOWN: Duration = Duration::from_secs(60);
+/// Claude's probe is a whole Claude Code, which may refresh (and rotate)
+/// the sign-in as it starts; its list changes only with the CLI, whose
+/// update skips the cooldown (MonoCode caches it for 6h).
+const CLAUDE_PROBE_COOLDOWN: Duration = Duration::from_secs(6 * 60 * 60);
+
+fn cooldown(kind: HarnessKind) -> Duration {
+    match kind {
+        HarnessKind::Claude => CLAUDE_PROBE_COOLDOWN,
+        _ => PROBE_COOLDOWN,
+    }
+}
 
 impl BenCodeApp {
     /// Probes every installed harness.
@@ -81,7 +92,7 @@ impl BenCodeApp {
             .any(|h| h.available && h.id == kind.id());
         let busy = match self.catalog_probes.get(&kind) {
             Some(None) => true,
-            Some(Some(ended)) => ended.elapsed() < PROBE_COOLDOWN,
+            Some(Some(next)) => Instant::now() < *next,
             None => false,
         };
         if !installed || busy {
@@ -94,7 +105,13 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             let models = task.await;
             let updated = this.update(cx, |app, cx| {
-                app.catalog_probes.insert(kind, Some(Instant::now()));
+                // A failed probe tries again soon, whatever the harness.
+                let wait = if models.is_ok() {
+                    cooldown(kind)
+                } else {
+                    PROBE_COOLDOWN
+                };
+                app.catalog_probes.insert(kind, Some(Instant::now() + wait));
                 // Startup lists the first Codex found; the probe has now
                 // picked the newest copy, which is the one turns run.
                 if kind == HarnessKind::Codex

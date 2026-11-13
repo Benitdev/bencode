@@ -11,8 +11,9 @@ use std::time::{Duration, Instant};
 
 use bencode_ui::theme::ActiveTheme;
 use gpui::{
-    AnyElement, Context, FocusHandle, InteractiveElement, IntoElement, ListOffset, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, Window, canvas, div, relative,
+    AnyElement, Bounds, Context, FocusHandle, InteractiveElement, IntoElement, ListOffset,
+    ListState, ParentElement, Pixels, SharedString, StatefulInteractiveElement, Styled, Window,
+    canvas, div, relative,
 };
 
 use crate::ui::scale::px;
@@ -194,9 +195,35 @@ fn places(view: &TranscriptView, rows: &[Option<usize>]) -> Vec<Place> {
         .collect()
 }
 
+/// Whether the rail shows over a list of this size. A hidden pane has a
+/// zero-size box, where the rule would pick the last prompt.
+fn fits(viewport: Bounds<Pixels>) -> bool {
+    viewport.size.height > px(0.0)
+        && crate::ui::scale::logical(viewport.size.width) >= MIN_PANE_WIDTH
+}
+
+/// The rail is decided from the list's size as of the last frame; the list
+/// learns this frame's as it lays out, after. A size that changes whether
+/// the rail fits (a pane first drawn, a resize ending past the cutoff) asks
+/// for one more frame, as nothing else may redraw the pane (MonoCode
+/// `outline_visible_at`).
+fn width_check(list: ListState, fitted: bool) -> impl IntoElement {
+    canvas(
+        move |_, window, _| {
+            if fits(list.viewport_bounds()) != fitted {
+                window.request_animation_frame();
+            }
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .size_0()
+}
+
 impl BenCodeApp {
     /// The rail over `session_id`'s transcript, when it has two prompts or
-    /// more and the pane is wide enough.
+    /// more and the pane is wide enough; in a narrower pane, only the check
+    /// that redraws it once the pane widens.
     pub fn render_prompt_outline(
         &mut self,
         session_id: &str,
@@ -232,11 +259,10 @@ impl BenCodeApp {
             return None;
         }
         let viewport = view.list.viewport_bounds();
-        // A hidden pane has a zero-size box; the rule would pick the last prompt.
-        if viewport.size.height <= px(0.0)
-            || crate::ui::scale::logical(viewport.size.width) < MIN_PANE_WIDTH
-        {
-            return None;
+        let fitted = fits(viewport);
+        let width_check = width_check(view.list.clone(), fitted);
+        if !fitted {
+            return Some(width_check.into_any_element());
         }
         let near_end = view.near_end();
         let active = active_prompt(&places(view, rows), near_end);
@@ -403,7 +429,7 @@ impl BenCodeApp {
                 .right(px(RAIL_RIGHT))
                 .flex()
                 .items_center()
-                .child(rail.child(probe))
+                .child(rail.child(probe).child(width_check))
                 .into_any_element(),
         )
     }

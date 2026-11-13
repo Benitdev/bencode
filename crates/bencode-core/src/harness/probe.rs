@@ -13,6 +13,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use serde_json::{Value, json};
 
 use crate::harness::accounts::AccountProfile;
+use crate::harness::process::RETIRE_GRACE;
 
 /// Runs a listing command in `cwd` to completion within `timeout`.
 pub fn run_to_end(command: &mut Command, cwd: &Path, timeout: Duration) -> Result<String> {
@@ -91,11 +92,49 @@ impl LineProbe {
             }
         }
     }
+
+    /// Waits up to `grace` for the child to exit; whether it did.
+    fn exited_within(&mut self, grace: Duration) -> bool {
+        let until = Instant::now() + grace;
+        loop {
+            match self.child.try_wait() {
+                Ok(Some(_)) => return true,
+                Ok(None) if Instant::now() < until => std::thread::sleep(Duration::from_millis(20)),
+                Ok(None) => return false,
+                Err(err) => {
+                    log::debug!("probe wait: {err}");
+                    return false;
+                }
+            }
+        }
+    }
 }
 
+/// Stops the child as a turn's is (`process::retire`): stdin closes, then
+/// SIGTERM, then SIGKILL, each after `RETIRE_GRACE`. A Claude probe is a
+/// whole Claude Code, which may be saving a refreshed sign-in; a kill in
+/// the middle of that signs the account out.
 impl Drop for LineProbe {
     fn drop(&mut self) {
         drop(self.stdin.take());
+        if self.exited_within(RETIRE_GRACE) {
+            return;
+        }
+        #[cfg(unix)]
+        if let Ok(pid) = libc::pid_t::try_from(self.child.id()) {
+            // SAFETY: `kill` takes a pid and a signal; the pid is our
+            // child's, not yet reaped (`try_wait` above), so it names no
+            // other process.
+            if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
+                log::debug!(
+                    "SIGTERM to probe {pid}: {}",
+                    std::io::Error::last_os_error()
+                );
+            }
+            if self.exited_within(RETIRE_GRACE) {
+                return;
+            }
+        }
         if let Err(err) = self.child.kill() {
             log::debug!("probe already exited: {err}");
         }

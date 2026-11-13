@@ -296,7 +296,7 @@ pub struct BenCodeApp {
     pub recent_models: Vec<String>,
     pub last_model_settings: serde_json::Map<String, serde_json::Value>,
     /// Model catalog probes per harness: `None` while one runs, else when
-    /// the last one ended.
+    /// the next one may.
     pub catalog_probes: HashMap<crate::harness::HarnessKind, Option<std::time::Instant>>,
     /// The Providers page's rescan of PATH for agent CLIs is running.
     pub harness_rescan: bool,

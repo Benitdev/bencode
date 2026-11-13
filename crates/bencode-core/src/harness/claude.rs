@@ -296,7 +296,9 @@ impl LineParser for ClaudeParser {
             // A resumed session whose background tasks died with the last
             // process (Stop, quit) first answers their notifications in a
             // turn of its own, before the prompt: that `result` is not ours.
+            // A limit reported for that turn is not the prompt's.
             Some("result") if !self.answered && is_notification_result(&rec) => {
+                self.rate_limited = None;
                 log::debug!("claude: skipped a task notification's result before the prompt");
             }
             Some("result") => {
@@ -1156,6 +1158,21 @@ mod tests {
             r#"{"type":"result","is_error":true,"result":"Claude AI usage limit reached|1791098400"}"#,
         ]);
         assert!(by_text.contains(&AgentEvent::UsageLimited { resets_at: None }));
+    }
+
+    #[test]
+    fn a_limit_on_the_replayed_notification_turn_is_not_the_prompts() {
+        let events = parse_all(&[
+            r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1791098400}}"#,
+            r#"{"type":"result","subtype":"success","is_error":false,"num_turns":0,"result":"","origin":{"kind":"task-notification"}}"#,
+            r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"Something else went wrong"}"#,
+        ]);
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, AgentEvent::UsageLimited { .. }))
+        );
+        assert!(events.contains(&AgentEvent::Error("Something else went wrong".into())));
     }
 
     #[test]

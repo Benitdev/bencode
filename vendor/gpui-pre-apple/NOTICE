@@ -25,5 +25,9 @@ BenCode's `src/gpu_trim.rs` calling it):
   path textures are made by the first frame that draws paths and dropped
   once none has for 2s, instead of with every drawable resize.
 
+And so streaming text shapes cheaper (MonoCode's f8540190):
+src/text_system.rs keeps the sized CoreText fonts it shapes with
+(`sized_fonts`, up to 512) instead of copying a font for every run.
+
 Everything else is the crates.io source unchanged. To move to a new
 gpui-pre, copy its `gpui-pre-apple` here and carry those changes over.

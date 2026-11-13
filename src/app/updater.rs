@@ -119,7 +119,10 @@ impl UpdaterState {
 /// the clock set back so far that its time is more than a period away.
 fn probe_due(next: Option<SystemTime>, now: SystemTime) -> bool {
     next.is_none_or(|next| {
-        next <= now || next.duration_since(now).is_ok_and(|ahead| ahead > PROBE_EVERY)
+        next <= now
+            || next
+                .duration_since(now)
+                .is_ok_and(|ahead| ahead > PROBE_EVERY)
     })
 }
 
