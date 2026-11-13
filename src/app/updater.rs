@@ -1,12 +1,13 @@
 //! MonoCode `app/model/updater.ts` and `updateNotice.ts`: the update state
 //! the rail, Settings and the menu share. A probe at launch (MonoCode's
-//! `SidebarUpdateFooter` mount) and every 4 hours after, the manual flow
+//! `SidebarUpdateFooter` mount) and every 4 hours of wall clock after
+//! (sooner after a failed one), the manual flow
 //! behind "Check for Updates…" with its dialogs, the install and the
 //! restart, and the "Updated to" notice the next launch shows. The work is `crate::updater`.
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime};
 
 use gpui::{Context, PromptLevel, Window};
 
@@ -15,6 +16,13 @@ use crate::updater::{self, Check, NotConfigured, Progress, Update};
 
 /// How often a BenCode left open asks the release feed again.
 const PROBE_EVERY: Duration = Duration::from_secs(4 * 60 * 60);
+/// How soon a probe that failed (no network yet after a wake) is tried
+/// again.
+const RETRY_AFTER: Duration = Duration::from_secs(15 * 60);
+/// How often a BenCode left open looks whether a probe is due. Time is
+/// the wall clock's: `Instant` and GPUI's timers stand still while the
+/// Mac sleeps, so a night's sleep would count for nothing.
+const TICK: Duration = Duration::from_secs(10 * 60);
 
 /// MonoCode `UpdaterPhase`, with `Ready` for an update installed while
 /// chats were running and the restart was put off.
@@ -48,8 +56,8 @@ pub struct UpdaterState {
     pub installed: Option<String>,
     /// The version whose notes the What's new dialog shows.
     pub whats_new: Option<String>,
-    /// When the last silent probe started.
-    probed_at: Option<Instant>,
+    /// When the next silent probe is due, by the wall clock.
+    next_probe: Option<SystemTime>,
 }
 
 impl UpdaterState {
@@ -107,6 +115,14 @@ impl UpdaterState {
     }
 }
 
+/// Whether a silent probe is due at `now`: never run, its time come, or
+/// the clock set back so far that its time is more than a period away.
+fn probe_due(next: Option<SystemTime>, now: SystemTime) -> bool {
+    next.is_none_or(|next| {
+        next <= now || next.duration_since(now).is_ok_and(|ahead| ahead > PROBE_EVERY)
+    })
+}
+
 /// MonoCode's message for a build without an updater endpoint.
 fn not_configured_detail(reason: NotConfigured) -> String {
     let why = match reason {
@@ -119,9 +135,9 @@ fn not_configured_detail(reason: NotConfigured) -> String {
 impl BenCodeApp {
     /// At launch: the "Updated to" note a restart left, then one silent
     /// check (MonoCode `SidebarUpdateFooter`'s probe). BenCode's own: the
-    /// probe runs again every `PROBE_EVERY`, and on focus once that long
-    /// has passed (a timer may sleep with the Mac), so a BenCode left open
-    /// hears of a release too.
+    /// probe runs again once it is due (`probe_due`), looked at every
+    /// `TICK` and on focus, so a BenCode left open, overnight asleep
+    /// included, hears of a release too.
     pub(crate) fn start_update_probe(&mut self, cx: &mut Context<Self>) {
         let task = cx
             .background_executor()
@@ -143,7 +159,7 @@ impl BenCodeApp {
         }
         cx.spawn(async move |this, cx| {
             loop {
-                cx.background_executor().timer(PROBE_EVERY).await;
+                cx.background_executor().timer(TICK).await;
                 if this.update(cx, |this, cx| this.probe_if_stale(cx)).is_err() {
                     break;
                 }
@@ -152,17 +168,13 @@ impl BenCodeApp {
         .detach();
     }
 
-    /// The window was focused: probe again if the last one is old.
+    /// The window was focused: probe again if one is due.
     pub(crate) fn probe_update_on_focus(&mut self, cx: &mut Context<Self>) {
         self.probe_if_stale(cx);
     }
 
     fn probe_if_stale(&mut self, cx: &mut Context<Self>) {
-        let stale = self
-            .updater
-            .probed_at
-            .is_none_or(|at| at.elapsed() >= PROBE_EVERY);
-        if stale {
+        if probe_due(self.updater.next_probe, SystemTime::now()) {
             self.probe_for_update(cx);
         }
     }
@@ -178,8 +190,9 @@ impl BenCodeApp {
         {
             return;
         }
-        // Stamped before it runs, so a failing feed waits a full period too.
-        self.updater.probed_at = Some(Instant::now());
+        // Set before it runs, so focus does not start a second one; a
+        // failure brings it nearer.
+        self.updater.next_probe = Some(SystemTime::now() + PROBE_EVERY);
         // An update already found keeps its rail card while it is checked
         // again; otherwise Settings says it is checking.
         let during = match self.updater.phase {
@@ -201,6 +214,7 @@ impl BenCodeApp {
                     Err(err) => {
                         // MonoCode: a failed probe stays silent.
                         log::warn!("update check failed: {err:#}");
+                        this.updater.next_probe = Some(SystemTime::now() + RETRY_AFTER);
                         if during == Phase::Checking {
                             this.updater.phase = Phase::Idle;
                         }
@@ -503,6 +517,19 @@ mod tests {
         assert_eq!(state.status_line(), "Update check failed.");
         state.error = Some("offline".to_string());
         assert_eq!(state.status_line(), "offline");
+    }
+
+    #[test]
+    fn a_probe_is_due_by_the_wall_clock() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+        assert!(probe_due(None, now));
+        assert!(!probe_due(Some(now + PROBE_EVERY), now));
+        // A night asleep: the time came while the Mac slept.
+        assert!(probe_due(Some(now - Duration::from_secs(8 * 60 * 60)), now));
+        assert!(probe_due(Some(now), now));
+        // The clock was set back a day.
+        let back = now - Duration::from_secs(24 * 60 * 60);
+        assert!(probe_due(Some(now + PROBE_EVERY), back));
     }
 
     #[test]

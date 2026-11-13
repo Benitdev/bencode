@@ -9,6 +9,10 @@ tagging (`docs/releasing.md`).
 - An Inbox item's properties use the room a wide window leaves on their
   right, so long branch names fit, and labels there show in full instead
   of being cut at a list row's width.
+- A BenCode left open overnight hears of a new release in the morning.
+  The 4-hour update check counted only the time the Mac was awake, so a
+  night asleep added nothing; it now goes by the clock, and a check that
+  fails (no network yet after a wake) is tried again in 15 minutes.
 
 ## [0.1.45] - 2026-11-12
 
