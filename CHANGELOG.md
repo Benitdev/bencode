@@ -4,6 +4,34 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.47] - Unreleased
+
+- ⌘L puts the cursor back in the prompt of the thread in view (a Bot's
+  too), from the transcript, a file, the terminal or the navigator.
+- A title-bar tab holding a saved draft has a dashed outline, as its
+  thread's card in the navigator does.
+- A split pane's header has Split Right and Split Down. Dragging a divider
+  snaps it to the middle of its two panes and to even spacing, lit in the
+  accent while it rests there; a double-click evens out its two panes.
+- Settings › General › Chat: Collapse tool groups keeps them closed even
+  while they run; turning off Fold finished work keeps a finished reply's
+  tool calls inline instead of under "worked for".
+- Frosted dialogs, menus and tooltips fade their blur in with them instead
+  of blurring at full strength from the first frame.
+- A Bot can start its sessions on a model and effort of their own: Model
+  and Effort under its settings' Sessions it starts, for any start that
+  names none.
+- A Bot on Claude keeps its standing rules in the system prompt, where
+  every turn has them and compaction cannot fold them away; its messages
+  carry only its soul and memory, and only when they changed. New Bot
+  chats start at low effort and are told to answer quickly, handing long
+  work to sessions they start.
+- A long report from a session a Bot started keeps its end, where the
+  answer is, and says how to read the rest: sessions.read now pages
+  through a long message (charOffset, nextCharOffset, totalChars).
+- Each Bot's details panel keeps its tab and the page open in it (a
+  session, a document, a habit) while you look at another Bot.
+
 ## [0.1.46] - 2026-11-13
 
 - Antigravity's usage shows again for Gemini models. Google's summary of

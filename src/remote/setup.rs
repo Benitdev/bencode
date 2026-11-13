@@ -604,6 +604,7 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"hi","sessi
             account: None,
             browser_mcp: None,
             app: None,
+            system_prompt: None,
         })
         .unwrap();
         let mut events = turn.events;

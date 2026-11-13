@@ -19,7 +19,6 @@ use crate::app_cli::server::AppCall;
 use crate::db::{Block, SessionRow};
 
 pub use completion::BotSessionsState;
-use completion::clip;
 pub use launches::{LaunchedState, SpawnedSession, chat_launches, spawned_sessions};
 
 /// MonoCode `sessionConversationPage`: prose only, newest page first, with
@@ -30,6 +29,7 @@ pub fn conversation_page(
     before: Option<&str>,
     limit: usize,
     max_chars: usize,
+    offset: usize,
 ) -> Result<Value, String> {
     let flag =
         |block: &Block, key: &str| block.extra.get(key).and_then(Value::as_bool) == Some(true);
@@ -58,10 +58,24 @@ pub fn conversation_page(
             .ok_or_else(|| "before is not a turn ID in this session".to_string())?,
     };
     let start = end.saturating_sub(limit);
+    // MonoCode `capped`: `offset` pages through a long message, and
+    // `nextCharOffset` says where the rest starts.
     let capped = |text: &str| {
         let trimmed = text.trim();
-        let (text, truncated) = clip(trimmed, max_chars);
-        json!({ "text": text, "truncated": truncated })
+        let total = trimmed.chars().count();
+        let more = total > offset.saturating_add(max_chars);
+        let mut value = json!({
+            "text": trimmed.chars().skip(offset).take(max_chars).collect::<String>(),
+            "truncated": more,
+        });
+        if offset > 0 {
+            value["charOffset"] = json!(offset);
+        }
+        if more {
+            value["nextCharOffset"] = json!(offset + max_chars);
+            value["totalChars"] = json!(total);
+        }
+        value
     };
     let turns: Vec<Value> = exchanges[start..end]
         .iter()
@@ -355,12 +369,20 @@ impl BenCodeApp {
                 as usize,
         };
         let before = optional(input.get("before"), "before", 256)?;
+        let offset = match input.get("charOffset") {
+            None => 0,
+            Some(value) => value
+                .as_u64()
+                .ok_or_else(|| "charOffset must be a non-negative integer".to_string())?
+                as usize,
+        };
         conversation_page(
             session,
             self.is_agent_running_in(&target),
             before.as_deref(),
             limit,
             max_chars,
+            offset,
         )
     }
 
@@ -595,15 +617,37 @@ mod tests {
             Block::new("a2b", "assistant", "second"),
             Block::new("u3", "user", "three"),
         ];
-        let page = conversation_page(&session(blocks.clone()), false, None, 2, 1200).unwrap();
+        let page = conversation_page(&session(blocks.clone()), false, None, 2, 1200, 0).unwrap();
         assert_eq!(page["turns"].as_array().unwrap().len(), 2);
         assert_eq!(page["turns"][0]["assistant"]["text"], "second");
         assert_eq!(page["turns"][0]["earlierAssistantMessages"], 1);
         assert_eq!(page["nextBefore"], "u2");
         let older =
-            conversation_page(&session(blocks.clone()), false, Some("u2"), 3, 1200).unwrap();
+            conversation_page(&session(blocks.clone()), false, Some("u2"), 3, 1200, 0).unwrap();
         assert_eq!(older["turns"][0]["turnId"], "u1");
         assert_eq!(older["nextBefore"], Value::Null);
-        assert!(conversation_page(&session(blocks), false, Some("nope"), 3, 1200).is_err());
+        assert!(conversation_page(&session(blocks), false, Some("nope"), 3, 1200, 0).is_err());
+    }
+
+    #[test]
+    fn a_long_message_reads_in_pages() {
+        let report = format!("{}THE END", "x".repeat(500));
+        let blocks = vec![
+            Block::new("u1", "user", "go"),
+            Block::new("a1", "assistant", &report),
+        ];
+        let first = conversation_page(&session(blocks.clone()), false, None, 1, 200, 0).unwrap();
+        let reply = &first["turns"][0]["assistant"];
+        assert_eq!(reply["truncated"], true);
+        assert_eq!(reply["nextCharOffset"], 200);
+        assert_eq!(reply["totalChars"], 507);
+        assert!(reply.get("charOffset").is_none());
+
+        let last = conversation_page(&session(blocks), false, None, 1, 400, 200).unwrap();
+        let reply = &last["turns"][0]["assistant"];
+        assert_eq!(reply["truncated"], false);
+        assert_eq!(reply["charOffset"], 200);
+        assert!(reply["text"].as_str().unwrap().ends_with("THE END"));
+        assert!(reply.get("nextCharOffset").is_none());
     }
 }

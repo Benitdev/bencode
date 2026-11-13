@@ -29,11 +29,44 @@ pub struct CompletionResult {
     pub truncated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The whole reply, from which a group's report takes its share.
+    #[serde(skip)]
+    reply: String,
 }
 
-pub(super) fn clip(text: &str, max: usize) -> (String, bool) {
+fn clip(text: &str, max: usize) -> (String, bool) {
     let count = text.chars().count();
     (text.chars().take(max).collect(), count > max)
+}
+
+/// MonoCode `limit_tail`: the end of `reply` within `max` chars, where a
+/// session's answer is, led by how to read what was cut (a `sessions.read`
+/// call that works as given, and where the cut part ends); whether it cut.
+fn tail(reply: &str, max: usize, session: &str, project: &str) -> (String, bool) {
+    let total = reply.chars().count();
+    if total <= max {
+        return (reply.to_string(), false);
+    }
+    let call = json!({
+        "sessionId": session,
+        "project": project,
+        "limit": 1,
+        "maxChars": 6000,
+    });
+    // The cut is not known until the marker's length is; one more pass
+    // settles it, as the cut's digits barely change.
+    let marker = |cut: usize| {
+        format!(
+            "[The first {cut} characters of this reply are left out. Read them with app \
+             sessions.read {call}, passing nextCharOffset back as charOffset until it reaches \
+             {cut}.]"
+        )
+    };
+    let mut keep = max.saturating_sub(marker(total).chars().count() + 2);
+    keep = max.saturating_sub(marker(total - keep).chars().count() + 2);
+    let cut = total - keep;
+    let end: String = reply.chars().skip(cut).collect();
+    (format!("{}\n\n{end}", marker(cut)), true)
 }
 
 /// MonoCode `monoSessionCompletionResult`: the session's reply to the
@@ -56,8 +89,8 @@ pub fn completion_result(
             if block.role == "user" {
                 break;
             }
-            let text = block.text.as_deref().unwrap_or("");
-            if block.role == "assistant" && block.tool.is_none() && !text.trim().is_empty() {
+            let text = block.text.as_deref().unwrap_or("").trim();
+            if block.role == "assistant" && block.tool.is_none() && !text.is_empty() {
                 reply = text.to_string();
             }
         }
@@ -67,7 +100,7 @@ pub fn completion_result(
         Some(DoneStatus::Cancelled) | None => "cancelled",
         _ => "failed",
     };
-    let (result, truncated) = clip(&reply, RESULT_MAX_CHARS);
+    let (result, truncated) = tail(&reply, RESULT_MAX_CHARS, &session.id, project);
     CompletionResult {
         session_id: session.id.clone(),
         project: project.to_string(),
@@ -77,6 +110,7 @@ pub fn completion_result(
         result,
         truncated,
         error,
+        reply,
     }
 }
 
@@ -106,7 +140,8 @@ pub fn completion_message(results: &[CompletionResult]) -> (String, Value) {
                 .iter()
                 .map(|r| {
                     let (prompt, cut_prompt) = clip(&r.original_prompt, prompt_budget);
-                    let (result, cut_result) = clip(&r.result, result_budget);
+                    let (result, cut_result) =
+                        tail(&r.reply, result_budget, &r.session_id, &r.project);
                     let mut value = serde_json::to_value(r).unwrap_or(json!({}));
                     value["originalPrompt"] = json!(prompt);
                     value["result"] = json!(result);
@@ -389,5 +424,41 @@ mod tests {
         assert!(text.contains("all monitored sessions"));
         assert_eq!(meta["sessionCount"], 2);
         assert_eq!(meta["status"], "failed");
+    }
+
+    #[test]
+    fn a_long_report_keeps_its_end_and_says_how_to_read_the_rest() {
+        let answer = format!("{}THE CONCLUSION", "detail ".repeat(3000));
+        let mut prompt = Block::new("u1", "user", "go");
+        prompt
+            .extra
+            .insert("appRequestId".into(), json!("app-m-r1"));
+        let blocks = vec![prompt, Block::new("a1", "assistant", answer.as_str())];
+        let result = completion_result(
+            &session(blocks),
+            "app-m-r1",
+            "/src/app",
+            "go",
+            Some(DoneStatus::Completed),
+            None,
+        );
+        assert!(result.truncated);
+        assert!(result.result.chars().count() <= RESULT_MAX_CHARS);
+        assert!(result.result.ends_with("THE CONCLUSION"));
+        assert!(result.result.starts_with("[The first "));
+        assert!(result.result.contains(r#""project":"/src/app""#));
+        // The cut it names is what was left out.
+        let cut: usize = result.result["[The first ".len()..]
+            .split(' ')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let kept = result.result.split_once("\n\n").unwrap().1;
+        assert_eq!(cut + kept.chars().count(), answer.chars().count());
+
+        // A group shares the budget, still ending on the answer.
+        let (text, _) = completion_message(&[result.clone(), result]);
+        assert!(text.contains("THE CONCLUSION"));
     }
 }

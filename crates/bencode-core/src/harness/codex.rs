@@ -420,6 +420,7 @@ mod tests {
                 args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
             }),
             app: None,
+            system_prompt: None,
         };
         let args = build_args(&req);
         assert!(args.windows(2).any(|w| w
@@ -458,6 +459,7 @@ mod tests {
             account: None,
             browser_mcp: None,
             app: None,
+            system_prompt: None,
         };
         let args = build_args(&req);
         assert_eq!(&args[..3], ["exec", "--json", "--skip-git-repo-check"]);
@@ -487,6 +489,7 @@ mod tests {
             account: None,
             browser_mcp: None,
             app: None,
+            system_prompt: None,
         };
         let network = "sandbox_workspace_write.network_access=true".to_string();
         assert!(!build_args(&req).contains(&network));

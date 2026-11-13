@@ -27,7 +27,9 @@ Actions:
                   Read up to 3 recent user/assistant exchanges. Tools and
                   reasoning are omitted. Omit before for the newest page;
                   pass nextBefore from a result for older exchanges. maxChars
-                  caps each message (200-6000, default 1200).
+                  caps each message (200-6000, default 1200); a longer one
+                  gives nextCharOffset and totalChars: pass it back as
+                  charOffset for the rest.
   sessions.send  {"sessionId":"...","prompt":"...","notifyOnComplete":true}
                   Submit a follow-up to an idle session in this project.
                   A busy session is rejected. Reuse --request-id on retries.
@@ -40,7 +42,10 @@ Actions:
   sessions.start {"prompt":"...","harness":"codex","model":"codex:...",
                   "effort":"high","workspaceMode":"current",
                   "worktreeCwd":"<path>","draft":false}
-                  Start a session in the background with the prompt. Set
+                  Start a session in the background with the prompt. With
+                  no harness, model, modelSettings or effort, it takes the
+                  model and effort the user set for sessions this bot
+                  starts, else the bot's own. Set
                   draft:true to save the prompt unsent; no agent turn runs.
                   Otherwise the turn is submitted.
                   Submitted sessions notify the calling bot by default when

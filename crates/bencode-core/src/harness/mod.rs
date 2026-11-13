@@ -136,6 +136,10 @@ pub struct SpawnRequest {
     /// BenCode's `app` CLI for this turn (MonoCode's `MONOCODE_APP_*`):
     /// a Mono's turns reach the app through it (`bencode app …`).
     pub app: Option<AppAccess>,
+    /// Standing instructions for the system prompt rather than the message
+    /// (a Bot's rules): Claude appends them (`--append-system-prompt`); a
+    /// harness without system instructions never gets this set.
+    pub system_prompt: Option<String>,
 }
 
 /// Where `bencode app` reaches the app, and the turn's credential.
@@ -275,6 +279,7 @@ mod tests {
             account: None,
             browser_mcp: None,
             app: None,
+            system_prompt: None,
         };
         assert!(spawn(&req).is_err());
     }

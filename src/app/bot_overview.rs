@@ -5,7 +5,7 @@
 //! folder, and the Changes tab's per-project state (`bot_changes.rs`). The
 //! views are `ui/bot_overview/`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use bencode_ui::forms::{InputEvent, TextInput};
 use gpui::{AppContext as _, Context, Entity, Focusable as _, Window};
@@ -98,7 +98,20 @@ pub struct OverviewState {
     /// MonoCode `monoShownSessionFocused`: its composer, rather than the
     /// Bot's, holds the prompt.
     pub shown_focused: bool,
+    /// MonoCode 7e5a9e36: each Bot's tab and open page, kept while
+    /// another Bot is in view.
+    views: HashMap<String, SavedView>,
     generation: u64,
+}
+
+/// What a Bot's details panel showed when another Bot took the view.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct SavedView {
+    tab: OverviewTab,
+    last_tab: OverviewTab,
+    shown_session: Option<String>,
+    document: Option<String>,
+    habit_route: Option<HabitRoute>,
 }
 
 impl Default for OverviewState {
@@ -121,12 +134,44 @@ impl Default for OverviewState {
             open_runs: HashSet::new(),
             shown_session: None,
             shown_focused: false,
+            views: HashMap::new(),
             generation: 0,
         }
     }
 }
 
 impl OverviewState {
+    /// The view passes from Bot `from` to Bot `to`: `from`'s tab and page
+    /// are kept, and `to` finds its own as it left them (its front page the
+    /// first time). The caller drops a page whose session or document has
+    /// gone since.
+    pub fn switch_bot(&mut self, from: Option<&str>, to: &str) {
+        if let Some(from) = from {
+            let tab = if self.tab == OverviewTab::Activity {
+                self.last_tab
+            } else {
+                self.tab
+            };
+            self.views.insert(
+                from.to_string(),
+                SavedView {
+                    tab,
+                    last_tab: self.last_tab,
+                    shown_session: self.shown_session.clone(),
+                    document: self.document.clone(),
+                    habit_route: self.habit_route.clone(),
+                },
+            );
+        }
+        self.bot_changed();
+        let saved = self.views.get(to).cloned().unwrap_or_default();
+        self.tab = saved.tab;
+        self.last_tab = saved.last_tab;
+        self.shown_session = saved.shown_session;
+        self.document = saved.document;
+        self.habit_route = saved.habit_route;
+    }
+
     /// Another Bot starts at its own front page.
     pub fn bot_changed(&mut self) {
         self.shown_session = None;
@@ -669,6 +714,29 @@ mod tests {
         // The chat keeps its share of a narrow window.
         assert_eq!(resized_width(1000.0, 400.0, 0.0, 1000.0), 620.0);
         assert_eq!(resized_width(1000.0, 400.0, 0.0, 400.0), MIN_WIDTH);
+    }
+
+    #[test]
+    fn each_bot_keeps_its_tab_and_page() {
+        let mut overview = OverviewState::default();
+        overview.switch_bot(None, "a");
+        overview.select(OverviewTab::Documents);
+        overview.document = Some("doc-1".into());
+        overview.switch_bot(Some("a"), "b");
+        // A Bot first seen opens on its front page.
+        assert_eq!(overview.tab, OverviewTab::Board);
+        assert_eq!(overview.document, None);
+        overview.select(OverviewTab::Habits);
+        overview.habit_route = Some(HabitRoute::Habit("h1".into()));
+        overview.shown_session = Some("s9".into());
+        overview.switch_bot(Some("b"), "a");
+        assert_eq!(overview.tab, OverviewTab::Documents);
+        assert_eq!(overview.document.as_deref(), Some("doc-1"));
+        assert_eq!(overview.shown_session, None);
+        overview.switch_bot(Some("a"), "b");
+        assert_eq!(overview.tab, OverviewTab::Habits);
+        assert_eq!(overview.habit_route, Some(HabitRoute::Habit("h1".into())));
+        assert_eq!(overview.shown_session.as_deref(), Some("s9"));
     }
 
     #[test]

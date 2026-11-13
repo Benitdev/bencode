@@ -117,6 +117,7 @@ fn ask(model: &str, prompt: &str) -> Result<String, String> {
         account: None,
         browser_mcp: None,
         app: None,
+        system_prompt: None,
     };
     let label = kind.label();
     let (handle, mut events) =

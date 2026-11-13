@@ -405,6 +405,17 @@ impl BenCodeApp {
             session.runtime_mode = Some(BOT_RUNTIME_MODE.to_string());
             session.worktree_cwd = None;
             session.branch = None;
+            // MonoCode: a Bot's chat is conversation, answered quickly at low
+            // effort, with heavy work handed to sessions it starts. Only a
+            // new chat; one the user set keeps its effort.
+            if let Some(effort) = crate::harness::catalog::effort_setting(&session.model)
+                .filter(|setting| setting.options.iter().any(|(value, _)| value == "low"))
+            {
+                session
+                    .model_settings
+                    .get_or_insert_with(Default::default)
+                    .insert(effort.id, serde_json::Value::String("low".into()));
+            }
         }
         self.persist_session(&session_id);
         self.update_bots(
@@ -519,7 +530,23 @@ impl BenCodeApp {
         if another {
             // Another Bot's view closes the last one's dialog.
             self.close_bot_settings(cx);
-            self.bots.overview.bot_changed();
+            let from = self.bots.view.clone();
+            self.bots.overview.switch_bot(from.as_deref(), id);
+            // A page restored over a session since archived falls back to
+            // its list (one deleted, or not loaded yet, draws the list until
+            // it is: `bot_shown_session`); a document reloads, and goes if
+            // it is gone.
+            let overview = &mut self.bots.overview;
+            if overview
+                .shown_session
+                .as_ref()
+                .is_some_and(|shown| self.sessions.iter().any(|s| &s.id == shown && s.archived))
+            {
+                overview.shown_session = None;
+            }
+            if let Some(document) = overview.document.clone() {
+                self.load_artifact(&document, cx);
+            }
         }
         self.bots.view = Some(id.to_string());
         self.bots.last_bot = Some(id.to_string());
@@ -1052,7 +1079,9 @@ impl BenCodeApp {
             .and_then(|s| s.provider_session_id.clone());
         let provider = provider.as_deref();
         let files = self.bot_turn_files(&bot.id);
-        let (soul, memory) = self.bot_context_parts(&bot, &files, self.has_app_access(session_id));
+        let in_system = self.bot_system_prompt(session_id).is_some();
+        let (soul, memory) =
+            self.bot_context_parts(&bot, &files, self.has_app_access(session_id), in_system);
         let carried = Carried {
             soul_hash: crate::bots::context_hash(&soul),
             memory_hash: files.memory_hash.clone(),
@@ -1148,22 +1177,49 @@ impl BenCodeApp {
         Some(brief)
     }
 
+    /// MonoCode `instructions` for a Bot's own chat on a harness that
+    /// takes system instructions: its standing rules, sent with every turn
+    /// in the system prompt instead of the message. `None` for any other
+    /// thread, which carries them in the message (`bot_context_parts`).
+    pub(crate) fn bot_system_prompt(&self, session_id: &str) -> Option<String> {
+        let bot = self.bot_for_session(session_id)?;
+        let harness = &self.sessions.iter().find(|s| s.id == session_id)?.harness;
+        if !crate::bots::system_instructions_supported(harness) {
+            return None;
+        }
+        let app_cli = self
+            .has_app_access(session_id)
+            .then(crate::app_cli::command);
+        Some(crate::bots::bot_rules(
+            &bot.display_name(),
+            &self.bot_projects(bot),
+            app_cli.as_deref(),
+        ))
+    }
+
     /// MonoCode `monoContext`'s two parts for `bot`: who it is (with the
     /// app CLI's rules when its turns get the CLI) and its memory block.
+    /// `rules_in_system`: the rules go in the system prompt
+    /// (`bot_system_prompt`), so the first part is the soul alone.
     pub(crate) fn bot_context_parts(
         &self,
         bot: &crate::bots::Bot,
         files: &crate::bots::files::BotFiles,
         app: bool,
+        rules_in_system: bool,
     ) -> (String, String) {
         // The CLI's path is part of who it is: a move hands it over again.
         let app_cli = app.then(crate::app_cli::command);
-        let soul = crate::bots::soul_context(
-            &bot.display_name(),
-            &self.bot_projects(bot),
-            &files.soul,
-            app_cli.as_deref(),
-        );
+        let soul = if rules_in_system {
+            crate::bots::soul_block(&files.soul)
+        } else {
+            crate::bots::soul_context(
+                &bot.display_name(),
+                &self.bot_projects(bot),
+                &files.soul,
+                app_cli.as_deref(),
+            )
+        };
         let topics_dir = crate::app::bot_files::bot_files_dir(&bot.id)
             .map(|dir| dir.join("memory").to_string_lossy().into_owned())
             .filter(|_| !app);

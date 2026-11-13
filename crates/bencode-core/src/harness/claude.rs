@@ -128,6 +128,11 @@ fn build_args(req: &SpawnRequest, shared_mcp: Option<&std::path::Path>) -> Vec<S
     if let Some(effort) = cli_effort(setting("effort")) {
         args.extend(["--effort".into(), effort.into()]);
     }
+    // MonoCode: a Mono's rules ride in the system prompt, where every
+    // turn has them and compaction cannot fold them away.
+    if let Some(system) = req.system_prompt.as_ref().filter(|s| !s.is_empty()) {
+        args.extend(["--append-system-prompt".into(), system.clone()]);
+    }
     if let Some(resume) = &req.resume_id {
         args.extend(["--resume".into(), resume.clone()]);
     }
@@ -689,7 +694,24 @@ mod tests {
             account: None,
             browser_mcp: None,
             app: None,
+            system_prompt: None,
         }
+    }
+
+    #[test]
+    fn standing_instructions_go_to_the_system_prompt() {
+        let plain = build_args(&request(PermissionPolicy::Ask), None);
+        assert!(!plain.contains(&"--append-system-prompt".into()));
+        let req = SpawnRequest {
+            system_prompt: Some("You are Pip.".into()),
+            ..request(PermissionPolicy::Ask)
+        };
+        let args = build_args(&req, None);
+        let at = args
+            .iter()
+            .position(|a| a == "--append-system-prompt")
+            .unwrap();
+        assert_eq!(args[at + 1], "You are Pip.");
     }
 
     #[test]
@@ -1263,6 +1285,7 @@ mod tests {
             account: None,
             browser_mcp: None,
             app: None,
+            system_prompt: None,
         };
         let (handle, mut rx) = crate::harness::spawn(&req).unwrap();
         let events = crate::harness::runtime::runtime().block_on(async move {

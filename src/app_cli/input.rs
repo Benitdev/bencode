@@ -11,7 +11,14 @@ pub const FIELDS: &[(&str, &[&str])] = &[
     ("sessions.list", &["project"]),
     (
         "sessions.read",
-        &["sessionId", "before", "limit", "maxChars", "project"],
+        &[
+            "sessionId",
+            "before",
+            "limit",
+            "maxChars",
+            "charOffset",
+            "project",
+        ],
     ),
     (
         "sessions.send",

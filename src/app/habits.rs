@@ -344,7 +344,8 @@ impl BenCodeApp {
         );
         self.habits.running.insert(habit.id.clone(), now);
         self.sessions.push(row);
-        let (soul, memory) = self.bot_context_parts(&bot, files, self.app_access.socket.is_some());
+        let (soul, memory) =
+            self.bot_context_parts(&bot, files, self.app_access.socket.is_some(), false);
         let prompt = format!(
             "{soul}\n\n{memory}\n\n{}",
             habits::habit_run_brief(&habit, now)

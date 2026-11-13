@@ -1003,6 +1003,8 @@ impl BenCodeApp {
             .find(|s| s.id == session_id)
             .map(|s| s.work_dir().to_string())
             .and_then(|cwd| self.app_access_for(session_id, &cwd));
+        // A Bot's standing rules, for a harness that holds them.
+        let system_prompt = self.bot_system_prompt(session_id);
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
             return;
         };
@@ -1020,6 +1022,7 @@ impl BenCodeApp {
                 .then(|| self.browser_mcp_launch())
                 .flatten(),
                 app,
+                system_prompt,
                 ..spawn
             });
         let remote = crate::remote::is_remote(session.work_dir());
@@ -1576,6 +1579,7 @@ fn spawn_request(
         },
         browser_mcp: None,
         app: None,
+        system_prompt: None,
     })
 }
 

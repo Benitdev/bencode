@@ -199,7 +199,7 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    fn load_artifact(&mut self, id: &str, cx: &mut Context<Self>) {
+    pub(crate) fn load_artifact(&mut self, id: &str, cx: &mut Context<Self>) {
         self.artifacts.next_generation += 1;
         let generation = self.artifacts.next_generation;
         self.artifacts.reader = Some(Reader {

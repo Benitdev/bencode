@@ -462,6 +462,114 @@ impl BenCodeApp {
 
     /// MonoCode's "Sessions it starts": shown in the project sidebar, and
     /// filed in a folder named after it (only while shown).
+    /// MonoCode's "Sessions it starts" Model and Effort: what a
+    /// `sessions.start` that names no model takes, "Same as" the Bot unless
+    /// set (`Bot::subsessions`).
+    fn render_bot_subsession_rows(&self, bot: &Bot, cx: &Context<Self>) -> Vec<AnyElement> {
+        use crate::harness::{HarnessKind, catalog};
+        let chosen = bot.subsessions.clone().unwrap_or_default();
+        let own = bot
+            .session_id
+            .as_deref()
+            .and_then(|id| self.sessions.iter().find(|s| s.id == id))
+            .map(|s| s.model.clone());
+        let same = format!("Same as {}", bot.display_name());
+        let mut models = vec![Choice::new("", same.clone())];
+        for info in self.harnesses.iter().filter(|h| h.available) {
+            let Some(kind) = HarnessKind::from_id(info.id) else {
+                continue;
+            };
+            models.extend(
+                catalog::models_for(kind)
+                    .iter()
+                    .map(|m| Choice::new(m.key.clone(), m.label.clone()).note(kind.label())),
+            );
+        }
+        // Effort is the chosen model's, or the Bot's own while it inherits.
+        let effort_of = chosen.model.clone().or(own);
+        let efforts = effort_of.as_deref().and_then(catalog::effort_setting);
+        let mut effort_choices = vec![Choice::new("", same)];
+        if let Some(setting) = &efforts {
+            effort_choices.extend(
+                setting
+                    .options
+                    .iter()
+                    .map(|(value, label)| Choice::new(value.clone(), label.clone())),
+            );
+        }
+        let set = |bot_id: String, cx: &Context<Self>| {
+            let entity = cx.entity().downgrade();
+            move |next: Box<dyn FnOnce(&mut crate::bots::Subsessions)>, cx: &mut gpui::App| {
+                let bot_id = bot_id.clone();
+                let changed = entity.update(cx, |this, cx| {
+                    this.update_bots(
+                        |roster| {
+                            if let Some(entry) = roster.iter_mut().find(|m| m.id == bot_id) {
+                                let mut sub = entry.subsessions.clone().unwrap_or_default();
+                                next(&mut sub);
+                                entry.subsessions = sub.normalized();
+                            }
+                        },
+                        cx,
+                    );
+                });
+                if let Err(err) = changed {
+                    log::debug!("bot subsessions after app drop: {err:#}");
+                }
+            }
+        };
+        let set_model = set(bot.id.clone(), cx);
+        let model = Select::new(
+            SharedString::from(format!("bot-sub-model-{}", bot.id)),
+            models,
+        )
+        .label("Model for sessions it starts")
+        .size(ControlSize::Sm)
+        .selected(chosen.model.clone().unwrap_or_default())
+        .on_change(move |value, _, cx| {
+            let key = value.to_string();
+            set_model(
+                Box::new(move |sub| {
+                    sub.harness = key.split_once(':').map(|(h, _)| h.to_string());
+                    // An effort the new model lacks goes back to inherited.
+                    let keeps = sub.effort.as_deref().is_some_and(|effort| {
+                        catalog::effort_setting(&key)
+                            .is_some_and(|s| s.options.iter().any(|(v, _)| v == effort))
+                    });
+                    if !keeps {
+                        sub.effort = None;
+                    }
+                    sub.model = Some(key);
+                }),
+                cx,
+            );
+        });
+        let set_effort = set(bot.id.clone(), cx);
+        let effort = Select::new(
+            SharedString::from(format!("bot-sub-effort-{}", bot.id)),
+            effort_choices,
+        )
+        .label("Effort for sessions it starts")
+        .size(ControlSize::Sm)
+        .selected(chosen.effort.clone().unwrap_or_default())
+        .disabled(efforts.is_none())
+        .on_change(move |value, _, cx| {
+            let effort = Some(value.to_string()).filter(|v| !v.is_empty());
+            set_effort(Box::new(move |sub| sub.effort = effort), cx);
+        });
+        vec![
+            SettingsRow::new("Model")
+                .description("For sessions it starts without naming one.")
+                .control_width(CONTROL_WIDTH)
+                .control(model)
+                .into_any_element(),
+            SettingsRow::new("Effort")
+                .control_width(CONTROL_WIDTH)
+                .control(effort)
+                .into_any_element(),
+        ]
+    }
+
     fn render_bot_started_sessions(&self, bot: &Bot, cx: &Context<Self>) -> Vec<AnyElement> {
         let shown = bot.show_started_sessions_in_sidebar;
         let switch = |id: String, on: bool, set: fn(&mut Bot, bool)| {
@@ -486,7 +594,8 @@ impl BenCodeApp {
                 },
             )
         };
-        vec![
+        let mut rows = self.render_bot_subsession_rows(bot, cx);
+        rows.extend([
             SettingsRow::new("Show sessions in the navigator")
                 .description(
                     "Sessions it starts appear among your project's threads. Hidden ones stay saved and open from its overview.",
@@ -507,7 +616,8 @@ impl BenCodeApp {
                     .disabled(!shown),
                 )
                 .into_any_element(),
-        ]
+        ]);
+        rows
     }
 
     /// MonoCode `LookButton`: the face (`size-20 rounded-2xl border`, its

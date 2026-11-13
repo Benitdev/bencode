@@ -136,6 +136,13 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         let request_id = call.request.request_id.clone();
+        let mut input = input;
+        if let Some(subsessions) = self
+            .bot(&caller.bot)
+            .and_then(|bot| bot.subsessions.as_ref())
+        {
+            subsessions.fill(&mut input);
+        }
         let plan = match self.plan_start(&caller, &input, &request_id) {
             Ok(plan) => plan,
             Err(error) => return call.fail(error, true),

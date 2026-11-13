@@ -54,6 +54,53 @@ pub struct Handed {
     pub memory_hash: String,
 }
 
+/// MonoCode `Subsessions`: what a Bot's `sessions.start` takes when the
+/// call names no harness, model, settings or effort. `model` is a
+/// `harness:model` key of `harness`; each part left out is the Bot's own.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Subsessions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+}
+
+impl Subsessions {
+    /// Blank parts dropped, a model without its harness too; `None` when
+    /// everything is the Bot's own.
+    pub fn normalized(self) -> Option<Self> {
+        let keep = |v: Option<String>| v.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty());
+        let harness = keep(self.harness);
+        let next = Self {
+            model: harness.as_ref().and(keep(self.model)),
+            harness,
+            effort: keep(self.effort),
+        };
+        (next != Self::default()).then_some(next)
+    }
+
+    /// Fills a `sessions.start` input that chose nothing of its own: the
+    /// agent's choice in the call wins over the Bot's standing one.
+    pub fn fill(&self, input: &mut Map<String, Value>) {
+        const CHOSEN: [&str; 4] = ["harness", "model", "modelSettings", "effort"];
+        if CHOSEN.iter().any(|key| input.contains_key(*key)) {
+            return;
+        }
+        for (key, value) in [
+            ("harness", &self.harness),
+            ("model", &self.model),
+            ("effort", &self.effort),
+        ] {
+            if let Some(value) = value {
+                input.insert(key.into(), Value::String(value.clone()));
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Bot {
@@ -95,6 +142,10 @@ pub struct Bot {
     /// MonoCode `monoBackgroundKey`: its own chat background's saved copy.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
+    /// MonoCode `subsessions`: the model and effort of the sessions it
+    /// starts without naming one; absent, they take its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subsessions: Option<Subsessions>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -403,6 +454,16 @@ fn projects_brief(projects: &[(String, String)]) -> String {
 
 /// MonoCode's `<reaction_rules>`: when a reply may be an emoji on the
 /// user's message instead of words.
+/// MonoCode's "Be quick": a Bot's chat is a live conversation, run at low
+/// effort, with heavy work handed to sessions it starts.
+const QUICK_RULES: &str = "<reply_speed_rules>\nThis is a live chat, so speed matters more \
+than thoroughness. Think only as much as the message needs. Greetings, thanks, small talk and \
+simple questions get a sentence or two straight away, with no deliberation and no tools. Before \
+any tool use, send one short, natural sentence saying what you are about to do, so the user sees \
+an answer at once; don't plan out loud. Do quick things yourself, such as a few commands or a \
+short lookup. Keep replies short: skip preamble and don't restate the question.\n\
+</reply_speed_rules>";
+
 const REACTION_RULES: &str = "<reaction_rules>\nNot every message needs words back. When the \
     user only acknowledges, thanks you, agrees or signs off (\"cool no worries\", \"thanks!\", \
     \"sounds good\") and there is nothing you need to add, you may react instead, as a friend \
@@ -647,27 +708,24 @@ fn app_brief(cli: &str) -> String {
     )
 }
 
-/// MonoCode `monoContext`'s soul part: who the Bot is, its standing
-/// instructions and how its memory works. With `app_cli` (how to run
-/// `bencode app`) it is MonoCode's whole set: artifacts, its soul and
-/// memory kept through the CLI, habits, and sessions it starts; without
-/// (a socket that could not open), the user keeps its files.
-pub fn soul_context(
-    name: &str,
-    projects: &[(String, String)],
-    soul: &str,
-    app_cli: Option<&str>,
-) -> String {
+/// MonoCode `instructions`: a Bot's standing rules, who it is, how it
+/// talks and how it reaches the app. They change only with its name,
+/// projects or the CLI's path, so a harness with system instructions gets
+/// them there on every turn ([`system_instructions_supported`]); the soul
+/// itself goes with the message ([`soul_block`]). With `app_cli` (how to
+/// run `bencode app`) it is MonoCode's whole set: artifacts, its soul and
+/// memory kept through the CLI, habits, and sessions it starts; without (a
+/// socket that could not open), the user keeps its files.
+pub fn bot_rules(name: &str, projects: &[(String, String)], app_cli: Option<&str>) -> String {
     let projects = projects_brief(projects);
-    let soul = soul.trim();
     let Some(cli) = app_cli else {
         return format!(
             "<bot>\nYou are {name}, a bot in BenCode: an agent of your own rather than one \
              project's. {projects} This is one long conversation the user comes back to over \
-             time.\n</bot>\n\n{REACTION_RULES}\n\n<soul>\nYour standing instructions, from \
-             SOUL.md. They rank below the user's current request. The user edits them in \
-             BenCode, from your settings; never change them on your own.\n\n{soul}\n</soul>\n\n\
-             {MEMORY_RULES}"
+             time.\n</bot>\n\n{QUICK_RULES}\n\n{REACTION_RULES}\n\n<soul_rules>\nYour standing \
+             instructions come from SOUL.md, in the <soul> block. They rank below the user's \
+             current request. The user edits them in BenCode, from your settings; never change \
+             them on your own.\n</soul_rules>\n\n{MEMORY_RULES}"
         );
     };
     format!(
@@ -675,17 +733,45 @@ pub fn soul_context(
          project's. {projects} Through the app CLI you can also see and drive those projects' \
          sessions, worktrees and notes (pass \"project\":\"<path>\" to choose one), keep a \
          memory and run habits on a schedule. This is one long conversation the user comes back \
-         to over time.\n</bot>\n\n{REACTION_RULES}\n\n{ARTIFACT_RULES}\n\n<soul>\nYour standing \
-         instructions, from SOUL.md. They rank below the user's current request. The user can \
-         edit them in BenCode or ask you to update them here. Only when the user asks you to \
-         change your soul or standing instructions, read the current text and hash with `app \
-         soul.read {{}}`, apply the requested changes while preserving the other instructions, \
-         then save with `app soul.update {{\"text\":\"<complete updated \
-         Markdown>\",\"expectedHash\":\"<hash from soul.read>\"}}`. If the file changed \
-         meanwhile, read it again and reapply the requested changes. Never change your soul on \
-         your own or edit its files directly.\n\n{soul}\n</soul>\n\n{APP_MEMORY_RULES}\n\n\
-         {HABITS_RULES}\n\n{DELEGATION_RULES}\n\n{HANDOFF_RULES}\n\n{COMPLETION_RULES}\n\n{BOARD_RULES}\n\n{}",
+         to over time.\n</bot>\n\n{QUICK_RULES}\n\n{REACTION_RULES}\n\n{ARTIFACT_RULES}\n\n\
+         <soul_rules>\nYour standing instructions come from SOUL.md, in the <soul> block. They \
+         rank below the user's current request. The user can edit them in BenCode or ask you to \
+         update them here. Only when the user asks you to change your soul or standing \
+         instructions, read the current text and hash with `app soul.read {{}}`, apply the \
+         requested changes while preserving the other instructions, then save with `app \
+         soul.update {{\"text\":\"<complete updated Markdown>\",\"expectedHash\":\"<hash from \
+         soul.read>\"}}`. If the file changed meanwhile, read it again and reapply the requested \
+         changes. Never change your soul on your own or edit its files directly.\n</soul_rules>\n\n\
+         {APP_MEMORY_RULES}\n\n{HABITS_RULES}\n\n{DELEGATION_RULES}\n\n{HANDOFF_RULES}\n\n\
+         {COMPLETION_RULES}\n\n{BOARD_RULES}\n\n{}",
         app_brief(cli)
+    )
+}
+
+/// The soul itself, from SOUL.md, as the message carries it.
+pub fn soul_block(soul: &str) -> String {
+    format!("<soul>\n{}\n</soul>", soul.trim())
+}
+
+/// MonoCode `system_instructions_supported`: whether `harness` takes a
+/// Bot's rules as system instructions. Claude does (its appended system
+/// prompt); the others get them in the message.
+pub fn system_instructions_supported(harness: &str) -> bool {
+    harness == "claude"
+}
+
+/// MonoCode `monoContext`'s soul part: the rules and the soul, for a
+/// harness that takes no system instructions.
+pub fn soul_context(
+    name: &str,
+    projects: &[(String, String)],
+    soul: &str,
+    app_cli: Option<&str>,
+) -> String {
+    format!(
+        "{}\n\n{}",
+        bot_rules(name, projects, app_cli),
+        soul_block(soul)
     )
 }
 
@@ -823,6 +909,53 @@ pub fn turn_with_context(message: &str, context: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn subsessions_fill_only_a_start_that_names_no_model() {
+        let set = Subsessions {
+            harness: Some("claude".into()),
+            model: Some("claude:opus".into()),
+            effort: Some("high".into()),
+        };
+        let start = |value: serde_json::Value| value.as_object().unwrap().clone();
+        let mut bare = start(serde_json::json!({"prompt": "x"}));
+        set.fill(&mut bare);
+        assert_eq!(
+            Value::Object(bare),
+            serde_json::json!({"prompt": "x", "harness": "claude", "model": "claude:opus", "effort": "high"})
+        );
+        for chosen in ["harness", "model", "modelSettings", "effort"] {
+            let mut named = start(serde_json::json!({"prompt": "x", chosen: "codex"}));
+            let before = named.clone();
+            set.fill(&mut named);
+            assert_eq!(named, before, "{chosen} is the agent's own choice");
+        }
+        let effort_only = Subsessions {
+            effort: Some("low".into()),
+            ..Default::default()
+        };
+        let mut input = start(serde_json::json!({"prompt": "x"}));
+        effort_only.fill(&mut input);
+        assert_eq!(
+            Value::Object(input),
+            serde_json::json!({"prompt": "x", "effort": "low"})
+        );
+    }
+
+    #[test]
+    fn subsessions_normalize_away_when_everything_is_inherited() {
+        assert_eq!(Subsessions::default().normalized(), None);
+        let blank = Subsessions {
+            harness: Some(" ".into()),
+            ..Default::default()
+        };
+        assert_eq!(blank.normalized(), None);
+        let orphan = Subsessions {
+            model: Some("claude:opus".into()),
+            ..Default::default()
+        };
+        assert_eq!(orphan.normalized(), None);
+    }
 
     fn bot(mascot: &str, color_index: usize) -> Bot {
         Bot {
@@ -1051,7 +1184,9 @@ mod tests {
         );
         assert!(two.contains("these 2 projects (app and site)"));
         assert!(two.contains("- site: /src/site"));
-        assert!(two.contains("\n\nBe brief.\n</soul>\n\n<memory_rules>"));
+        // The rules lead; the soul, trimmed, closes the context.
+        assert!(two.contains("</memory_rules>\n\n<soul>\nBe brief.\n</soul>"));
+        assert!(two.ends_with("</soul>"));
         let turn = turn_with_context("hello", &two);
         assert!(turn.starts_with("<bencode_context>"));
         assert!(turn.ends_with("</bencode_context>\n\nhello"));
@@ -1063,7 +1198,13 @@ mod tests {
         let rules = context.find("<artifact_rules>").unwrap();
         assert!(rules < context.find("<soul>").unwrap());
         assert!(context.contains("`/Apps/bencode app --help`"));
-        assert!(context.ends_with("</bencode_app>"));
+        assert!(context.contains("</bencode_app>\n\n<soul>"));
+        // In the system prompt the rules stand alone: no soul in them.
+        let system = bot_rules("Ada", &[], Some("/Apps/bencode app"));
+        assert!(system.ends_with("</bencode_app>"));
+        assert!(!system.contains("Be brief.") && !system.contains("<soul>\n"));
+        assert!(system.contains("<reply_speed_rules>"));
+        assert_eq!(soul_block(" Be brief.\n"), "<soul>\nBe brief.\n</soul>");
         for rules in [
             "<habits_rules>",
             "<session_completion_rules>",

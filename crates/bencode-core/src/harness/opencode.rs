@@ -254,6 +254,7 @@ mod tests {
             account: None,
             browser_mcp: None,
             app: None,
+            system_prompt: None,
         };
         assert!(inline_config(&req).is_none());
         req.browser_mcp = Some(crate::mcp::McpLaunch {
@@ -288,6 +289,7 @@ mod tests {
             account: None,
             browser_mcp: None,
             app: None,
+            system_prompt: None,
         };
         assert_eq!(
             build_args_v2(&req),

@@ -121,6 +121,7 @@ impl SpawnWire {
             account: None,
             browser_mcp: None,
             app: None,
+            system_prompt: None,
         }
     }
 }
