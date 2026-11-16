@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.49] - 2026-11-16
 
 - The command palette: ⇧⌘P (or `>` in Go to File) lists every command by
   name with its keys, the ones run last first, and runs the one picked as
