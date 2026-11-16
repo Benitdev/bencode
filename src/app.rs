@@ -1827,6 +1827,7 @@ impl Render for BenCodeApp {
             any_elements(self.render_session_dialog(cx)),
             any_elements(self.render_worktree_deletion(cx)),
             any_elements(self.render_account_removal(cx)),
+            any_elements(self.render_claude_reset_confirm(cx)),
             any_elements(self.render_agy_account_removal(cx)),
             any_elements(self.render_backlog_disconnect(cx)),
             any_elements(self.render_machine_removal(cx)),

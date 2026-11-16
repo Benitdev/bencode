@@ -749,7 +749,9 @@ fn stage_usage(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
     let limits = ProviderRateLimits {
         session: Some(window(71.0, 300, 4 * 60 + 19)),
         weekly: Some(window(68.0, 10_080, 36 * 60)),
+        fable: None,
         monthly: None,
+        resets: None,
         updated_at: now,
         error: None,
         status: RateLimitStatus::Ok,

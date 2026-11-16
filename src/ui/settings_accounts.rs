@@ -199,11 +199,11 @@ impl BenCodeApp {
             .map(ProviderRateLimits::windows)
             .unwrap_or_default()
             .into_iter()
-            .map(|(_, window)| {
+            .map(|(kind, window)| {
                 div()
                     .flex_none()
                     .w(px(METER_WIDTH))
-                    .child(usage_meter(window, now, colors))
+                    .child(usage_meter(kind, window, now, colors))
             })
             .collect();
         let subtitle = identity

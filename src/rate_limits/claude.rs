@@ -11,10 +11,18 @@ use serde_json::Value;
 use super::{Fetched, http, parse_claude_oauth_usage};
 use crate::harness::accounts::AccountProfile;
 
-const OAUTH_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+const OAUTH_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1";
 const OAUTH_BETA: &str = "oauth-2025-04-20";
-const USER_AGENT: &str = "claude-code/2.1.0";
+const USER_AGENT: &str = "claude-cli/2.1.325 (external, cli)";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+const CLAIM_TIMEOUT: Duration = Duration::from_secs(25);
+const CEDAR_EMBER_PROGRAM: &str = "cedar_ember";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimResetResult {
+    pub cleared: Vec<String>,
+    pub resets_left: Option<u32>,
+}
 
 struct Credentials {
     access_token: String,
@@ -52,6 +60,137 @@ pub fn fetch(account: Option<&AccountProfile>, now: i64) -> Fetched {
         Ok(response) => Fetched::Error(status_error(response.status)),
         Err(error) => Fetched::Error(format!("Claude usage request failed: {error:#}")),
     }
+}
+
+/// Claims a free rate-limit reset grant (`cedar_ember`) for `account`.
+pub fn claim_reset(
+    account: Option<&AccountProfile>,
+    grant_id: &str,
+    request_id: &str,
+    now: i64,
+) -> Result<ClaimResetResult, String> {
+    if !valid_id(grant_id, 40) || !valid_id(request_id, 64) {
+        return Err("Invalid reset grant or request identifier".into());
+    }
+    let dir = account.map(|account| account.dir.as_path());
+    let Some(creds) = read_credentials(dir) else {
+        return Err("Claude not signed in".into());
+    };
+    if token_expired(creds.expires_at_ms, now) {
+        return Err(expired_token_error(creds.has_refresh_token));
+    }
+    let Some(org_uuid) = read_organization_uuid(dir) else {
+        return Err("Claude organization ID not found; run a turn or sign in again".into());
+    };
+    let url = format!("https://api.anthropic.com/api/organizations/{org_uuid}/reset_rate_limits");
+    let body = serde_json::json!({
+        "program": CEDAR_EMBER_PROGRAM,
+        "grant_id": grant_id,
+        "request_id": request_id,
+    })
+    .to_string();
+    let response = http::send(
+        &url,
+        &[
+            ("Authorization", &format!("Bearer {}", creds.access_token)),
+            ("anthropic-beta", OAUTH_BETA),
+            ("Content-Type", "application/json"),
+            ("User-Agent", USER_AGENT),
+        ],
+        http::Send {
+            method: Some("POST"),
+            body: Some(&body),
+            ..Default::default()
+        },
+        CLAIM_TIMEOUT,
+    )
+    .map_err(|error| format!("Claude reset request failed: {error:#}"))?;
+    if !(200..300).contains(&response.status) {
+        return Err(match response.status {
+            429 => "Too many reset attempts; try again in a minute".into(),
+            status => status_error(status),
+        });
+    }
+    parse_claim_reset_response(&response.body)
+}
+
+fn parse_claim_reset_response(body: &str) -> Result<ClaimResetResult, String> {
+    let parsed: Value = serde_json::from_str(body)
+        .map_err(|_| "Claude reset response was not JSON".to_string())?;
+    let result = parsed
+        .get("result")
+        .and_then(Value::as_str)
+        .unwrap_or("unavailable");
+    if result == "reset" {
+        let cleared = parsed
+            .get("cleared")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(String::from)
+            .collect();
+        let resets_left = parsed
+            .get("resets_left")
+            .and_then(Value::as_u64)
+            .map(|n| n as u32);
+        return Ok(ClaimResetResult {
+            cleared,
+            resets_left,
+        });
+    }
+    let reason = parsed.get("reason").and_then(Value::as_str);
+    Err(match (result, reason) {
+        ("already_used", _) => "This reset has already been used".into(),
+        ("cooldown", _) | (_, Some("cooldown")) => {
+            "Try again in a minute before using another reset".into()
+        }
+        ("not_limited", _) | (_, Some("needs_limit" | "not_limited")) => {
+            "This reset can only be used while you're at a limit it refills".into()
+        }
+        (_, Some("paused")) => "This reset is currently paused".into(),
+        (_, Some("expired")) => "This reset has expired".into(),
+        (_, Some("blocked_five_hour")) => {
+            "Can't be used while you're at your 5-hour limit".into()
+        }
+        (_, Some("blocked_seven_day")) => {
+            "Can't be used while you're at your weekly limit".into()
+        }
+        (_, Some("blocked_opus")) => "Can't be used while you're at your Opus limit".into(),
+        (_, Some("blocked_sonnet")) => {
+            "Can't be used while you're at your Sonnet limit".into()
+        }
+        (_, Some("blocked_other")) => {
+            "Can't be used while you're at another limit it doesn't refill".into()
+        }
+        (_, Some("cannot_clear")) => "Doesn't refill the limit you've reached".into(),
+        _ => "Couldn't reset your limits right now; try again in a moment".into(),
+    })
+}
+
+fn valid_id(value: &str, max_len: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max_len
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+fn read_organization_uuid(config_dir: Option<&Path>) -> Option<String> {
+    let path = match config_dir {
+        Some(dir) => dir.join(".claude.json"),
+        None => std::env::var_os("HOME")
+            .map(PathBuf::from)?
+            .join(".claude.json"),
+    };
+    let raw = std::fs::read_to_string(path).ok()?;
+    let config: Value = serde_json::from_str(&raw).ok()?;
+    let uuid = config
+        .get("oauthAccount")?
+        .get("organizationUuid")?
+        .as_str()?
+        .trim();
+    valid_id(uuid, 128).then(|| uuid.to_string())
 }
 
 fn status_error(status: u16) -> String {
@@ -261,5 +400,29 @@ mod tests {
             "Claude usage is unavailable for this account"
         );
         assert_eq!(status_error(500), "Claude usage request failed (500)");
+    }
+
+    #[test]
+    fn claim_reset_responses_map_success_and_reasons() {
+        let ok = parse_claim_reset_response(
+            r#"{"result":"reset","resets_left":0,"cleared":["five_hour","seven_day_overage_included"]}"#,
+        )
+        .unwrap();
+        assert_eq!(ok.resets_left, Some(0));
+        assert_eq!(ok.cleared, vec!["five_hour", "seven_day_overage_included"]);
+
+        assert_eq!(
+            parse_claim_reset_response(r#"{"result":"already_used"}"#).unwrap_err(),
+            "This reset has already been used"
+        );
+        assert_eq!(
+            parse_claim_reset_response(r#"{"result":"cooldown"}"#).unwrap_err(),
+            "Try again in a minute before using another reset"
+        );
+        assert_eq!(
+            parse_claim_reset_response(r#"{"result":"not_limited","reason":"needs_limit"}"#)
+                .unwrap_err(),
+            "This reset can only be used while you're at a limit it refills"
+        );
     }
 }

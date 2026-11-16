@@ -16,6 +16,10 @@ tagging (`docs/releasing.md`).
 - Antigravity's usage is no longer always 0%: it was asked of a Google
   host that answers but counts none of `agy`'s turns, and is now asked of
   the one `agy` sends them to.
+- Claude Code's usage chip, details popover, and "Usage limit reached"
+  banner now show your Fable weekly limit alongside 5-hour and weekly
+  limits, plus any free limit resets (Full reset, Fable reset) with a
+  "Reset for free" action.
 - A new thread in a narrow split pane wraps "What should we work on in
   …?" instead of cutting both ends of the line off.
 - A thread's name in the navigator keeps room beside its ticket's key and

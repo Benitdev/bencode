@@ -10,7 +10,9 @@ use gpui::Context;
 use crate::app::accounts::SignIn;
 use crate::app::{BenCodeApp, now_ms};
 use crate::harness::accounts::{AccountProfile, DEFAULT_ACCOUNT_ID, supports_accounts};
-use crate::rate_limits::{self, ProviderRateLimits, RateLimitProvider, RateLimitStatus};
+use crate::rate_limits::{
+    self, LimitResetGrant, ProviderRateLimits, RateLimitProvider, RateLimitStatus,
+};
 
 /// MonoCode `CLOCK_MS`: how often the reset countdowns are redrawn.
 const CLOCK_TICK: Duration = Duration::from_secs(30);
@@ -22,7 +24,9 @@ const TURN_RELOAD_GAP_MS: i64 = 10_000;
 static IDLE: ProviderRateLimits = ProviderRateLimits {
     session: None,
     weekly: None,
+    fable: None,
     monthly: None,
+    resets: None,
     updated_at: 0,
     error: None,
     status: RateLimitStatus::Idle,
@@ -60,6 +64,13 @@ pub struct UsageSnapshots {
     pending: HashMap<UsageKey, bool>,
 }
 
+/// A Claude rate-limit reset awaiting confirmation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingLimitReset {
+    pub account_id: String,
+    pub grant: LimitResetGrant,
+}
+
 /// The usage chip and its popover: what is open and in progress.
 #[derive(Default)]
 pub struct UsageState {
@@ -74,6 +85,12 @@ pub struct UsageState {
     /// The Add account form is waiting for the browser, or why it failed.
     pub adding: bool,
     pub add_error: Option<String>,
+    /// A free reset waiting for confirmation in `ConfirmDialog`.
+    pub pending_reset: Option<PendingLimitReset>,
+    /// `(account_id, grant_id)` while claiming a free reset.
+    pub claiming_reset: Option<(String, String)>,
+    /// Error from the last reset attempt.
+    pub reset_error: Option<String>,
 }
 
 impl UsageSnapshots {
@@ -206,6 +223,7 @@ impl BenCodeApp {
             return;
         }
         self.usage.popover = Some(provider);
+        self.usage.reset_error = None;
         self.load_account_details(provider, false, cx);
         if provider == RateLimitProvider::Antigravity {
             // The popover shows both groups.
@@ -219,6 +237,7 @@ impl BenCodeApp {
     pub fn set_usage_view(&mut self, view: UsageView, cx: &mut Context<Self>) {
         self.usage.view = view;
         self.usage.add_error = None;
+        self.usage.reset_error = None;
         if view == UsageView::Add {
             crate::ui::composer::menus::focus_later(
                 gpui::Focusable::focus_handle(self.account_name_input.read(cx), cx),
@@ -235,12 +254,81 @@ impl BenCodeApp {
         if open {
             self.usage.view = UsageView::Usage;
             self.usage.add_error = None;
+            self.usage.reset_error = None;
             if self.usage.sign_in != SignIn::Running {
                 self.usage.sign_in = SignIn::Idle;
             }
             cx.notify();
         }
         open
+    }
+
+    pub fn prompt_claude_reset(
+        &mut self,
+        account_id: &str,
+        grant: LimitResetGrant,
+        cx: &mut Context<Self>,
+    ) {
+        if self.usage.claiming_reset.is_some() {
+            return;
+        }
+        self.usage.reset_error = None;
+        self.usage.pending_reset = Some(PendingLimitReset {
+            account_id: account_id.to_string(),
+            grant,
+        });
+        cx.notify();
+    }
+
+    pub fn cancel_claude_reset(&mut self, cx: &mut Context<Self>) {
+        if self.usage.pending_reset.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    pub fn confirm_claude_reset(
+        &mut self,
+        pending: PendingLimitReset,
+        cx: &mut Context<Self>,
+    ) {
+        if self.usage.claiming_reset.is_some() {
+            return;
+        }
+        self.usage.pending_reset = None;
+        let account_id = pending.account_id;
+        let grant_id = pending.grant.id;
+        self.usage.claiming_reset = Some((account_id.clone(), grant_id.clone()));
+        self.usage.reset_error = None;
+        cx.notify();
+
+        let profile = AccountProfile::resolve(RateLimitProvider::Claude.id(), Some(&account_id));
+        let request_id = crate::app_cli::random_hex(16);
+        let task = cx.background_executor().spawn(async move {
+            rate_limits::claim_claude_reset(profile.as_ref(), &grant_id, &request_id, now_ms())
+        });
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            let landed = this.update(cx, |app, cx| {
+                app.usage.claiming_reset = None;
+                match result {
+                    Ok(claimed) => {
+                        log::info!("Claude reset applied: cleared {:?}", claimed.cleared);
+                        app.clear_usage_limits_for_claude_account(&account_id);
+                        app.load_rate_limits(RateLimitProvider::Claude, &account_id, true, cx);
+                    }
+                    Err(error) => {
+                        log::info!("Claude reset failed: {error}");
+                        app.usage.reset_error = Some(error);
+                        app.load_rate_limits(RateLimitProvider::Claude, &account_id, true, cx);
+                    }
+                }
+                cx.notify();
+            });
+            if let Err(err) = landed {
+                log::debug!("claude reset after app drop: {err:#}");
+            }
+        })
+        .detach();
     }
 
     /// The usage of the account a thread's turn just spent, read again when

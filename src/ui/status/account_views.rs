@@ -18,8 +18,7 @@ use crate::app::usage::UsageView;
 use crate::harness::accounts::ProviderAccount;
 use crate::rate_limits::{
     AccountStatus, AccountTone, ProviderRateLimits, RateLimitProvider, RateLimitWindow,
-    account_status, clamp_used_percent, format_reset_duration, format_usage_percent,
-    format_window_label,
+    WindowKind, account_status, clamp_used_percent, format_reset_duration, format_usage_percent,
 };
 use crate::ui::HarnessIcon;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
@@ -65,11 +64,16 @@ pub(crate) fn account_status_label(status: &AccountStatus, colors: &Palette) -> 
 }
 
 /// MonoCode `UsageMeter`: "5h · 2h 24m" over a thin bar, for one window.
-pub(crate) fn usage_meter(window: &RateLimitWindow, now: i64, colors: &Palette) -> gpui::Div {
+pub(crate) fn usage_meter(
+    kind: WindowKind,
+    window: &RateLimitWindow,
+    now: i64,
+    colors: &Palette,
+) -> gpui::Div {
     let fg = colors.fg;
     let used = clamp_used_percent(window.used_percent);
     let full = used >= 100.0 && window.resets_at.is_none_or(|resets_at| resets_at > now);
-    let title = format_window_label(window.window_minutes);
+    let title = kind.short_label(window.window_minutes);
     let reset = match window.resets_at {
         None => title.clone(),
         Some(resets_at) if resets_at <= now => "reset due".into(),
@@ -177,7 +181,7 @@ impl BenCodeApp {
                 .map(ProviderRateLimits::windows)
                 .unwrap_or_default()
                 .into_iter()
-                .map(|(_, window)| usage_meter(window, now, colors))
+                .map(|(kind, window)| usage_meter(kind, window, now, colors))
                 .collect();
             let account_id = account.id.clone();
             div()

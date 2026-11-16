@@ -31,6 +31,7 @@ use crate::app::{BenCodeApp, now_ms};
 use crate::db::{Block, SessionRow};
 use crate::harness::HarnessKind;
 use crate::harness::accounts::supports_accounts;
+use crate::rate_limits::RateLimitProvider;
 use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
 use crate::ui::buttons::with_tooltip;
@@ -323,6 +324,11 @@ impl BenCodeApp {
                                     ButtonVariant::Secondary,
                                     cx,
                                 ))
+                                .children(self.render_limit_reset_control(
+                                    session,
+                                    ButtonVariant::Secondary,
+                                    cx,
+                                ))
                                 .child(self.resume_control(&session.id, limit, waiting, cx)),
                         ),
                 )
@@ -361,6 +367,80 @@ impl BenCodeApp {
         let id = SharedString::from(format!("limit-account-{}", session.id));
         Some(
             DropdownMenu::new(id, "Choose another account", menu)
+                .variant(variant)
+                .into_any_element(),
+        )
+    }
+
+    /// Free Claude rate-limit resets (`cedar_ember`), when the account has any
+    /// usable right now.
+    fn render_limit_reset_control(
+        &self,
+        session: &SessionRow,
+        variant: ButtonVariant,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        if session.harness != "claude" {
+            return None;
+        }
+        let account_id = self.session_account_id(session);
+        let claiming = self
+            .usage
+            .claiming_reset
+            .as_ref()
+            .is_some_and(|(id, _)| id == &account_id);
+        let id = SharedString::from(format!("limit-reset-{}", session.id));
+        if claiming {
+            return Some(
+                Button::new(id, "Resetting…")
+                    .icon(IconName::RefreshCw)
+                    .size(ControlSize::Sm)
+                    .variant(variant)
+                    .disabled(true)
+                    .into_any_element(),
+            );
+        }
+        let now = now_ms();
+        let grants: Vec<_> = self
+            .usage_data
+            .read(cx)
+            .cached(RateLimitProvider::Claude, &account_id)?
+            .resets
+            .as_ref()?
+            .claimable_grants(now)
+            .into_iter()
+            .cloned()
+            .collect();
+        if grants.is_empty() {
+            return None;
+        }
+        if grants.len() == 1 {
+            let grant = grants.into_iter().next()?;
+            let tip = format!("{} · free reset", grant.title());
+            return Some(
+                with_tooltip(
+                    SharedString::from(format!("limit-reset-tip-{}", session.id)),
+                    tip,
+                    Button::new(id, "Reset for free")
+                        .icon(IconName::RefreshCw)
+                        .size(ControlSize::Sm)
+                        .variant(variant)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.prompt_claude_reset(&account_id, grant.clone(), cx)
+                        })),
+                )
+                .into_any_element(),
+            );
+        }
+        let menu = grants.into_iter().fold(Menu::new(), |menu, grant| {
+            let acct = account_id.clone();
+            let title = grant.title().to_string();
+            menu.item(MenuItem::new(title).on_click(app_callback(cx, move |this, cx| {
+                this.prompt_claude_reset(&acct, grant.clone(), cx)
+            })))
+        });
+        Some(
+            DropdownMenu::new(id, "Reset for free", menu)
                 .variant(variant)
                 .into_any_element(),
         )
@@ -483,6 +563,29 @@ impl BenCodeApp {
         cx.notify();
     }
 
+    /// Drops the saved usage-limit notice across threads of a Claude account
+    /// once a free reset clears its limit.
+    pub(crate) fn clear_usage_limits_for_claude_account(&mut self, account_id: &str) {
+        let ids: Vec<String> = self
+            .sessions
+            .iter()
+            .filter(|s| s.harness == "claude" && self.session_account_id(s) == account_id)
+            .filter(|s| {
+                self.threads
+                    .get(&s.id)
+                    .is_some_and(|t| t.usage_limit.is_some())
+                    || stored_limit(&s.blocks).is_some()
+            })
+            .map(|s| s.id.clone())
+            .collect();
+        for id in ids {
+            if let Some(thread) = self.threads.get_mut(&id) {
+                thread.usage_limit = None;
+            }
+            self.save_usage_limit(&id, None);
+        }
+    }
+
     fn arm_usage_resume(&mut self, session_id: &str, armed: bool, cx: &mut Context<Self>) {
         let Some(limit) = self
             .threads
@@ -571,13 +674,11 @@ impl BenCodeApp {
         let fg = colors.fg;
         let hover = fg.fill(Fill::Strong);
         let action = self.resume_control(session_id, limit, waiting, cx);
-        let account = self
-            .sessions
-            .iter()
-            .find(|s| s.id == session_id)
-            .and_then(|session| {
-                self.render_limit_account_picker(session, ButtonVariant::Ghost, cx)
-            });
+        let session = self.sessions.iter().find(|s| s.id == session_id);
+        let account =
+            session.and_then(|s| self.render_limit_account_picker(s, ButtonVariant::Ghost, cx));
+        let reset =
+            session.and_then(|s| self.render_limit_reset_control(s, ButtonVariant::Ghost, cx));
         let dismiss_sid = session_id.to_string();
         Some(
             div()
@@ -609,6 +710,7 @@ impl BenCodeApp {
                         )
                         .child(div().flex_1().min_w_0().truncate().child(status))
                         .children(account)
+                        .children(reset)
                         .child(action)
                         .child(
                             div()

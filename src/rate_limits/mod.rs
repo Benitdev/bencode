@@ -8,6 +8,7 @@ pub mod antigravity;
 mod claude;
 mod codex;
 pub use bencode_core::http;
+pub use claude::claim_reset as claim_claude_reset;
 mod opencode;
 
 use serde_json::Value;
@@ -90,6 +91,7 @@ pub struct RateLimitWindow {
 pub enum WindowKind {
     Session,
     Weekly,
+    Fable,
     Monthly,
 }
 
@@ -99,8 +101,166 @@ impl WindowKind {
         match self {
             Self::Session => "5-hour limit",
             Self::Weekly => "Weekly limit",
+            Self::Fable => "Fable limit",
             Self::Monthly => "Monthly limit",
         }
+    }
+
+    /// Short label for compact meters (`5h`, `wk`, `Fable`, `mo`).
+    pub fn short_label(self, window_minutes: u32) -> String {
+        match self {
+            Self::Fable => "Fable".into(),
+            _ => format_window_label(window_minutes),
+        }
+    }
+}
+
+/// One free rate-limit reset grant from Anthropic's `cedar_ember` program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LimitResetGrant {
+    pub id: String,
+    pub label: String,
+    pub resets_left: u32,
+    pub ends_at: Option<i64>,
+    pub clears: Vec<String>,
+    pub gives_back_weekly: bool,
+    pub usable_now: bool,
+    pub paused: bool,
+    pub use_requires_limit: bool,
+    pub blocking: Vec<String>,
+    pub kind: Option<String>,
+    pub unavailable_reason: Option<String>,
+}
+
+impl LimitResetGrant {
+    pub fn title(&self) -> &str {
+        if self.gives_back_weekly {
+            return "Fable reset";
+        }
+        match self.kind.as_deref() {
+            Some("full") => "Full reset",
+            Some("weekly") => "Weekly reset",
+            Some("session") => "5-hour reset",
+            _ if !self.label.is_empty() => &self.label,
+            _ => "Limit reset",
+        }
+    }
+
+    pub fn description(&self) -> Option<&'static str> {
+        if self.gives_back_weekly {
+            Some(
+                "Refills your 5-hour limit and your Fable allowance, and gives back what Fable used on your weekly limit. It doesn't reset your whole week.",
+            )
+        } else {
+            None
+        }
+    }
+
+    /// Extra detail for the info tooltip (what the server's `label` says
+    /// plus which limits the grant clears).
+    pub fn info_tooltip(&self) -> String {
+        let mut lines = Vec::new();
+        if !self.label.is_empty() {
+            lines.push(self.label.clone());
+        }
+        if !self.clears.is_empty() {
+            let names: Vec<&str> = self
+                .clears
+                .iter()
+                .filter_map(|key| match key.as_str() {
+                    "five_hour" => Some("5-hour limit"),
+                    "seven_day" => Some("Weekly limit"),
+                    "seven_day_overage_included" => Some("Fable limit"),
+                    "seven_day_opus" => Some("Opus limit"),
+                    "seven_day_sonnet" => Some("Sonnet limit"),
+                    _ => None,
+                })
+                .collect();
+            if !names.is_empty() {
+                lines.push(format!("Refills: {}", names.join(", ")));
+            }
+        }
+        lines.join("\n")
+    }
+
+    pub fn is_available(&self, now: i64) -> bool {
+        self.resets_left > 0 && self.ends_at.is_none_or(|at| at > now)
+    }
+
+    pub fn can_claim(&self, resets: &LimitResets, now: i64) -> bool {
+        self.is_available(now)
+            && !self.paused
+            && self.usable_now
+            && resets.cooldown_until.is_none_or(|at| at <= now)
+    }
+
+    pub fn disabled_reason(&self, resets: &LimitResets, now: i64) -> Option<&'static str> {
+        if self.can_claim(resets, now) {
+            return None;
+        }
+        if self.paused {
+            return Some("This reset is currently paused");
+        }
+        if resets.cooldown_until.is_some_and(|at| at > now) {
+            return Some("Try again in a minute");
+        }
+        if let Some(reason) = self.unavailable_reason.as_deref() {
+            return Some(match reason {
+                "cooldown" => "Try again in a minute",
+                "needs_limit" => "Usable once you reach a limit it refills",
+                "blocked_five_hour" => "Can't be used while you're at your 5-hour limit",
+                "blocked_seven_day" => "Can't be used while you're at your weekly limit",
+                "blocked_opus" => "Can't be used while you're at your Opus limit",
+                "blocked_sonnet" => "Can't be used while you're at your Sonnet limit",
+                "blocked_other" => "Can't be used while you're at another limit it doesn't refill",
+                "cannot_clear" => "Doesn't refill the limit you've reached",
+                _ => "Can't be used right now",
+            });
+        }
+        if self.use_requires_limit && !resets.at_limit {
+            return Some("Usable once you reach a limit it refills");
+        }
+        Some("Can't be used right now")
+    }
+}
+
+/// Available rate-limit resets for a Claude account (`cedar_ember`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LimitResets {
+    pub eligible: bool,
+    pub at_limit: bool,
+    pub exhausted: Vec<String>,
+    pub grants: Vec<LimitResetGrant>,
+    pub next_grant_id: Option<String>,
+    pub cooldown_until: Option<i64>,
+}
+
+impl LimitResets {
+    pub fn available_grants(&self, now: i64) -> Vec<&LimitResetGrant> {
+        if !self.eligible {
+            return Vec::new();
+        }
+        self.grants
+            .iter()
+            .filter(|grant| grant.is_available(now))
+            .collect()
+    }
+
+    pub fn available_count(&self, now: i64) -> u32 {
+        self.available_grants(now)
+            .into_iter()
+            .map(|grant| grant.resets_left)
+            .sum()
+    }
+
+    pub fn claimable_grants(&self, now: i64) -> Vec<&LimitResetGrant> {
+        if !self.eligible {
+            return Vec::new();
+        }
+        self.grants
+            .iter()
+            .filter(|grant| grant.can_claim(self, now))
+            .collect()
     }
 }
 
@@ -108,7 +268,9 @@ impl WindowKind {
 pub struct ProviderRateLimits {
     pub session: Option<RateLimitWindow>,
     pub weekly: Option<RateLimitWindow>,
+    pub fable: Option<RateLimitWindow>,
     pub monthly: Option<RateLimitWindow>,
+    pub resets: Option<LimitResets>,
     pub updated_at: i64,
     pub error: Option<String>,
     pub status: RateLimitStatus,
@@ -120,6 +282,7 @@ impl ProviderRateLimits {
         [
             (WindowKind::Session, &self.session),
             (WindowKind::Weekly, &self.weekly),
+            (WindowKind::Fable, &self.fable),
             (WindowKind::Monthly, &self.monthly),
         ]
         .into_iter()
@@ -128,7 +291,10 @@ impl ProviderRateLimits {
     }
 
     pub fn has_windows(&self) -> bool {
-        self.session.is_some() || self.weekly.is_some() || self.monthly.is_some()
+        self.session.is_some()
+            || self.weekly.is_some()
+            || self.fable.is_some()
+            || self.monthly.is_some()
     }
 
     /// Nothing to show yet: never asked, or the first answer is on its way.
@@ -285,6 +451,13 @@ pub fn format_reset_countdown(ms: i64) -> String {
     }
 }
 
+/// Grant expiration in the user's timezone, e.g. `"Expires Nov 17, 2:59 PM"`.
+pub fn format_reset_expiry(ms: i64, tz: &jiff::tz::TimeZone) -> Option<String> {
+    let ts = jiff::Timestamp::from_millisecond(ms).ok()?;
+    let local = ts.to_zoned(tz.clone());
+    Some(format!("Expires {}", local.strftime("%b %-d, %-I:%M %p")))
+}
+
 /// When a window resets, else how long it is (MonoCode
 /// `rateLimitWindowTooltip`'s second half).
 pub fn window_note(window: &RateLimitWindow, now: i64) -> String {
@@ -361,7 +534,9 @@ fn ok_limits(
     ProviderRateLimits {
         session,
         weekly,
+        fable: None,
         monthly,
+        resets: None,
         updated_at: now,
         error: None,
         status: RateLimitStatus::Ok,
@@ -378,19 +553,140 @@ fn map_usage_window(raw: Option<&Value>, window_minutes: u32) -> Option<RateLimi
     })
 }
 
-/// The body of Anthropic's `/api/oauth/usage`.
+/// Fable's weekly allowance from `/api/oauth/usage` (`limits[]` scoped to
+/// Fable, or the `seven_day_overage_included` fallback).
+fn parse_claude_fable_window(parsed: &Value) -> Option<RateLimitWindow> {
+    if let Some(limits) = parsed.get("limits").and_then(Value::as_array) {
+        for entry in limits {
+            if entry.get("kind").and_then(Value::as_str) != Some("weekly_scoped") {
+                continue;
+            }
+            let Some(model_name) = entry
+                .get("scope")
+                .and_then(|s| s.get("model"))
+                .and_then(|m| m.get("display_name"))
+                .and_then(Value::as_str)
+            else {
+                continue;
+            };
+            if model_name.to_ascii_lowercase().starts_with("fable")
+                && let Some(used) = first_number(
+                    entry,
+                    &["percent", "used_percentage", "usedPercent", "utilization"],
+                )
+            {
+                return Some(RateLimitWindow {
+                    used_percent: clamp_used_percent(used),
+                    window_minutes: WEEKLY_WINDOW_MINUTES,
+                    resets_at: reset_field(entry),
+                });
+            }
+        }
+    }
+    map_usage_window(
+        parsed.get("seven_day_overage_included"),
+        WEEKLY_WINDOW_MINUTES,
+    )
+}
+
+fn string_array(rec: &Value, key: &str) -> Vec<String> {
+    rec.get(key)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(String::from)
+        .collect()
+}
+
+fn parse_claude_limit_resets(raw: &Value) -> Option<LimitResets> {
+    let obj = raw.as_object()?;
+    let eligible = obj
+        .get("eligible")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if !eligible {
+        return None;
+    }
+    let grants = obj
+        .get("grants")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|g| {
+            let id = g.get("id").and_then(Value::as_str)?.trim();
+            if id.is_empty() {
+                return None;
+            }
+            let resets_left = g.get("resets_left").and_then(Value::as_u64)? as u32;
+            Some(LimitResetGrant {
+                id: id.to_string(),
+                label: g
+                    .get("label")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string(),
+                resets_left,
+                ends_at: g.get("ends_at").and_then(parse_reset_timestamp),
+                clears: string_array(g, "clears"),
+                gives_back_weekly: g
+                    .get("gives_back_weekly")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                usable_now: g
+                    .get("usable_now")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                paused: g.get("paused").and_then(Value::as_bool).unwrap_or(false),
+                use_requires_limit: g
+                    .get("use_requires_limit")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true),
+                blocking: string_array(g, "blocking"),
+                kind: g
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .map(|s| s.trim().to_string()),
+                unavailable_reason: g
+                    .get("unavailable_reason")
+                    .and_then(Value::as_str)
+                    .map(|s| s.trim().to_string()),
+            })
+        })
+        .collect();
+    Some(LimitResets {
+        eligible,
+        at_limit: obj
+            .get("at_limit")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        exhausted: string_array(raw, "exhausted"),
+        grants,
+        next_grant_id: obj
+            .get("next_grant_id")
+            .and_then(Value::as_str)
+            .map(String::from),
+        cooldown_until: obj.get("cooldown_until").and_then(parse_reset_timestamp),
+    })
+}
+
+/// The body of Anthropic's `/api/oauth/usage` (with `cedar_ember=1`).
 pub fn parse_claude_oauth_usage(body: &str, now: i64) -> Result<ProviderRateLimits, String> {
     let parsed: Value =
         serde_json::from_str(body).map_err(|_| "Claude usage response was not JSON".to_string())?;
     if !parsed.is_object() {
         return Err("Claude usage response was empty".into());
     }
-    Ok(ok_limits(
+    let mut limits = ok_limits(
         map_usage_window(parsed.get("five_hour"), SESSION_WINDOW_MINUTES),
         map_usage_window(parsed.get("seven_day"), WEEKLY_WINDOW_MINUTES),
         None,
         now,
-    ))
+    );
+    limits.fable = parse_claude_fable_window(&parsed);
+    limits.resets = parsed.get("cedar_ember").and_then(parse_claude_limit_resets);
+    Ok(limits)
 }
 
 struct CodexWindow {
@@ -451,7 +747,7 @@ pub fn parse_codex_rate_limits(result: &Value, now: i64) -> ProviderRateLimits {
             Some(WindowKind::Session) => &mut session,
             Some(WindowKind::Weekly) => &mut weekly,
             Some(WindowKind::Monthly) => &mut monthly,
-            None => continue,
+            Some(WindowKind::Fable) | None => continue,
         };
         slot.get_or_insert(window);
     }
@@ -671,5 +967,101 @@ mod tests {
         assert_eq!(updated_label(&limits, NOW), "Updated 5m ago");
         limits.updated_at = NOW - 130 * 60_000;
         assert_eq!(updated_label(&limits, NOW), "Updated 2h ago");
+    }
+
+    #[test]
+    fn claude_usage_maps_fable_and_limit_resets() {
+        let body = serde_json::json!({
+            "five_hour": { "utilization": 100.0, "resets_at": "2026-11-16T06:30:00Z" },
+            "seven_day": { "utilization": 68.0, "resets_at": "2026-11-18T00:00:00Z" },
+            "limits": [
+                {
+                    "kind": "weekly_scoped",
+                    "group": "weekly",
+                    "percent": 13.0,
+                    "resets_at": "2026-11-18T00:00:00Z",
+                    "scope": { "model": { "display_name": "Fable 5.1" } }
+                }
+            ],
+            "cedar_ember": {
+                "eligible": true,
+                "at_limit": true,
+                "exhausted": ["five_hour"],
+                "grants": [
+                    {
+                        "id": "launch-2610-fable-week",
+                        "label": "New model launch: one Fable reset",
+                        "resets_left": 1,
+                        "ends_at": "2026-11-17T07:59:00Z",
+                        "clears": ["five_hour", "seven_day_overage_included"],
+                        "gives_back_weekly": true,
+                        "usable_now": true,
+                        "paused": false,
+                        "use_requires_limit": false,
+                        "blocking": [],
+                        "type": "full"
+                    },
+                    {
+                        "id": "full-reset-2611",
+                        "label": "One full limit reset",
+                        "resets_left": 1,
+                        "ends_at": "2026-12-10T22:00:00Z",
+                        "clears": ["five_hour", "seven_day", "seven_day_overage_included"],
+                        "gives_back_weekly": false,
+                        "usable_now": true,
+                        "paused": false,
+                        "use_requires_limit": false,
+                        "blocking": [],
+                        "type": "full"
+                    },
+                    {
+                        "id": "spent-reset",
+                        "label": "Already used",
+                        "resets_left": 0,
+                        "usable_now": false,
+                        "type": "session"
+                    }
+                ],
+                "next_grant_id": "launch-2610-fable-week"
+            }
+        })
+        .to_string();
+
+        let limits = parse_claude_oauth_usage(&body, 1_794_800_000_000).unwrap();
+        let fable = limits.fable.as_ref().unwrap();
+        assert_eq!(fable.used_percent, 13.0);
+        assert_eq!(WindowKind::Fable.title(), "Fable limit");
+        assert_eq!(
+            WindowKind::Fable.short_label(fable.window_minutes),
+            "Fable"
+        );
+        assert_eq!(limits.windows().len(), 3);
+
+        let resets = limits.resets.as_ref().unwrap();
+        assert_eq!(resets.available_count(1_794_800_000_000), 2);
+        let available = resets.available_grants(1_794_800_000_000);
+        assert_eq!(available.len(), 2);
+        assert_eq!(available[0].title(), "Fable reset");
+        assert!(available[0].description().is_some());
+        assert_eq!(available[1].title(), "Full reset");
+        assert!(available[1].description().is_none());
+        assert!(available[0].can_claim(resets, 1_794_800_000_000));
+
+        // Fallback `seven_day_overage_included` when `limits[]` is absent.
+        let fallback = parse_claude_oauth_usage(
+            r#"{"five_hour":{"utilization":20},"seven_day_overage_included":{"utilization":42,"resets_at":null}}"#,
+            NOW,
+        )
+        .unwrap();
+        assert_eq!(fallback.fable.unwrap().used_percent, 42.0);
+    }
+
+    #[test]
+    fn reset_expiry_formats_in_timezone() {
+        let tz = jiff::tz::TimeZone::fixed(jiff::tz::offset(7));
+        assert_eq!(
+            format_reset_expiry(1_794_902_340_000, &tz).as_deref(),
+            Some("Expires Nov 17, 2:59 PM")
+        );
     }
 }

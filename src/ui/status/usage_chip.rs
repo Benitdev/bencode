@@ -4,23 +4,29 @@
 //! own there, not under its composer), and the details popover it opens
 //! (one card per window; the account pages are in `account_views`).
 
+use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::overlays::ConfirmDialog;
 use bencode_ui::primitives::{Icon, IconName, TipRow, Tooltip};
-use bencode_ui::theme::{ActiveTheme, IconSize, Palette};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize, Palette};
 use gpui::{
-    AnyElement, Context, FontWeight, Hsla, IntoElement, ParentElement, Styled, anchored, deferred,
-    div, point, prelude::*, relative,
+    AnyElement, Context, FontWeight, Hsla, IntoElement, ParentElement, SharedString, Styled,
+    anchored, deferred, div, point, prelude::*, relative,
 };
+use jiff::tz::TimeZone;
 
 use crate::app::accounts::SignIn;
 use crate::app::usage::{UsageTarget, UsageView};
 use crate::app::{BenCodeApp, now_ms};
 use crate::harness::accounts::{ProviderAccount, supports_accounts};
 use crate::rate_limits::{
-    AccountTone, ProviderRateLimits, RateLimitProvider, RateLimitStatus, RateLimitWindow,
-    WindowKind, account_status, antigravity, best_alternative, clamp_used_percent,
-    format_usage_percent, needs_provider_login, updated_label, window_note,
+    AccountTone, LimitResetGrant, LimitResets, ProviderRateLimits, RateLimitProvider,
+    RateLimitStatus, RateLimitWindow, WindowKind, account_status, antigravity, best_alternative,
+    clamp_used_percent, format_reset_expiry, format_usage_percent, needs_provider_login,
+    updated_label, window_note,
 };
 use crate::ui::HarnessIcon;
+use crate::ui::app_callback::app_callback;
+use crate::ui::buttons::with_tooltip;
 use crate::ui::git_changes_panel::spinning_icon;
 use crate::ui::scale::px;
 use crate::ui::sidebar_popovers::popover_frame;
@@ -575,6 +581,13 @@ impl BenCodeApp {
         }
         parts.push(body.into_any_element());
 
+        if provider == RateLimitProvider::Claude
+            && let Some(section) =
+                self.render_claude_limit_resets(chip.active_id, limits.resets.as_ref(), now, cx)
+        {
+            parts.push(section);
+        }
+
         // MonoCode `SwitchSuggestion`: another account with room to spare.
         let tone = account_status(Some(limits), now).tone;
         if !chip.locked && matches!(tone, AccountTone::Exhausted | AccountTone::Low) {
@@ -599,6 +612,247 @@ impl BenCodeApp {
             }
         }
         parts
+    }
+
+    /// Claude's free limit resets (`cedar_ember`) inside the usage popover.
+    fn render_claude_limit_resets(
+        &self,
+        account_id: &str,
+        resets: Option<&LimitResets>,
+        now: i64,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
+        let grants: Vec<&LimitResetGrant> = resets
+            .map(|r| r.available_grants(now))
+            .unwrap_or_default();
+        let error = self.usage.reset_error.as_ref();
+        if grants.is_empty() && error.is_none() {
+            return None;
+        }
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let available = resets.map_or(0, |r| r.available_count(now));
+        let tz = TimeZone::system();
+
+        let header = (!grants.is_empty()).then(|| {
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .px_1()
+                .pb(px(6.0))
+                .text_size(Text::Xs.px())
+                .child(
+                    div()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(fg.ink(Ink::Muted))
+                        .child("Limit resets"),
+                )
+                .child(
+                    div()
+                        .text_color(fg.ink(Ink::Faint))
+                        .child(format!("{available} available")),
+                )
+        });
+
+        let cards: Vec<_> = resets
+            .map(|resets| {
+                grants
+                    .into_iter()
+                    .enumerate()
+                    .map(|(ix, grant)| {
+                        let claiming_this = self
+                            .usage
+                            .claiming_reset
+                            .as_ref()
+                            .is_some_and(|(acct, gid)| acct == account_id && gid == &grant.id);
+                        let claiming_any = self.usage.claiming_reset.is_some();
+                        let can_claim = grant.can_claim(resets, now);
+                        let disabled_reason = grant.disabled_reason(resets, now);
+                        let info = grant.info_tooltip();
+                        let expires = grant
+                            .ends_at
+                            .and_then(|at| format_reset_expiry(at, &tz));
+                        let desc = grant.description();
+                        let acct = account_id.to_string();
+                        let grant_owned = grant.clone();
+
+                        let btn = Button::new(
+                            SharedString::from(format!("claude-reset-btn-{ix}")),
+                            if claiming_this {
+                                "Resetting…"
+                            } else {
+                                "Reset for free"
+                            },
+                        )
+                        .size(ControlSize::Sm)
+                        .variant(ButtonVariant::Secondary)
+                        .disabled(!can_claim || claiming_any)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.prompt_claude_reset(&acct, grant_owned.clone(), cx);
+                        }));
+
+                        let action =
+                            if let Some(reason) = disabled_reason.filter(|_| !claiming_this) {
+                                with_tooltip(
+                                    SharedString::from(format!("claude-reset-disabled-{ix}")),
+                                    reason,
+                                    btn,
+                                )
+                                .into_any_element()
+                            } else {
+                                btn.into_any_element()
+                            };
+
+                        div()
+                            .px_3()
+                            .py(px(10.0))
+                            .rounded(px(8.0))
+                            .bg(fg.opacity(0.045))
+                            .border_1()
+                            .border_color(fg.fill(Fill::Hover))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(5.0))
+                                            .min_w_0()
+                                            .child(
+                                                div()
+                                                    .truncate()
+                                                    .text_size(Text::Sm.px())
+                                                    .font_weight(FontWeight::MEDIUM)
+                                                    .text_color(fg.ink(Ink::Strong))
+                                                    .child(grant.title().to_string()),
+                                            )
+                                            .when(!info.is_empty(), |el| {
+                                                el.child(
+                                                    div()
+                                                        .id(SharedString::from(format!(
+                                                            "claude-reset-info-{ix}"
+                                                        )))
+                                                        .flex_none()
+                                                        .text_color(fg.ink(Ink::Faint))
+                                                        .tooltip(Tooltip::text(info))
+                                                        .child(
+                                                            Icon::new(IconName::Info)
+                                                                .size(IconSize::Xs)
+                                                                .color(fg.ink(Ink::Faint)),
+                                                        ),
+                                                )
+                                            })
+                                            .when(grant.resets_left > 1, |el| {
+                                                el.child(
+                                                    div()
+                                                        .flex_none()
+                                                        .text_size(Text::Xs.px())
+                                                        .text_color(fg.ink(Ink::Faint))
+                                                        .child(format!("×{}", grant.resets_left)),
+                                                )
+                                            }),
+                                    )
+                                    .child(div().flex_none().child(action)),
+                            )
+                            .when_some(expires, |el, expires| {
+                                el.child(
+                                    div()
+                                        .mt_1()
+                                        .text_size(Text::Xs.px())
+                                        .line_height(px(16.0))
+                                        .text_color(fg.ink(Ink::Muted))
+                                        .child(expires),
+                                )
+                            })
+                            .when_some(desc, |el, desc| {
+                                el.child(
+                                    div()
+                                        .mt_1()
+                                        .text_size(Text::Xs.px())
+                                        .line_height(px(15.0))
+                                        .text_color(fg.ink(Ink::Faint))
+                                        .child(desc),
+                                )
+                            })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Some(
+            div()
+                .mt_3()
+                .children(header)
+                .when_some(error.cloned(), |el, error| {
+                    el.child(
+                        div()
+                            .mb(px(6.0))
+                            .px(px(10.0))
+                            .py_2()
+                            .rounded(px(8.0))
+                            .bg(colors.danger.opacity(0.10))
+                            .text_size(Text::Xs.px())
+                            .line_height(px(16.0))
+                            .text_color(colors.danger)
+                            .child(error),
+                    )
+                })
+                .when(!cards.is_empty(), |el| {
+                    el.child(div().flex().flex_col().gap(px(6.0)).children(cards))
+                })
+                .into_any_element(),
+        )
+    }
+
+    /// Confirmation dialog before spending a free Claude rate-limit reset.
+    pub(crate) fn render_claude_reset_confirm(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let pending = self.usage.pending_reset.clone()?;
+        let close = app_callback(cx, |this, cx| this.cancel_claude_reset(cx));
+        let confirmed = pending.clone();
+        let confirm = app_callback(cx, move |this, cx| {
+            this.confirm_claude_reset(confirmed.clone(), cx)
+        });
+        let title = format!("Use {}?", pending.grant.title());
+        let mut lines = Vec::new();
+        if pending.grant.gives_back_weekly {
+            // Broken by hand: bencode-ui's dialog does not wrap its message.
+            lines.push(
+                "Refills your 5-hour limit and your Fable allowance, and\n\
+                 gives back what Fable used on your weekly limit.\n\
+                 It doesn't reset your whole week."
+                    .to_string(),
+            );
+        } else {
+            let info = pending.grant.info_tooltip();
+            if !info.is_empty() {
+                lines.push(info);
+            }
+        }
+        let mut meta = vec![if pending.grant.resets_left == 1 {
+            "1 reset left".to_string()
+        } else {
+            format!("{} resets left", pending.grant.resets_left)
+        }];
+        if let Some(expires) = pending
+            .grant
+            .ends_at
+            .and_then(|at| format_reset_expiry(at, &TimeZone::system()))
+        {
+            meta.push(expires);
+        }
+        lines.push(meta.join(" · "));
+
+        Some(
+            ConfirmDialog::new("claude-reset-confirm", title, lines.join("\n\n"), close)
+                .confirm("Reset for free")
+                .on_confirm(confirm)
+                .into_any_element(),
+        )
     }
 }
 
