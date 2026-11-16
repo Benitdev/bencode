@@ -8,6 +8,7 @@
 //! wherever they appear; only Grok sends them.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::time::Duration;
 
 use serde_json::{Map, Value, json};
 
@@ -23,10 +24,9 @@ pub(crate) const QUESTION_TOOL: &str = "AskUserQuestion";
 /// JSON-RPC "method not found".
 pub(crate) const METHOD_NOT_FOUND: i64 = -32601;
 const MAX_DETAIL_CHARS: usize = 8_000;
-const MAX_OPEN_TOOL_RETRIES: u8 = 2;
-const OPEN_TOOLS_CONTINUE_PROMPT: &str = "Background task(s) are still running in this turn. \
-    Wait for them to finish (check with manage_task if needed) and complete your response \
-    before ending your turn.";
+/// How long a turn whose prompt returned with tool calls still running
+/// waits, with nothing heard from the agent, before it is let go anyway.
+pub(crate) const OPEN_TOOLS_GRACE: Duration = Duration::from_secs(60);
 
 /// Where one CLI's ACP differs from another's.
 pub struct Dialect {
@@ -63,8 +63,10 @@ pub struct Dialect {
     /// else it goes to the user, as Antigravity's own Auto mode asks only
     /// before what leaves its sandbox.
     pub approves_in_auto: bool,
-    /// If `session/prompt` ends while started tools are still in progress,
-    /// keep the same ACP process and prompt it to wait for them.
+    /// A prompt that returns `end_turn` while tool calls it started still
+    /// run (Antigravity's background commands) ends the turn only once they
+    /// finish, or after `OPEN_TOOLS_GRACE` of silence; the process stays up
+    /// meanwhile so they are not killed with it. No prompt is added.
     pub wait_open_tools: bool,
 }
 
@@ -150,10 +152,11 @@ pub struct AcpParser {
     followups: Vec<Value>,
     /// The prompt returned while follow-ups were unacknowledged; the turn
     /// ends with their answers.
-    finishing: Option<DoneStatus>,
-    /// How many times we nudged an ACP server that ended `session/prompt`
-    /// while a started tool call was still in progress.
-    unfinished_tools_retry: u8,
+    /// With whether the model ended it (`finish_prompt`).
+    finishing: Option<(DoneStatus, bool)>,
+    /// The prompt returned while tool calls still ran: the turn ends when
+    /// they finish (`wait_open_tools`).
+    awaiting_tools: bool,
     replies: Vec<String>,
 }
 
@@ -183,7 +186,7 @@ impl AcpParser {
             interjections: HashMap::new(),
             followups: Vec::new(),
             finishing: None,
-            unfinished_tools_retry: 0,
+            awaiting_tools: false,
             replies: Vec::new(),
         }
     }
@@ -273,11 +276,15 @@ impl AcpParser {
             }
             (Step::Prompt, Ok(result)) => {
                 events.extend(self.usage_events(result));
-                let status = match str_field(result, "stopReason") {
+                let stop = str_field(result, "stopReason");
+                let status = match stop {
                     Some("cancelled") => DoneStatus::Cancelled,
                     _ => DoneStatus::Completed,
                 };
-                self.finish_prompt(status, events);
+                // Only a turn the model ended itself waits on its tools; one
+                // cut short (`max_tokens`, `refusal`…) will not pick them up.
+                let ended = matches!(stop, None | Some("end_turn"));
+                self.finish_prompt(status, ended, events);
             }
             (Step::Prompt, Err(err)) => fail((self.dialect.prompt_error)(err), events),
             (Step::Compact, Ok(result)) => {
@@ -304,6 +311,14 @@ impl AcpParser {
         self.tools
             .keys()
             .any(|id| !self.finished_tools.contains(id))
+    }
+
+    /// The last tool the turn waited on finished: the turn ends.
+    fn settle_open_tools(&mut self, events: &mut Vec<AgentEvent>) {
+        if self.awaiting_tools && !self.has_unfinished_tools() {
+            self.awaiting_tools = false;
+            events.push(AgentEvent::Done(DoneStatus::Completed));
+        }
     }
 
     fn open_session(&mut self, events: &mut Vec<AgentEvent>) {
@@ -402,25 +417,18 @@ impl AcpParser {
 
     /// The prompt returned. Follow-ups Grok could not take mid-turn are
     /// prompted now, as one more turn of this run; ones it has not answered
-    /// for yet are waited on first.
-    fn finish_prompt(&mut self, status: DoneStatus, events: &mut Vec<AgentEvent>) {
+    /// for yet are waited on first. A prompt the model ended (`ended`) with
+    /// tool calls still running waits for them (`wait_open_tools`).
+    fn finish_prompt(&mut self, status: DoneStatus, ended: bool, events: &mut Vec<AgentEvent>) {
         if status != DoneStatus::Completed {
             events.push(AgentEvent::Done(status));
         } else if !self.interjections.is_empty() {
-            self.finishing = Some(status);
+            self.finishing = Some((status, ended));
         } else if !self.followups.is_empty() {
             self.prompt = std::mem::take(&mut self.followups);
             self.send_prompt(events);
-        } else if self.dialect.wait_open_tools
-            && self.unfinished_tools_retry < MAX_OPEN_TOOL_RETRIES
-            && self.has_unfinished_tools()
-        {
-            self.unfinished_tools_retry += 1;
-            self.prompt = vec![json!({
-                "type": "text",
-                "text": OPEN_TOOLS_CONTINUE_PROMPT,
-            })];
-            self.send_prompt(events);
+        } else if self.dialect.wait_open_tools && ended && self.has_unfinished_tools() {
+            self.awaiting_tools = true;
         } else {
             events.push(AgentEvent::Done(status));
         }
@@ -439,9 +447,9 @@ impl AcpParser {
             self.followups.extend(blocks);
         }
         if self.interjections.is_empty()
-            && let Some(status) = self.finishing.take()
+            && let Some((status, ended)) = self.finishing.take()
         {
-            self.finish_prompt(status, events);
+            self.finish_prompt(status, ended, events);
         }
     }
 
@@ -463,6 +471,7 @@ impl AcpParser {
             return;
         }
         self.on_update(update, events);
+        self.settle_open_tools(events);
         // Grok stamps its updates with the context the last model call
         // used: the meter's number, where a turn's totals count every call.
         let used = params.pointer("/_meta/totalTokens").and_then(Value::as_u64);
@@ -807,6 +816,13 @@ impl LineParser for AcpParser {
         let running = self.dialect.interject && self.prompt_running();
         let Some(session) = self.session_id.clone().filter(|_| running) else {
             self.followups.extend(blocks);
+            // The turn only waits on its tools: the user's message goes now.
+            if self.awaiting_tools {
+                self.awaiting_tools = false;
+                self.prompt = std::mem::take(&mut self.followups);
+                let mut events = Vec::new();
+                self.send_prompt(&mut events);
+            }
             return;
         };
         self.next_id += 1;
@@ -831,6 +847,23 @@ impl LineParser for AcpParser {
                 .to_string(),
         );
         self.interjections.insert(self.next_id, blocks);
+    }
+
+    /// Counted from the agent's last line, while the turn waits on tools.
+    fn quiet_limit(&self) -> Option<Duration> {
+        self.awaiting_tools.then_some(OPEN_TOOLS_GRACE)
+    }
+
+    /// The tools never reported back: the turn is let go.
+    fn on_quiet(&mut self) -> Vec<AgentEvent> {
+        if !std::mem::take(&mut self.awaiting_tools) {
+            return Vec::new();
+        }
+        log::debug!(
+            "{}: tool calls still open {OPEN_TOOLS_GRACE:?} after the prompt; ending the turn",
+            self.dialect.log
+        );
+        vec![AgentEvent::Done(DoneStatus::Completed)]
     }
 }
 

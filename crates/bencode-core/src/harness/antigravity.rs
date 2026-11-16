@@ -971,70 +971,95 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[test]
-    fn open_tool_call_keeps_acp_turn_alive_until_finished() {
+    fn update(update: Value) -> String {
+        json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": { "sessionId": "ses-1", "update": update },
+        })
+        .to_string()
+    }
+
+    /// The turn opened, `run_command` started in the background, and the
+    /// prompt answered with `stop`.
+    fn returned_with_open_tool(stop: &str) -> (AcpParser, Vec<AgentEvent>) {
         let (mut parser, requests) = opened(&acp_request(PermissionPolicy::AutoApprove));
         let prompt_id = requests.last().unwrap()["id"].clone();
-
-        // `run_command` starts in progress and the prompt returns `end_turn`
-        // before `tool_call_update` finishes it.
-        let started = parser.parse_line(
-            &json!({
-                "jsonrpc": "2.0",
-                "method": "session/update",
-                "params": {
-                    "sessionId": "ses-1",
-                    "update": {
-                        "sessionUpdate": "tool_call",
-                        "toolCallId": "call-bg-1",
-                        "name": "run_command",
-                        "status": "in_progress",
-                        "kind": "execute",
-                        "title": "npm test"
-                    }
-                }
-            })
-            .to_string(),
-        );
+        let started = parser.parse_line(&update(json!({
+            "sessionUpdate": "tool_call",
+            "toolCallId": "call-bg-1",
+            "name": "run_command",
+            "status": "in_progress",
+            "kind": "execute",
+            "title": "npm test",
+        })));
         assert!(
             started
                 .iter()
                 .any(|e| matches!(e, AgentEvent::ToolCallStart { id, .. } if id == "call-bg-1"))
         );
+        let events = parser.parse_line(&reply(&prompt_id, json!({ "stopReason": stop })));
+        (parser, events)
+    }
 
-        let premature = parser.parse_line(&reply(&prompt_id, json!({ "stopReason": "end_turn" })));
+    fn is_done(events: &[AgentEvent]) -> bool {
+        events.iter().any(|e| matches!(e, AgentEvent::Done(_)))
+    }
+
+    #[test]
+    fn an_open_tool_call_keeps_the_turn_until_it_finishes_without_a_prompt() {
+        let (mut parser, returned) = returned_with_open_tool("end_turn");
+        assert!(!is_done(&returned), "{returned:?}");
         assert!(
-            !premature.iter().any(|e| matches!(e, AgentEvent::Done(_))),
-            "turn must not end while call-bg-1 is still in progress: {premature:?}"
+            sent(&mut parser).is_empty(),
+            "nothing is asked of the agent"
         );
-        let followups: Vec<Value> = parser
-            .take_replies()
-            .into_iter()
-            .map(|l| serde_json::from_str(&l).unwrap())
-            .collect();
-        assert_eq!(followups.len(), 1);
-        assert_eq!(followups[0]["method"], "session/prompt");
-        let second_id = followups[0]["id"].clone();
+        assert_eq!(parser.quiet_limit(), Some(acp::OPEN_TOOLS_GRACE));
 
-        let finished = parser.parse_line(
-            &json!({
-                "jsonrpc": "2.0",
-                "method": "session/update",
-                "params": {
-                    "sessionId": "ses-1",
-                    "update": {
-                        "sessionUpdate": "tool_call_update",
-                        "toolCallId": "call-bg-1",
-                        "status": "completed",
-                        "content": [{ "type": "content", "content": { "type": "text", "text": "ok" } }]
-                    }
-                }
-            })
-            .to_string(),
+        let finished = parser.parse_line(&update(json!({
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "call-bg-1",
+            "status": "completed",
+            "content": [{ "type": "content", "content": { "type": "text", "text": "ok" } }],
+        })));
+        assert!(finished.iter().any(
+            |e| matches!(e, AgentEvent::ToolCallFinish { id, success: true, .. } if id == "call-bg-1")
+        ));
+        assert_eq!(
+            finished.last(),
+            Some(&AgentEvent::Done(DoneStatus::Completed))
         );
-        assert!(finished.iter().any(|e| matches!(e, AgentEvent::ToolCallFinish { id, success: true, .. } if id == "call-bg-1")));
+        assert_eq!(parser.quiet_limit(), None);
+    }
 
-        let done = parser.parse_line(&reply(&second_id, json!({ "stopReason": "end_turn" })));
-        assert!(done.contains(&AgentEvent::Done(DoneStatus::Completed)));
+    #[test]
+    fn a_tool_that_never_reports_back_is_let_go_after_the_grace() {
+        let (mut parser, _) = returned_with_open_tool("end_turn");
+        assert_eq!(parser.on_quiet(), [AgentEvent::Done(DoneStatus::Completed)]);
+        assert!(parser.on_quiet().is_empty());
+        assert!(sent(&mut parser).is_empty());
+    }
+
+    #[test]
+    fn a_prompt_cut_short_does_not_wait_on_its_tools() {
+        let (parser, returned) = returned_with_open_tool("max_tokens");
+        assert!(returned.contains(&AgentEvent::Done(DoneStatus::Completed)));
+        assert_eq!(parser.quiet_limit(), None);
+        let (_, cancelled) = returned_with_open_tool("cancelled");
+        assert!(cancelled.contains(&AgentEvent::Done(DoneStatus::Cancelled)));
+    }
+
+    #[test]
+    fn a_follow_up_while_tools_run_is_prompted_at_once() {
+        let (mut parser, _) = returned_with_open_tool("end_turn");
+        parser.steer("and then?", &[]);
+        let asked = sent(&mut parser);
+        assert_eq!(asked.len(), 1);
+        assert_eq!(asked[0]["method"], "session/prompt");
+        assert_eq!(asked[0]["params"]["prompt"][0]["text"], "and then?");
+        assert_eq!(parser.quiet_limit(), None);
+        let done = parser.parse_line(&reply(&asked[0]["id"], json!({ "stopReason": "end_turn" })));
+        // `call-bg-1` is still open: the follow-up's turn waits on it too.
+        assert!(!is_done(&done));
     }
 }

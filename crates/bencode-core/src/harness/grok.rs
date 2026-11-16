@@ -473,6 +473,28 @@ mod tests {
     }
 
     #[test]
+    fn grok_ends_its_turn_with_tool_calls_still_open() {
+        let mut parser = bound(PermissionPolicy::AutoApprove);
+        parser.parse_line(
+            &json!({
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": { "sessionId": "ses-1", "update": {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "call-1",
+                    "status": "in_progress",
+                    "kind": "execute",
+                    "title": "sleep 60",
+                } },
+            })
+            .to_string(),
+        );
+        let events = parser.parse_line(&reply(4, json!({ "stopReason": "end_turn" })));
+        assert!(events.contains(&AgentEvent::Done(DoneStatus::Completed)));
+        assert_eq!(parser.quiet_limit(), None);
+    }
+
+    #[test]
     fn global_flags_go_before_agent_and_stdio_last() {
         assert_eq!(
             build_args(&request(PermissionPolicy::AutoApprove)),

@@ -256,7 +256,9 @@ BenCode's code, changed like the app's.
   follow-ups are `_x.ai/interject`, `/compact` is
   `_x.ai/compact_conversation`, never the browser sign-in. Antigravity
   (`antigravity.rs`): `agy acp` from 1.5.1, print mode before; model and
-  mode are set on the session each turn.
+  mode are set on the session each turn. A prompt that returns with its
+  tool calls still running ends the turn once they finish (or after
+  `OPEN_TOOLS_GRACE` of silence); BenCode never prompts it again itself.
 - Model keys are `harness:model`; never pass a display name to `--model`.
 - A thread's `provider_account_id` picks its profile under
   `provider-accounts`; anything that starts Claude or Codex for a thread

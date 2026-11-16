@@ -11,6 +11,12 @@ tagging (`docs/releasing.md`).
   assignee, priority, milestones, dates, hours; names or ids, Normal
   priority and the project's first type unless named). Before, a thread
   could read, comment on and change issues but not open one.
+- Antigravity no longer sends a hidden "background tasks are still
+  running" prompt (up to twice a turn) when a turn ends with a command
+  still running: the turn now waits for the command to finish, or for a
+  minute without word from `agy`, and costs no extra model turn. A turn
+  cut short (out of tokens, refused) ends at once, and a message sent
+  while it waits goes straight to Antigravity.
 
 ## [0.1.49] - 2026-11-16
 
