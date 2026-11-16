@@ -59,7 +59,7 @@ pub enum Change {
 
 impl Change {
     /// The form `PATCH /issues/:key` takes; an empty value clears.
-    fn form(&self) -> Vec<(&'static str, String)> {
+    pub(super) fn form(&self) -> Vec<(&'static str, String)> {
         let id = |id: &Option<i64>| id.map(|id| id.to_string()).unwrap_or_default();
         let hours = |hours: &Option<f64>| hours.map(|h| h.to_string()).unwrap_or_default();
         match self {
@@ -109,7 +109,7 @@ pub(super) fn fields(row: &IssueRow) -> IssueFields {
 }
 
 /// A list of `{id, name}` rows; `skip` leaves some out.
-fn parse_named(data: &Value, skip: impl Fn(&Value) -> bool) -> Vec<Named> {
+pub(super) fn parse_named(data: &Value, skip: impl Fn(&Value) -> bool) -> Vec<Named> {
     (data.as_array().into_iter().flatten())
         .filter(|row| !skip(row))
         .filter_map(|row| {

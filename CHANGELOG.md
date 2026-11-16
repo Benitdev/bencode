@@ -4,6 +4,14 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- Agents can create Backlog issues: the Backlog tools offered to a thread
+  gain `backlog_create_issue` (project, subject, description, type,
+  assignee, priority, milestones, dates, hours; names or ids, Normal
+  priority and the project's first type unless named). Before, a thread
+  could read, comment on and change issues but not open one.
+
 ## [0.1.49] - 2026-11-16
 
 - The command palette: ⇧⌘P (or `>` in Go to File) lists every command by

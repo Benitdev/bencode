@@ -2,12 +2,13 @@
 //! MCP server every harness's agent gets while it is connected
 //! (`app/backlog.rs`), so a thread reads and works its issues as the Inbox
 //! does. It reads the connection from the data folder itself: the API key
-//! never reaches argv or a CLI's config. Writes (a comment, a change) act
-//! as the user; the instructions keep them to what the user asked.
+//! never reaches argv or a CLI's config. Writes (a new issue, a comment, a
+//! change) act as the user; the instructions keep them to what the user
+//! asked.
 
 use serde_json::{Value, json};
 
-use super::{Change, FieldChoice, FieldOptions, IssueFields, Search, StatusOption};
+use super::{Change, FieldChoice, FieldOptions, IssueFields, NewIssue, Search, StatusOption};
 use crate::mcp::server::{self, Reply, Server};
 use crate::work_items::{Details, Thread, WorkItem};
 
@@ -44,8 +45,8 @@ impl Server for Backlog {
         "These tools reach the Nulab Backlog space the user connected in BenCode, the app \
         the user is talking to you from, as the user. When the user names a Backlog issue \
         (PROJ-123, or a link to …/view/PROJ-123), read it with backlog_get_issue (comments: \
-        true for its discussion) before working on it. Comment on or change an issue only \
-        when the user asked you to."
+        true for its discussion) before working on it. Create, comment on or change an issue \
+        only when the user asked you to."
     }
 
     fn tools(&self) -> Value {
@@ -57,6 +58,7 @@ impl Server for Backlog {
             "backlog_list_projects" => list_projects(),
             "backlog_search_issues" => search_issues(args),
             "backlog_get_issue" => get_issue(args),
+            "backlog_create_issue" => create_issue(args),
             "backlog_add_comment" => add_comment(args),
             "backlog_update_issue" => update_issue(args),
             _ => Err(format!("Unknown tool {tool}")),
@@ -88,6 +90,15 @@ fn tools() -> Value {
             "description": format!("{what}; null clears them."),
         })
     };
+    let assignee = json!({
+        "type": ["string", "integer", "null"],
+        "description": "The assignee: \"me\", a member's name or id; null clears it.",
+    });
+    let milestones = json!({
+        "type": "array",
+        "items": { "type": ["string", "integer"] },
+        "description": "The milestones, by name or id; [] clears them.",
+    });
     json!([
         {
             "name": "backlog_list_projects",
@@ -118,6 +129,30 @@ fn tools() -> Value {
             },
         },
         {
+            "name": "backlog_create_issue",
+            "description": "Create an issue as the user; it starts in the project's first status. Only when the user asked for it. A name that does not match lists the choices.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": { "type": "string", "description": "The project's key (PROJ)." },
+                    "summary": { "type": "string", "description": "The subject." },
+                    "description": { "type": "string", "description": "Backlog's Markdown or plain text." },
+                    "issueType": {
+                        "type": ["string", "integer"],
+                        "description": "The issue type: its name or id; the project's first type when left out.",
+                    },
+                    "assignee": assignee,
+                    "priority": { "type": ["string", "integer"], "description": "The priority: its name or id; Normal when left out." },
+                    "milestones": milestones,
+                    "startDate": day("The start date"),
+                    "dueDate": day("The due date"),
+                    "estimatedHours": hours("Estimated hours"),
+                    "actualHours": hours("Actual hours"),
+                },
+                "required": ["project", "summary"],
+            },
+        },
+        {
             "name": "backlog_add_comment",
             "description": "Comment on an issue as the user (Backlog's Markdown or plain text). Only when the user asked for it.",
             "inputSchema": {
@@ -134,17 +169,10 @@ fn tools() -> Value {
                 "properties": {
                     "key": key,
                     "status": { "type": ["string", "integer"], "description": "The status: its name or id." },
-                    "assignee": {
-                        "type": ["string", "integer", "null"],
-                        "description": "The assignee: \"me\", a member's name or id; null clears it.",
-                    },
+                    "assignee": assignee,
                     "priority": { "type": ["string", "integer"], "description": "The priority: its name or id." },
                     "resolution": name_or_id("The resolution"),
-                    "milestones": {
-                        "type": "array",
-                        "items": { "type": ["string", "integer"] },
-                        "description": "The milestones, by name or id; [] clears them.",
-                    },
+                    "milestones": milestones,
                     "startDate": day("The start date"),
                     "dueDate": day("The due date"),
                     "estimatedHours": hours("Estimated hours"),
@@ -203,6 +231,48 @@ fn get_issue(args: &Value) -> Result<String, String> {
         _ => None,
     };
     Ok(issue_text(&item, &details, thread.as_ref()))
+}
+
+fn create_issue(args: &Value) -> Result<String, String> {
+    let project = string_arg(args, "project").ok_or("Name the project: its key, like PROJ")?;
+    let summary = string_arg(args, "summary").ok_or("Give the issue a summary")?;
+    if let Some(field) = ["status", "resolution"]
+        .into_iter()
+        .find(|f| args.get(*f).is_some())
+    {
+        return Err(format!(
+            "A new issue starts in the project's first status; set its {field} with \
+            backlog_update_issue once it exists"
+        ));
+    }
+    let project = super::project(&project)?;
+    let types = super::issue_types(&project.id)?;
+    let issue_type = match args.get("issueType") {
+        Some(wanted) if !clears(wanted) => pick(&types, wanted, "issue type")?,
+        _ => (types.first().map(|kind| kind.id))
+            .ok_or_else(|| format!("Project {} has no issue types", project.key))?,
+    };
+    let needs_options = ["assignee", "priority", "milestones"]
+        .iter()
+        .any(|field| args.get(*field).is_some());
+    let options = match needs_options {
+        true => super::options(&project.id)?,
+        false => FieldOptions::default(),
+    };
+    let issue = NewIssue {
+        project_id: project.id,
+        summary,
+        description: string_arg(args, "description"),
+        issue_type,
+        fields: changes(args, &[], &options)?,
+    };
+    let (item, fields) = super::create(&issue)?;
+    Ok(format!(
+        "Created {}: {}\n{}",
+        item.identifier,
+        item.url,
+        field_lines(&item, &fields)
+    ))
 }
 
 fn add_comment(args: &Value) -> Result<String, String> {
@@ -284,7 +354,7 @@ fn pick(choices: &[FieldChoice], wanted: &Value, field: &str) -> Result<i64, Str
     found.ok_or_else(|| {
         let names: Vec<&str> = choices.iter().map(|c| c.name.as_str()).collect();
         format!(
-            "No {field} {wanted} on this issue's project; choose one of: {}",
+            "No {field} {wanted} on this project; choose one of: {}",
             names.join(", ")
         )
     })
@@ -614,6 +684,16 @@ mod tests {
         assert!(text.contains("## Description\n\nIt fails."));
         assert!(text.contains("### Yumeko · 2026-11-02\n\nOn it."));
         assert!(!issue_text(&item, &details, None).contains("## Comments"));
+    }
+
+    #[test]
+    fn a_new_issue_needs_a_project_and_a_subject_and_takes_no_status() {
+        assert!(create_issue(&json!({ "summary": "Fix it" })).is_err());
+        assert!(create_issue(&json!({ "project": "PROJ", "summary": " " })).is_err());
+        let err =
+            create_issue(&json!({ "project": "PROJ", "summary": "Fix it", "status": "Open" }))
+                .unwrap_err();
+        assert!(err.contains("backlog_update_issue"), "{err}");
     }
 
     #[test]

@@ -1,8 +1,8 @@
 //! Nulab Backlog as an Inbox source, over its REST API v2 with a personal
 //! API key (shaped after MonoCode's Jira source, `src-tauri/src/jira.rs`):
 //! the connection, the space's projects and statuses, open issues, one
-//! issue's description and comments, a new comment, and changes to its
-//! status and fields (`fields`).
+//! issue's description and comments, a new comment, changes to its
+//! status and fields (`fields`), and a new issue (`create`).
 //!
 //! The space and key live in `backlog-config.json` (owner-only) in
 //! BenCode's data folder. Every call here blocks on `curl`; use the
@@ -20,10 +20,12 @@ use serde_json::Value;
 use crate::rate_limits::http;
 use crate::work_items::{Comment, Details, Kind, Label, Provider, Thread, WorkItem};
 
+mod create;
 mod fields;
 mod images;
 pub mod mcp;
 
+pub use create::{NewIssue, create, issue_types};
 pub use fields::{
     Change, FieldOptions, IssueFields, Named as FieldChoice, options, update, update_all,
 };
@@ -36,6 +38,8 @@ const PAGE: usize = 100;
 const CLOSED_STATUS: i64 = 4;
 /// Backlog's built-in "High" priority; the names follow the user's language.
 const HIGH_PRIORITY: i64 = 2;
+/// Backlog's built-in "Normal" priority, what a new issue takes by default.
+const NORMAL_PRIORITY: i64 = 3;
 /// How long the space's projects and statuses are trusted.
 const CATALOG_FRESH_FOR: Duration = Duration::from_secs(600);
 
@@ -716,6 +720,12 @@ pub fn search(search: &Search) -> Result<Vec<WorkItem>, String> {
         }
     }
     parse_issues(call(&config, None, "/issues", &query, &[])?, &config.space)
+}
+
+/// An active project by its key, whatever its case (`mcp.rs`).
+pub fn project(key: &str) -> Result<Project, String> {
+    let catalog = catalog(&require_config()?)?;
+    project_by_key(&catalog.projects, key).cloned()
 }
 
 /// An active project by its key, whatever its case.
