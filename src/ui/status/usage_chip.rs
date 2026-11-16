@@ -307,23 +307,12 @@ impl BenCodeApp {
             && (needs_provider_login(chip.limits) || self.usage.sign_in != SignIn::Idle);
         let padded = view != UsageView::Usage || !login_view;
 
-        let popover = popover_frame(cx)
-            .id("usage-popover")
-            .occlude()
-            .w(px(if view == UsageView::Accounts {
-                ACCOUNTS_WIDTH
-            } else {
-                POPOVER_WIDTH
-            }))
-            .max_h(px(460.0))
+        let content = div()
+            .id("usage-popover-scroll")
+            .w_full()
+            .max_h(px(620.0))
             .overflow_y_scroll()
             .when(padded, |el| el.p(px(10.0)))
-            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                // A press on the chip is its own toggle.
-                if !this.usage.chip_hovered {
-                    this.close_usage_popover(cx);
-                }
-            }))
             .map(|el| match view {
                 UsageView::Accounts => el.child(self.render_account_picker(chip, cx)),
                 UsageView::Add => el.child(self.render_add_account(chip.provider, cx)),
@@ -332,6 +321,23 @@ impl BenCodeApp {
                     .child(self.render_sign_in_panel(chip.provider, cx)),
                 UsageView::Usage => el.children(self.render_usage_details(chip, cx)),
             });
+
+        let popover = popover_frame(cx)
+            .id("usage-popover")
+            .occlude()
+            .overflow_hidden()
+            .w(px(if view == UsageView::Accounts {
+                ACCOUNTS_WIDTH
+            } else {
+                POPOVER_WIDTH
+            }))
+            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                // A press on the chip is its own toggle.
+                if !this.usage.chip_hovered {
+                    this.close_usage_popover(cx);
+                }
+            }))
+            .child(content);
 
         // Pinned to the chip's top-left corner, which the popover's bottom-left
         // then hangs from.
