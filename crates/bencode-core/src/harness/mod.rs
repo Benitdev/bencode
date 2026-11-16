@@ -6,6 +6,7 @@ pub mod accounts;
 pub mod agy_accounts;
 pub mod attachments;
 pub use attachments::Attachment;
+pub mod acp;
 pub mod antigravity;
 pub mod catalog;
 pub mod claude;

@@ -1,31 +1,46 @@
-//! Antigravity (`agy`) print mode with `--output-format stream-json`.
-//! Events are `{"event": "init" | "step_update" | "result" | "error", …}`.
+//! Antigravity (`agy`). From 1.5.1 a turn runs `agy acp` (`acp.rs`), as
+//! MonoCode runs its separate `agy_acp_server.par`: the thread's
+//! conversation is the ACP session (print mode's conversation ids resume
+//! there), its model and mode are set on the session, and the MCP servers
+//! BenCode offers (`SpawnRequest::mcp_servers`: the browser, Backlog) go
+//! with it, which print mode cannot take. Commands are asked about as
+//! `agy`'s own `toolPermission` setting says: with `always-proceed` it asks
+//! nothing, whatever the thread's access.
 //!
+//! An older `agy` runs in print mode, `--output-format stream-json`.
+//! Events are `{"event": "init" | "step_update" | "result" | "error", …}`.
 //! A tool runs as a `"tool"` step (`tool_info`: name, parameters, output),
 //! reported `ACTIVE` then `DONE`; older builds sent `"tool_call"` steps.
 //! The result's `usage` adds up every model call of the turn, so the
 //! context meter reads the last call's instead; a result that is not
 //! `SUCCESS` says why in its `error`.
-//!
-//! `agy` reads MCP servers only from its own config files and refuses
-//! them in `--settings`, so the servers BenCode offers a turn
-//! (`SpawnRequest::mcp_servers`: the browser, Backlog) do not reach it.
 
 use anyhow::Result;
 use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::SystemTime;
 
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
+use crate::harness::acp::{self, AcpParser, Dialect};
 use crate::harness::events::{AgentEvent, DoneStatus, TurnMetrics};
 use crate::harness::handle::HarnessProcessHandle;
 use crate::harness::process::{self, LineParser, ProcessSpec, StdinMode};
-use crate::harness::resolver::HarnessResolver;
+use crate::harness::resolver::{HarnessResolver, cli_version};
 use crate::harness::{EventRx, PermissionPolicy, SpawnRequest, str_field};
 
 const SUCCESS_STATUS: &str = "SUCCESS";
+/// `agy acp` came in 1.5.0; 1.5.1 stopped its turns hanging and its
+/// updates arriving after the prompt returned.
+const ACP_SINCE: [u64; 3] = [1, 5, 1];
+const SIGN_IN_HELP: &str = "Antigravity is not signed in. Run `agy` once in a terminal to sign in.";
 
 pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
     let program = HarnessResolver::resolve_antigravity_cli().unwrap_or_else(|| "agy".into());
+    if speaks_acp(&program) {
+        return spawn_acp(req, program);
+    }
     let spec = ProcessSpec {
         program,
         args: build_args(req),
@@ -38,6 +53,120 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
     };
     process::spawn(spec, AntigravityParser::default())
 }
+
+// ---------------------------------------------------------------------------
+// ACP
+// ---------------------------------------------------------------------------
+
+/// Antigravity's ACP.
+static AGY: Dialect = Dialect {
+    label: "Antigravity",
+    log: "agy",
+    // `agy` is signed in by itself (Keychain); nothing to authenticate.
+    auth_method: |_| None,
+    start_error,
+    prompt_error,
+    new_session_params: |cwd, _, _, servers| json!({ "cwd": cwd, "mcpServers": servers }),
+    resume_with_cwd: true,
+    mode: acp_mode,
+    compact: None,
+    interject: false,
+    cached_in_input: false,
+    approves_in_auto: false,
+};
+
+fn spawn_acp(req: &SpawnRequest, program: PathBuf) -> Result<(HarnessProcessHandle, EventRx)> {
+    let mut parser = AcpParser::new(req, &AGY);
+    let spec = ProcessSpec {
+        program,
+        args: acp_args(req),
+        cwd: req.cwd.clone(),
+        stdin: StdinMode::Protocol {
+            initial: format!("{}\n", parser.initialize()),
+        },
+        permission_responder: Some(acp::permission_response),
+        can_steer: false,
+        account: None,
+        env: super::app_env(req),
+    };
+    process::spawn(spec, parser)
+}
+
+/// Full access approves everything, as print mode's flag of the same name.
+fn acp_args(req: &SpawnRequest) -> Vec<String> {
+    let mut args = vec!["acp".to_string()];
+    if req.permission == PermissionPolicy::AutoApprove && !req.plan {
+        args.push("--dangerously-skip-permissions".into());
+    }
+    args
+}
+
+/// The session mode for the thread's access: set each turn, as a resumed
+/// session keeps the last one (a plan turn's `plan`).
+fn acp_mode(permission: PermissionPolicy, plan: bool) -> Option<&'static str> {
+    Some(match (plan, permission) {
+        (true, _) => "plan",
+        (false, PermissionPolicy::AcceptEdits) => "accept-edits",
+        (false, PermissionPolicy::Auto) => "auto",
+        (false, PermissionPolicy::Ask | PermissionPolicy::AutoApprove) => "default",
+    })
+}
+
+fn mentions_sign_in(detail: &str) -> bool {
+    let lower = detail.to_ascii_lowercase();
+    ["auth", "login", "log in", "sign in", "credential"]
+        .iter()
+        .any(|word| lower.contains(word))
+}
+
+fn start_error(detail: &str) -> String {
+    match mentions_sign_in(detail) {
+        true => format!("{}\n\n{SIGN_IN_HELP}", detail.trim()),
+        false => format!("Antigravity did not start. {}", detail.trim()),
+    }
+}
+
+fn prompt_error(err: String) -> String {
+    match mentions_sign_in(&err) {
+        true => format!("{}\n\n{SIGN_IN_HELP}", err.trim()),
+        false => format!("Antigravity: {}", err.trim()),
+    }
+}
+
+/// The `agy` whose answer is kept: its path, when it was written and its
+/// size, so an update asks again.
+type Stamp = (PathBuf, Option<SystemTime>, u64);
+
+static SPEAKS_ACP: Mutex<Option<(Stamp, bool)>> = Mutex::new(None);
+
+/// Whether `program` runs `agy acp` (1.5.1 or later). Asks its version
+/// once per binary (60ms); model discovery asks first, off the UI thread.
+pub fn speaks_acp(program: &Path) -> bool {
+    let Ok(meta) = std::fs::metadata(program) else {
+        return false;
+    };
+    let stamp = (program.to_path_buf(), meta.modified().ok(), meta.len());
+    let mut cached = SPEAKS_ACP.lock().unwrap_or_else(|err| err.into_inner());
+    if let Some((seen, speaks)) = cached.as_ref()
+        && *seen == stamp
+    {
+        return *speaks;
+    }
+    let version = cli_version(program);
+    let speaks = version
+        .as_deref()
+        .is_some_and(|version| version >= &ACP_SINCE[..]);
+    log::info!(
+        "Antigravity {version:?}: {}",
+        if speaks { "ACP" } else { "print mode" }
+    );
+    *cached = Some((stamp, speaks));
+    speaks
+}
+
+// ---------------------------------------------------------------------------
+// Print mode
+// ---------------------------------------------------------------------------
 
 fn build_args(req: &SpawnRequest) -> Vec<String> {
     let mut args: Vec<String> = vec![
@@ -475,5 +604,348 @@ mod tests {
                 ..
             })
         )));
+    }
+
+    // ---- ACP --------------------------------------------------------------
+
+    use crate::harness::HarnessKind;
+    use crate::harness::events::PermissionRequest;
+
+    fn acp_request(permission: PermissionPolicy) -> SpawnRequest {
+        SpawnRequest {
+            harness: HarnessKind::Antigravity,
+            cwd: "/work".into(),
+            prompt: "hi".into(),
+            model: Some("gemini-4-argon-low".into()),
+            permission,
+            resume_id: None,
+            disable_hooks: false,
+            attachments: Vec::new(),
+            plan: false,
+            compact: false,
+            settings: Default::default(),
+            account: None,
+            mcp_servers: vec![crate::mcp::McpLaunch {
+                name: "bencode-backlog".into(),
+                command: "/bin/bencode".into(),
+                args: vec!["--backlog-mcp".into()],
+            }],
+            app: None,
+            system_prompt: None,
+        }
+    }
+
+    fn sent(parser: &mut AcpParser) -> Vec<Value> {
+        parser
+            .take_replies()
+            .iter()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
+    fn reply(id: &Value, result: Value) -> String {
+        json!({ "jsonrpc": "2.0", "id": id, "result": result }).to_string()
+    }
+
+    /// `session/new`'s answer as `agy acp` 1.5.8 gives it, cut down.
+    fn new_session_result() -> Value {
+        json!({
+            "sessionId": "ses-1",
+            "models": {
+                "currentModelId": "gemini-4-argon-medium",
+                "availableModels": [
+                    { "modelId": "gemini-4-argon-medium", "name": "Gemini 4 Argon (Medium)" },
+                    { "modelId": "gemini-4-argon-low", "name": "Gemini 4 Argon (Low)" },
+                ],
+            },
+            "modes": { "currentModeId": "default", "availableModes": [
+                { "id": "default" }, { "id": "accept-edits" }, { "id": "auto" }, { "id": "plan" },
+            ] },
+        })
+    }
+
+    /// Through `initialize` and `session/new` to the setup it asks for;
+    /// returns the parser and the requests sent before the prompt.
+    fn opened(req: &SpawnRequest) -> (AcpParser, Vec<Value>) {
+        let mut parser = AcpParser::new(req, &AGY);
+        let init: Value = serde_json::from_str(&parser.initialize()).unwrap();
+        assert_eq!(init["method"], "initialize");
+        parser.parse_line(&reply(&init["id"], json!({ "protocolVersion": 1 })));
+        let mut asked = sent(&mut parser);
+        // No `authenticate`: `agy` is signed in by itself.
+        assert_eq!(asked.len(), 1);
+        let open = asked.remove(0);
+        let result = match open["method"].as_str() {
+            Some("session/new") => new_session_result(),
+            _ => json!({ "sessionId": req.resume_id, "modes": { "currentModeId": "plan" } }),
+        };
+        let events = parser.parse_line(&reply(&open["id"], result));
+        assert!(matches!(&events[0], AgentEvent::SessionStarted { .. }));
+        let mut requests = vec![open];
+        loop {
+            let next = sent(&mut parser).remove(0);
+            if next["method"] == "session/prompt" {
+                requests.push(next);
+                return (parser, requests);
+            }
+            parser.parse_line(&reply(&next["id"], json!({})));
+            requests.push(next);
+        }
+    }
+
+    #[test]
+    fn full_access_skips_permissions_and_plan_mode_does_not() {
+        assert_eq!(acp_args(&acp_request(PermissionPolicy::Ask)), ["acp"]);
+        assert_eq!(
+            acp_args(&acp_request(PermissionPolicy::AutoApprove)),
+            ["acp", "--dangerously-skip-permissions"]
+        );
+        let plan = SpawnRequest {
+            plan: true,
+            ..acp_request(PermissionPolicy::AutoApprove)
+        };
+        assert_eq!(acp_args(&plan), ["acp"]);
+    }
+
+    #[test]
+    fn a_new_session_gets_the_servers_model_and_mode() {
+        let (_, requests) = opened(&acp_request(PermissionPolicy::AcceptEdits));
+        let methods: Vec<&str> = requests
+            .iter()
+            .filter_map(|r| r["method"].as_str())
+            .collect();
+        assert_eq!(
+            methods,
+            [
+                "session/new",
+                "session/set_model",
+                "session/set_mode",
+                "session/prompt"
+            ]
+        );
+        assert_eq!(requests[0]["params"]["cwd"], "/work");
+        assert_eq!(
+            requests[0]["params"]["mcpServers"][0]["name"],
+            "bencode-backlog"
+        );
+        assert_eq!(
+            requests[0]["params"]["mcpServers"][0]["args"],
+            json!(["--backlog-mcp"])
+        );
+        assert_eq!(requests[1]["params"]["modelId"], "gemini-4-argon-low");
+        assert_eq!(requests[2]["params"]["modeId"], "accept-edits");
+        assert_eq!(requests[3]["params"]["sessionId"], "ses-1");
+        assert_eq!(requests[3]["params"]["prompt"][0]["text"], "hi");
+    }
+
+    #[test]
+    fn a_thread_resumes_its_conversation_and_leaves_plan_mode() {
+        let req = SpawnRequest {
+            resume_id: Some("a60b1698".into()),
+            model: None,
+            mcp_servers: Vec::new(),
+            ..acp_request(PermissionPolicy::Ask)
+        };
+        let (_, requests) = opened(&req);
+        assert_eq!(requests[0]["method"], "session/resume");
+        assert_eq!(requests[0]["params"]["sessionId"], "a60b1698");
+        // `agy` binds a resumed session to a folder even without servers.
+        assert_eq!(requests[0]["params"]["cwd"], "/work");
+        assert_eq!(requests[0]["params"]["mcpServers"], json!([]));
+        assert_eq!(requests[1]["method"], "session/set_mode");
+        assert_eq!(requests[1]["params"]["modeId"], "default");
+    }
+
+    /// Feeds a recorded turn; the prompt's answer takes the prompt's id.
+    fn play(parser: &mut AcpParser, prompt_id: &Value, fixture: &str) -> Vec<AgentEvent> {
+        fixture
+            .lines()
+            .map(|line| line.replace("\"id\":\"PROMPT\"", &format!("\"id\":{prompt_id}")))
+            .flat_map(|line| parser.parse_line(&line))
+            .collect()
+    }
+
+    const TURN: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/antigravity_acp_turn.jsonl"
+    ));
+    const PERMISSION: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/antigravity_acp_permission.jsonl"
+    ));
+
+    #[test]
+    fn parses_a_recorded_acp_turn() {
+        let (mut parser, requests) = opened(&acp_request(PermissionPolicy::AutoApprove));
+        let events = play(&mut parser, &requests.last().unwrap()["id"], TURN);
+        let usage = |used| AgentEvent::Usage {
+            input_tokens: 0,
+            output_tokens: 0,
+            total_tokens: used,
+            context_window: Some(1_048_576),
+        };
+        let starts: Vec<(&str, &Value)> = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::ToolCallStart { name, input, .. } => Some((name.as_str(), input)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(starts.len(), 2);
+        assert_eq!(starts[0].0, "Bash");
+        assert_eq!(starts[0].1["command"], "echo hello-acp > note.txt");
+        assert_eq!(starts[1].0, "mcp_bencode-backlog_backlog_list_projects");
+        assert_eq!(starts[1].1["description"], "List active Backlog projects");
+        let finished = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::ToolCallFinish { success: true, .. }))
+            .count();
+        assert_eq!(finished, 2);
+        let text: String = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::TextDelta(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(text.ends_with("tool lists 4 projects."), "{text}");
+        // The meter follows `usage_update`; the turn's totals (every model
+        // call added up) do not move it.
+        let meters: Vec<&AgentEvent> = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Usage { .. }))
+            .collect();
+        assert_eq!(meters, [&usage(17_761), &usage(18_168)]);
+        let metrics = events.iter().find_map(|e| match e {
+            AgentEvent::TurnMetrics(metrics) => Some(metrics),
+            _ => None,
+        });
+        let metrics = metrics.expect("turn metrics");
+        assert_eq!(metrics.input_tokens, Some(20_138));
+        assert_eq!(metrics.cache_read_tokens, Some(15_622));
+        // Cached reads count beside the input, as Antigravity reports them.
+        let hit = metrics.cache_hit_percent.unwrap();
+        assert!((hit - 15_622.0 / 35_760.0 * 100.0).abs() < 0.01, "{hit}");
+        assert_eq!(
+            events.last(),
+            Some(&AgentEvent::Done(DoneStatus::Completed))
+        );
+    }
+
+    fn permission_requests(events: &[AgentEvent]) -> Vec<&PermissionRequest> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::PermissionRequest(request) => Some(request),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_command_agy_asks_about_goes_to_the_user_in_ask_and_auto() {
+        for permission in [PermissionPolicy::Ask, PermissionPolicy::Auto] {
+            let (mut parser, requests) = opened(&acp_request(permission));
+            let events = play(&mut parser, &requests.last().unwrap()["id"], PERMISSION);
+            let asked = permission_requests(&events);
+            assert_eq!(asked.len(), 1, "{permission:?}");
+            assert_eq!(asked[0].tool, "Bash");
+            assert_eq!(asked[0].description, "rm scratch.txt");
+            assert!(parser.take_replies().is_empty());
+            let answer: Value =
+                serde_json::from_str(&acp::permission_response(asked[0], true)).unwrap();
+            assert_eq!(answer["id"], "1");
+            assert_eq!(answer["result"]["outcome"]["optionId"], "allow");
+            let answer: Value =
+                serde_json::from_str(&acp::permission_response(asked[0], false)).unwrap();
+            assert_eq!(answer["result"]["outcome"]["optionId"], "deny");
+        }
+    }
+
+    #[test]
+    fn full_access_answers_what_agy_asks_by_itself() {
+        let (mut parser, requests) = opened(&acp_request(PermissionPolicy::AutoApprove));
+        let events = play(&mut parser, &requests.last().unwrap()["id"], PERMISSION);
+        assert!(permission_requests(&events).is_empty());
+        let answers = sent(&mut parser);
+        assert_eq!(answers[0]["id"], "1");
+        assert_eq!(answers[0]["result"]["outcome"]["optionId"], "allow");
+    }
+
+    #[test]
+    fn a_missing_agy_is_not_asked_its_version() {
+        assert!(!speaks_acp(Path::new("/nonexistent/agy")));
+    }
+
+    /// Drives the real `agy acp` through a turn and a resumed one. Costs
+    /// two small turns, so it only runs with `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn live_acp_turn_and_resume() {
+        let dir = std::env::temp_dir().join(format!("bencode-agy-live-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let run = |prompt: &str, resume_id: Option<String>| {
+            let req = SpawnRequest {
+                cwd: dir.to_string_lossy().into_owned(),
+                prompt: prompt.into(),
+                resume_id,
+                mcp_servers: Vec::new(),
+                ..acp_request(PermissionPolicy::AutoApprove)
+            };
+            let (handle, mut rx) = crate::harness::spawn(&req).unwrap();
+            crate::harness::runtime::runtime().block_on(async move {
+                let mut seen = Vec::new();
+                while let Some(event) = rx.recv().await {
+                    if let AgentEvent::PermissionRequest(request) = &event {
+                        assert!(handle.respond_permission(request, true));
+                    }
+                    seen.push(event);
+                }
+                seen
+            })
+        };
+        let first = run(
+            "Run this shell command and nothing else: echo hi > hi.txt",
+            None,
+        );
+        let session = first.iter().find_map(|e| match e {
+            AgentEvent::SessionStarted {
+                provider_session_id,
+            } => Some(provider_session_id.clone()),
+            _ => None,
+        });
+        assert!(session.is_some(), "{first:#?}");
+        assert!(
+            first
+                .iter()
+                .any(|e| matches!(e, AgentEvent::ToolCallFinish { success: true, .. })),
+            "{first:#?}"
+        );
+        assert_eq!(first.last(), Some(&AgentEvent::Done(DoneStatus::Completed)));
+        assert_eq!(
+            std::fs::read_to_string(dir.join("hi.txt")).unwrap().trim(),
+            "hi"
+        );
+
+        let second = run(
+            "What file did you just write? Answer with its name only.",
+            session.clone(),
+        );
+        let text: String = second
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::TextDelta(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(text.contains("hi.txt"), "{second:#?}");
+        assert!(second.contains(&AgentEvent::SessionStarted {
+            provider_session_id: session.unwrap()
+        }));
+        assert_eq!(
+            second.last(),
+            Some(&AgentEvent::Done(DoneStatus::Completed))
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

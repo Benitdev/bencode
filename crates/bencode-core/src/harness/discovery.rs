@@ -2,8 +2,8 @@
 //! `discover*Models` do:
 //! - Claude: `list_models` control request over stream-json;
 //! - Codex: `model/list` on `codex app-server`;
-//! - Antigravity: `agy models` (MonoCode asks its ACP server, which BenCode
-//!   does not run; the CLI lists the same models);
+//! - Antigravity: `agy models` (MonoCode asks its ACP server; the CLI lists
+//!   the same ids `agy acp` takes);
 //! - OpenCode: `opencode models --verbose` and `opencode agent list`; for
 //!   OpenCode 2, its server's `/api/model` and `/api/agent`;
 //! - Grok Build: `initialize`, else `session/new`, on `grok agent stdio`
@@ -436,6 +436,8 @@ fn codex_settings(rec: &Value) -> Vec<ModelSetting> {
 fn discover_antigravity() -> Result<Vec<ModelOption>> {
     let program =
         HarnessResolver::resolve_antigravity_cli().context("Antigravity is not installed")?;
+    // Off the UI thread, so a turn's start finds the answer kept.
+    crate::harness::antigravity::speaks_acp(&program);
     let out = run_to_end(
         Command::new(program).arg("models"),
         &home(),

@@ -125,8 +125,8 @@ impl HarnessResolver {
         resolve(&CLAUDE)
     }
 
-    /// The `agy` CLI. MonoCode talks to `agy_acp_server.par` over ACP instead;
-    /// that binary does not accept the print-mode flags used here.
+    /// The `agy` CLI, which runs as an ACP server itself (`agy acp`, 1.5.0)
+    /// where MonoCode runs a separate `agy_acp_server.par`.
     pub fn resolve_antigravity_cli() -> Option<PathBuf> {
         resolve(&ANTIGRAVITY)
     }

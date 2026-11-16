@@ -250,9 +250,13 @@ BenCode's code, changed like the app's.
   commands run (`claude/tasks.rs`): `Done` waits until it yields with
   nothing left (or `RESUME_GRACE`). A subagent's messages become
   `AgentStep`s on its Agent call, never transcript text.
-- Grok Build speaks ACP (`grok.rs`): one `grok agent stdio` per turn, the
-  session bound by resume / load / new; follow-ups are `_x.ai/interject`;
-  `/compact` is `_x.ai/compact_conversation`; never the browser sign-in.
+- Grok Build and Antigravity speak ACP through one client (`acp.rs`; what
+  differs is each one's `Dialect`): one process per turn, the session
+  bound by resume / load / new. Grok (`grok.rs`): `grok agent stdio`,
+  follow-ups are `_x.ai/interject`, `/compact` is
+  `_x.ai/compact_conversation`, never the browser sign-in. Antigravity
+  (`antigravity.rs`): `agy acp` from 1.5.1, print mode before; model and
+  mode are set on the session each turn.
 - Model keys are `harness:model`; never pass a display name to `--model`.
 - A thread's `provider_account_id` picks its profile under
   `provider-accounts`; anything that starts Claude or Codex for a thread
