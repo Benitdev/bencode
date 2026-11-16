@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.50] - 2026-11-16
 
 - Agents can create Backlog issues: the Backlog tools offered to a thread
   gain `backlog_create_issue` (project, subject, description, type,
