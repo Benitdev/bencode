@@ -4,6 +4,15 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.48] - 2026-11-16
+
+- Antigravity threads run over `agy acp` (Antigravity 1.5.1 or later;
+  older ones keep print mode), so they get the in-app browser's and the
+  connected Backlog space's tools like every other harness, ask before a
+  command when `agy`'s own setting asks (Allow / Deny in the thread), and
+  fill the context meter from `agy`'s own count. Threads started before
+  resume their conversation as they were.
+
 ## [0.1.47] - 2026-11-13
 
 - Agents reach the Backlog space connected in Settings: while it is
