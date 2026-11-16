@@ -18,7 +18,7 @@ P2 = when it comes up.
 ### Keep
 
 Keyboard-first (principle 3)
-- [ ] P0 M Command palette (⇧⌘P): every command in `commands.rs`, threads and models, by fuzzy search
+- [x] P0 M Command palette (⇧⌘P, or `>` in Go to File): every command of `app/command_catalog.rs` by fuzzy search, run where the keyboard was. Open: threads and models in it (⌘K and ⌘. find them today)
 - [ ] P1 M Search: keyboard navigation, rows, open a hit in the editor; P2 L coverage and ranking
 - [ ] P1 M Rebindable keys (the Shortcuts page is read only)
 - [ ] P2 S Settings: remembered section, search

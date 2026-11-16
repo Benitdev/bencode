@@ -1,7 +1,10 @@
 //! Go to File, ⌘P (MonoCode `FilePicker` + `fileIndex.rankProjectFiles` +
 //! `shared/lib/fuzzy`): a dialog near the top of the window that ranks the
 //! project's files by a fuzzy match on their name, then their path, with
-//! recently opened files first. Starting the query with `>` lists commands.
+//! recently opened files first. Starting the query with `>` makes it the
+//! command palette (⇧⌘P opens it so): every command of
+//! `app/command_catalog.rs` by name, with its keys, run as if its keys
+//! had been pressed where the keyboard was.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -10,12 +13,15 @@ use std::sync::Arc;
 
 use bencode_ui::primitives::{Icon, IconName};
 use bencode_ui::theme::{ActiveTheme, IconSize};
+use bencode_ui::typography::KbdCombo;
 use gpui::{
     AnyElement, Context, Focusable, FontWeight, HighlightStyle, InteractiveElement, IntoElement,
     ParentElement, SharedString, Styled, StyledText, Window, deferred, div, prelude::*,
 };
 
 use crate::app::BenCodeApp;
+use crate::app::Surface;
+use crate::app::command_catalog::{PaletteCommand, Scope, palette};
 use crate::ui::composer::focus_later;
 use crate::ui::file_tree::resolve_entry_icon;
 use crate::ui::scale::px;
@@ -257,19 +263,46 @@ impl<T> RankCache<T> {
     }
 }
 
-/// A command offered after `>`.
-struct Action {
-    id: &'static str,
-    label: &'static str,
-    hint: &'static str,
-}
+/// How many commands run from the palette are kept to list first.
+const MAX_RECENT_COMMANDS: usize = 8;
 
-/// MonoCode's palette: its one command, reloading the app.
-const ACTIONS: [Action; 1] = [Action {
-    id: "reload",
-    label: "Reload BenCode",
-    hint: "⌘⇧R",
-}];
+/// The palette's list for `query` (what follows `>`): indices into
+/// `commands`, those out of `scope` left out. With no query, the commands
+/// run last and then the catalog in its order; otherwise the matches, best
+/// first, a recent one lifted.
+fn rank_commands(
+    commands: &[PaletteCommand],
+    query: &str,
+    recents: &[usize],
+    in_scope: impl Fn(Scope) -> bool,
+) -> Vec<(usize, Hit)> {
+    let offered = |ix: &usize| commands[*ix].scope.is_none_or(&in_scope);
+    if query.is_empty() {
+        let none = || Hit {
+            score: 0,
+            positions: Vec::new(),
+        };
+        let rest = (0..commands.len()).filter(|ix| !recents.contains(ix));
+        return (recents.iter().copied().chain(rest))
+            .filter(offered)
+            .map(|ix| (ix, none()))
+            .collect();
+    }
+    let query = FuzzyQuery::new(query);
+    let mut hits: Vec<(usize, Hit)> = (0..commands.len())
+        .filter(offered)
+        .filter_map(|ix| {
+            let mut hit = query.matches(&commands[ix].label)?;
+            if let Some(rank) = recents.iter().position(|recent| *recent == ix) {
+                hit.score += ((MAX_RECENT_COMMANDS - rank) * 4) as i64;
+            }
+            Some((ix, hit))
+        })
+        .collect();
+    // Stable: equal scores keep the catalog's order.
+    hits.sort_by_key(|hit| std::cmp::Reverse(hit.1.score));
+    hits
+}
 
 /// Paints the matched characters of `text` (MonoCode `MatchText`).
 fn match_text(text: &str, positions: &[usize], cx: &gpui::App) -> StyledText {
@@ -300,35 +333,29 @@ pub struct QuickOpen {
     /// needs the window).
     pending: Option<String>,
     ranked: RankCache<Results>,
-}
-
-/// Go to File's list for `query`: commands after `>`, else files.
-fn rank_query(query: &str, files: &[SharedString], recents: &[String]) -> Results {
-    match query.trim().strip_prefix('>') {
-        Some(command) => {
-            let command = command.trim();
-            let mut hits: Vec<(usize, Hit)> = ACTIONS
-                .iter()
-                .enumerate()
-                .filter_map(|(ix, a)| Some((ix, fuzzy_match(command, a.label)?)))
-                .collect();
-            hits.sort_by_key(|hit| std::cmp::Reverse(hit.1.score));
-            Results::Actions(hits)
-        }
-        None => Results::Files(rank_files(&[files], query, recents)),
-    }
+    /// The palette's commands, listed once: the keymap does not change
+    /// while BenCode runs.
+    commands: std::cell::OnceCell<Vec<PaletteCommand>>,
+    /// Commands run from the palette, newest first (indices into
+    /// `commands`).
+    recent_commands: Vec<usize>,
+    /// A command picked, run on the next frame (dispatching needs the
+    /// window).
+    pending_command: Option<usize>,
+    /// What had the keyboard when the picker opened: a command runs there.
+    return_focus: Option<gpui::FocusHandle>,
 }
 
 enum Results {
     Files(Vec<(String, Hit)>),
-    Actions(Vec<(usize, Hit)>),
+    Commands(Vec<(usize, Hit)>),
 }
 
 impl Results {
     fn len(&self) -> usize {
         match self {
             Self::Files(files) => files.len(),
-            Self::Actions(actions) => actions.len(),
+            Self::Commands(commands) => commands.len(),
         }
     }
 }
@@ -352,11 +379,46 @@ impl BenCodeApp {
 
     fn quick_open_results(&self, cx: &gpui::App) -> Rc<Results> {
         let query = self.quick_open_query(cx);
+        if let Some(command) = query.trim().strip_prefix('>') {
+            // A hundred names: ranked as asked for, not cached.
+            let inbox = self.surface_open(Surface::Inbox);
+            return Rc::new(Results::Commands(rank_commands(
+                self.palette_commands(),
+                command.trim(),
+                &self.quick_open.recent_commands,
+                |scope| match scope {
+                    Scope::Inbox => inbox,
+                },
+            )));
+        }
         let recents = self.quick_open_recents();
         let files = &self.project_files.files;
         self.quick_open.ranked.get(&query, &[files], &recents, || {
-            rank_query(&query, files, &recents)
+            Results::Files(rank_files(&[files], &query, &recents))
         })
+    }
+
+    fn palette_commands(&self) -> &[PaletteCommand] {
+        self.quick_open.commands.get_or_init(palette)
+    }
+
+    /// ⌘P and ⇧⌘P: the picker, as the command palette when `commands`.
+    /// What has the keyboard now is where a picked command will run.
+    pub fn open_quick_open_from(
+        &mut self,
+        window: &Window,
+        commands: bool,
+        cx: &mut Context<Self>,
+    ) {
+        // Opened again over itself: the keyboard is the picker's own.
+        if !self.quick_open.open {
+            self.quick_open.return_focus = window.focused(cx);
+        }
+        self.open_quick_open(cx);
+        if commands {
+            self.quick_open_input
+                .update(cx, |input, cx| input.set_text(">", cx));
+        }
     }
 
     /// ⌘P: opens the picker with an empty query and a fresh file index.
@@ -372,11 +434,20 @@ impl BenCodeApp {
     }
 
     pub fn close_quick_open(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.hide_quick_open(cx) {
+            return false;
+        }
+        self.quick_open.return_focus = None;
+        self.refocus_prompt(cx);
+        true
+    }
+
+    /// Takes the picker down, the keyboard left where it is.
+    fn hide_quick_open(&mut self, cx: &mut Context<Self>) -> bool {
         if !std::mem::take(&mut self.quick_open.open) {
             return false;
         }
         self.quick_open.ranked.clear();
-        self.refocus_prompt(cx);
         cx.notify();
         true
     }
@@ -420,12 +491,20 @@ impl BenCodeApp {
                 self.quick_open.recents.truncate(MAX_RECENTS);
                 self.quick_open.pending = Some(path);
             }
-            Results::Actions(actions) => {
-                if let Some((ix, _)) = actions.get(index)
-                    && ACTIONS[*ix].id == "reload"
-                {
-                    cx.restart();
-                }
+            Results::Commands(commands) => {
+                let Some((command, _)) = commands.get(index) else {
+                    return;
+                };
+                let command = *command;
+                let recents = &mut self.quick_open.recent_commands;
+                recents.retain(|recent| *recent != command);
+                recents.insert(0, command);
+                recents.truncate(MAX_RECENT_COMMANDS);
+                self.quick_open.pending_command = Some(command);
+                // The keyboard goes back where it was, not to the prompt:
+                // `open_pending_quick_open` runs the command there.
+                self.hide_quick_open(cx);
+                return;
             }
         }
         self.close_quick_open(cx);
@@ -436,12 +515,24 @@ impl BenCodeApp {
         if let Some(path) = self.quick_open.pending.take() {
             self.open_file_in_editor(&path, window, cx);
         }
+        if let Some(command) = self.quick_open.pending_command.take() {
+            // As if its keys had been pressed where the keyboard was: a
+            // command that reads the focus (a terminal's, the file pane's)
+            // sees what it would have. What it focuses itself comes after.
+            match self.quick_open.return_focus.take() {
+                Some(focus) => window.focus(&focus, cx),
+                None => self.refocus_prompt(cx),
+            }
+            if let Some(command) = self.palette_commands().get(command) {
+                window.dispatch_action(command.action.boxed_clone(), cx);
+            }
+        }
     }
 
     /// MonoCode `emptyLabel`.
     fn quick_open_empty(&self, results: &Results, cx: &gpui::App) -> Option<&'static str> {
         match results {
-            Results::Actions(a) => a.is_empty().then_some("No matching commands"),
+            Results::Commands(c) => c.is_empty().then_some("No matching commands"),
             Results::Files(files) => {
                 if self.project_files.root.trim().is_empty() {
                     Some("Open a project to search files")
@@ -499,7 +590,7 @@ impl BenCodeApp {
         let results = self.quick_open_results(cx);
         let results = &*results;
         let empty = self.quick_open_empty(results, cx);
-        let palette = matches!(results, Results::Actions(_));
+        let palette = matches!(results, Results::Commands(_));
         let rows: Vec<AnyElement> = match results {
             Results::Files(files) => files
                 .iter()
@@ -550,36 +641,25 @@ impl BenCodeApp {
                         .into_any_element()
                 })
                 .collect(),
-            Results::Actions(actions) => actions
+            Results::Commands(commands) => commands
                 .iter()
                 .enumerate()
-                .map(|(ix, (action, hit))| {
-                    let action = &ACTIONS[*action];
+                .map(|(ix, (command, hit))| {
+                    let command = &self.palette_commands()[*command];
                     self.quick_open_row(ix, cx)
                         .child(
-                            Icon::new(IconName::RefreshCw)
+                            Icon::new(command.icon)
                                 .size(IconSize::Sm)
                                 .color(colors.fg.ink(Ink::Secondary)),
                         )
                         .child(div().flex_1().min_w_0().truncate().child(match_text(
-                            action.label,
+                            &command.label,
                             &hit.positions,
                             cx,
                         )))
-                        .child(
-                            div()
-                                .flex_none()
-                                .px_1p5()
-                                .py_0p5()
-                                .rounded(px(4.0))
-                                .border_1()
-                                .border_color(colors.fg.fill(Fill::Strong))
-                                .bg(colors.fg.fill(Fill::Hover))
-                                .font_family(cx.theme().mono_family.clone())
-                                .text_size(Text::Xs.px())
-                                .text_color(colors.fg.ink(Ink::Secondary))
-                                .child(action.hint),
-                        )
+                        .when_some(command.keys.as_deref(), |el, keys| {
+                            el.child(div().flex_none().child(KbdCombo::new(keys)))
+                        })
                         .into_any_element()
                 })
                 .collect(),
@@ -602,9 +682,9 @@ impl BenCodeApp {
                     .rounded(px(8.0))
                     .border_1()
                     .border_color(colors.fg.fill(Fill::Strong))
-                    .bg(colors.surface)
                     .shadow_lg()
                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .child(crate::ui::frost::dialog_frost(7.0, colors.surface, cx))
                     .child(
                         div().pb_1p5().child(
                             div()
@@ -699,6 +779,34 @@ mod tests {
         assert_eq!(ranked[0].0, "src/app/agent.rs");
         assert_eq!(ranked[0].1.positions, (8..13).collect::<Vec<_>>());
         assert_eq!(ranked.len(), 2);
+    }
+
+    #[test]
+    fn commands_rank_by_name_recent_first_and_stay_in_scope() {
+        let commands = palette();
+        let at = |label: &str| commands.iter().position(|c| c.label == label).unwrap();
+        let labels = |ranked: &[(usize, Hit)]| -> Vec<&str> {
+            ranked
+                .iter()
+                .map(|(ix, _)| commands[*ix].label.as_str())
+                .collect()
+        };
+        // No query: what was run last, then the catalog as written.
+        let recents = [at("Toggle Terminal")];
+        let all = rank_commands(&commands, "", &recents, |_| false);
+        assert_eq!(labels(&all)[0], "Toggle Terminal");
+        assert_eq!(all.iter().filter(|(ix, _)| *ix == recents[0]).count(), 1);
+        assert!(
+            labels(&all)
+                .iter()
+                .all(|label| !label.starts_with("Inbox: "))
+        );
+        // The Inbox's own commands only while it is open.
+        let inbox = rank_commands(&commands, "translate", &[], |_| true);
+        assert_eq!(labels(&inbox), ["Inbox: Translate"]);
+        assert!(rank_commands(&commands, "translate", &[], |_| false).is_empty());
+        let split = rank_commands(&commands, "split r", &[], |_| false);
+        assert_eq!(labels(&split)[0], "Split Pane Right");
     }
 
     #[test]

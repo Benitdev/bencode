@@ -26,6 +26,7 @@ pub mod browser;
 pub mod browser_sign_in;
 pub mod chat_background;
 pub mod cli_import;
+pub mod command_catalog;
 pub mod commands;
 mod composer_input;
 pub mod file_pane;
@@ -683,7 +684,7 @@ impl BenCodeApp {
         let skill_keys_input = skill_name_input.clone();
         let find_input = text_input(window, cx, "Find in conversation");
         let find_keys_input = find_input.clone();
-        let quick_open_input = text_input(window, cx, "Go to File (type > for commands)");
+        let quick_open_input = text_input(window, cx, "Go to File, or > for commands");
         let quick_keys_input = quick_open_input.clone();
         let question_custom_input = text_input(window, cx, "Type your answer");
         let question_focus = cx.focus_handle();

@@ -229,6 +229,7 @@ an [issue](https://github.com/Benitdev/bencode/issues).
 | ⌘O | Open project |
 | ⌘K | Search |
 | ⌘P | Go to File |
+| ⇧⌘P | Command palette: every command by name |
 | ⇧⌘F | Search in files |
 | ⌘F / ⌘G / ⇧⌘G | Find in conversation / next / previous match |
 | F12 / ⌥⌘H | Go to Definition / File History |

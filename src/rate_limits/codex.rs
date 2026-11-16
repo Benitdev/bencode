@@ -38,7 +38,10 @@ fn failure(message: &str) -> Fetched {
     let has = |needles: &[&str]| needles.iter().any(|needle| lower.contains(needle));
     if has(&[
         "not signed in",
-        "chatgpt authentication required",
+        // Codex's wording has changed between releases ("ChatGPT
+        // authentication required", "codex account authentication
+        // required to read rate limits").
+        "authentication required",
         "not authenticated",
     ]) {
         Fetched::Unavailable("Codex not signed in".into())
@@ -57,6 +60,12 @@ mod tests {
     fn failures_sort_into_signed_out_missing_and_errors() {
         assert_eq!(
             failure("codex account/rateLimits/read: ChatGPT authentication required"),
+            Fetched::Unavailable("Codex not signed in".into())
+        );
+        assert_eq!(
+            failure(
+                "codex account/rateLimits/read: codex account authentication required to read rate limits"
+            ),
             Fetched::Unavailable("Codex not signed in".into())
         );
         assert_eq!(

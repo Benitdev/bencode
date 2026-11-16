@@ -207,7 +207,10 @@ impl BenCodeApp {
             div()
                 .id(SharedString::from(format!("work-item-{}", session.id)))
                 .flex()
-                .flex_none()
+                // Gives way to the thread's name in a narrow row.
+                .flex_shrink(1.0)
+                .min_w(px(16.0))
+                .overflow_hidden()
                 .items_center()
                 .gap(px(2.0))
                 .px(px(2.0))
@@ -232,7 +235,7 @@ impl BenCodeApp {
                     }
                 }))
                 .child(Icon::new(icon).size(IconSize::Xs).color(accent))
-                .child(label)
+                .child(div().min_w_0().truncate().child(label))
                 .into_any_element(),
         )
     }

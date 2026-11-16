@@ -157,28 +157,28 @@ impl BenCodeApp {
             .text_color(colors.fg.ink(Ink::Muted))
             .child(greeting(hour));
 
+        // One run of text, the project's name in its tint: a narrow pane
+        // wraps it instead of cutting both ends off.
         let headline = div()
             .relative()
             .mt(px(4.0))
             .px(px(16.0))
-            .flex()
-            .justify_center()
+            .text_center()
             .text_size(Text::Display.px())
             .line_height(px(34.0))
             .font_weight(FontWeight::MEDIUM)
             .text_color(colors.fg)
-            .map(|el| match project {
-                Some(name) => el
-                    .child("What should we work on in\u{a0}")
-                    .child(
-                        div()
-                            .min_w_0()
-                            .text_color(tint)
-                            .truncate()
-                            .child(name.to_string()),
-                    )
-                    .child("?"),
-                None => el.child("What should we work on?"),
+            .child(match project {
+                Some(name) => {
+                    let lead = "What should we work on in\u{a0}";
+                    let tinted = gpui::HighlightStyle {
+                        color: Some(tint),
+                        ..Default::default()
+                    };
+                    gpui::StyledText::new(format!("{lead}{name}?"))
+                        .with_highlights([(lead.len()..lead.len() + name.len(), tinted)])
+                }
+                None => gpui::StyledText::new("What should we work on?"),
             });
 
         let composer = div().relative().mt(px(24.0)).w_full().child(

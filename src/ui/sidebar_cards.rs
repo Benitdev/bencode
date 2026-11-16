@@ -32,6 +32,10 @@ const CARD_MAX_HEIGHT: f32 = 160.0;
 /// bottom.
 const SELECTED_BAR_INSET: f32 = 8.0;
 
+/// What a thread's name keeps of a narrow row: its ticket's key gives way
+/// before the name is down to a letter.
+const TITLE_MIN_WIDTH: f32 = 64.0;
+
 impl BenCodeApp {
     /// MonoCode's card status, shortened to fit beside the title:
     /// approval, working, done, draft, else age.
@@ -104,7 +108,10 @@ impl BenCodeApp {
             })
         };
         let Some(change) = self.sessions_ui.title_changes.get(id) else {
-            return text(title.to_string()).flex_1().into_any_element();
+            return text(title.to_string())
+                .flex_1()
+                .min_w(px(TITLE_MIN_WIDTH))
+                .into_any_element();
         };
         let (old, key) = (change.old.clone(), change.serial);
         let sweep = crate::ui::sidebar_sessions::TITLE_SWEEP;
@@ -112,7 +119,7 @@ impl BenCodeApp {
         div()
             .relative()
             .flex_1()
-            .min_w_0()
+            .min_w(px(TITLE_MIN_WIDTH))
             .overflow_hidden()
             .child(text(title.to_string()).with_animation(
                 SharedString::from(format!("title-in-{id}-{key}")),

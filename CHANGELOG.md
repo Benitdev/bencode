@@ -4,6 +4,23 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- The command palette: ⇧⌘P (or `>` in Go to File) lists every command by
+  name with its keys, the ones run last first, and runs the one picked as
+  if its keys had been pressed where the keyboard was. Commands with no
+  key are there too (Inbox, Notes, Automations, the session's Stage /
+  Commit / Push, Check for Updates, Show Logs, Reload BenCode), and the
+  Inbox's own while it is open. It listed one command before.
+- View › Automations opens the Automations view from the menu bar.
+- A new thread in a narrow split pane wraps "What should we work on in
+  …?" instead of cutting both ends of the line off.
+- A thread's name in the navigator keeps room beside its ticket's key and
+  a status such as Approve: the key shortens first, where the name was
+  down to one letter.
+- A signed-out Codex account reads "Codex not signed in" in Settings and
+  the usage details again, not Codex's raw error (its wording changed).
+
 ## [0.1.48] - 2026-11-16
 
 - Antigravity threads run over `agy acp` (Antigravity 1.5.1 or later;

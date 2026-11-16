@@ -385,6 +385,9 @@ const SCENES: &[(&str, SetUp)] = &[
         app.show_surface(Surface::Automations, cx);
         app.show_automation_overview(cx);
     }),
+    ("command-palette", |app, window, cx| {
+        app.open_quick_open_from(window, true, cx);
+    }),
     ("settings", |app, _, cx| {
         app.show_surface(Surface::Settings, cx)
     }),

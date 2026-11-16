@@ -41,6 +41,8 @@ actions!(
         PreviousTab,
         OpenNotes,
         OpenInbox,
+        OpenAutomations,
+        ReloadApp,
         OpenProject,
         CloseView,
         SwitchModel,
@@ -48,6 +50,7 @@ actions!(
         FindInConversation,
         FindInProject,
         GoToFile,
+        CommandPalette,
         ShowFileHistory,
         GoToDefinition,
         RenameSelectedSession,
@@ -150,6 +153,7 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-l", FocusPrompt, None),
         KeyBinding::new("cmd-shift-f", FindInProject, None),
         KeyBinding::new("cmd-p", GoToFile, None),
+        KeyBinding::new("cmd-shift-p", CommandPalette, None),
         KeyBinding::new("cmd-alt-h", ShowFileHistory, None),
         KeyBinding::new("f12", GoToDefinition, None),
         KeyBinding::new("cmd-g", FindNext, None),
@@ -346,6 +350,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Open Project…", OpenProject),
             MenuItem::action("Search…", Search),
             MenuItem::action("Go to File…", GoToFile),
+            MenuItem::action("Command Palette…", CommandPalette),
             MenuItem::action("File History", ShowFileHistory),
             MenuItem::action("Go to Definition", GoToDefinition),
             MenuItem::separator(),
@@ -394,6 +399,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::separator(),
             MenuItem::action("Notes", OpenNotes),
             MenuItem::action("Inbox", OpenInbox),
+            MenuItem::action("Automations", OpenAutomations),
         ]),
         Menu::new("Go").items([
             MenuItem::action("Back", GoBack),
@@ -630,7 +636,13 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &FindInConversation, _, cx| this.open_find(cx)))
         .on_action(cx.listener(|this, _: &FocusPrompt, window, cx| this.focus_prompt(window, cx)))
         .on_action(cx.listener(|this, _: &FindInProject, _, cx| this.open_project_search(cx)))
-        .on_action(cx.listener(|this, _: &GoToFile, _, cx| this.open_quick_open(cx)))
+        .on_action(cx.listener(|this, _: &GoToFile, window, cx| {
+            this.open_quick_open_from(window, false, cx)
+        }))
+        .on_action(cx.listener(|this, _: &CommandPalette, window, cx| {
+            this.open_quick_open_from(window, true, cx)
+        }))
+        .on_action(cx.listener(|_, _: &ReloadApp, _, cx| cx.restart()))
         .on_action(
             cx.listener(|this, _: &ShowFileHistory, _, cx| this.show_active_file_history(cx)),
         )
@@ -855,6 +867,7 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.cycle_tab(-1, cx)))
         .on_action(cx.listener(|this, _: &OpenNotes, _, cx| this.open_notes(cx)))
         .on_action(cx.listener(|this, _: &OpenInbox, _, cx| this.open_inbox_modal(cx)))
+        .on_action(cx.listener(|this, _: &OpenAutomations, _, cx| this.open_automations(cx)))
     }
 }
 
