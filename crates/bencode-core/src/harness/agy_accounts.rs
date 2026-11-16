@@ -66,20 +66,26 @@ fn decode_item(item: &str) -> Option<Value> {
     serde_json::from_str(&json).ok()
 }
 
-/// The email in an item's `id_token`.
+/// The email an item signs in as: its `id_token_email` (newer `agy`
+/// keeps only that), else the claim in its `id_token`.
 pub fn email_of(item: &str) -> Option<String> {
     let token = decode_item(item)?;
-    let payload = token.get("id_token")?.as_str()?.split('.').nth(1)?;
+    let email = match token.get("id_token_email").and_then(Value::as_str) {
+        Some(email) => email.to_string(),
+        None => id_token_email(token.get("id_token")?.as_str()?)?,
+    };
+    let email = email.trim();
+    (!email.is_empty()).then(|| email.to_string())
+}
+
+/// The `email` claim of a JWT.
+fn id_token_email(id_token: &str) -> Option<String> {
+    let payload = id_token.split('.').nth(1)?;
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(payload.trim_end_matches('='))
         .ok()?;
     let claims: Value = serde_json::from_slice(&bytes).ok()?;
-    claims
-        .get("email")?
-        .as_str()
-        .map(str::trim)
-        .filter(|email| !email.is_empty())
-        .map(String::from)
+    claims.get("email")?.as_str().map(String::from)
 }
 
 /// The saved accounts signed in as `email`.
@@ -465,6 +471,12 @@ mod tests {
         assert_eq!(email_of(&saved).as_deref(), Some("me@example.com"));
         let plain = decode_item(&saved).unwrap().to_string();
         assert_eq!(email_of(&plain).as_deref(), Some("me@example.com"));
+        let newer = serde_json::json!({
+            "token": { "access_token": "a", "refresh_token": "r" },
+            "id_token_email": " me@example.com ",
+        });
+        assert_eq!(email_of(&newer.to_string()).as_deref(), Some("me@example.com"));
+        assert_eq!(email_of(r#"{"id_token_email":""}"#), None);
         assert_eq!(email_of("go-keyring-base64:not base64"), None);
         assert_eq!(email_of(""), None);
     }
