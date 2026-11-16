@@ -1,6 +1,8 @@
 //! Antigravity's 5-hour and weekly usage (BenCode's own; MonoCode reads
-//! none). Asked of the endpoint `agy` itself uses, with the access token
-//! of its Keychain sign-in. Models share limits in groups (Gemini; Claude
+//! none). Asked of the endpoint `agy` itself uses (the `daily` host: the
+//! plain one answers in the same shape but counts none of `agy`'s turns,
+//! so everything reads as unused), with the access token of its Keychain
+//! sign-in. Models share limits in groups (Gemini; Claude
 //! and GPT), so a snapshot is one group's. The token is `agy`'s to
 //! refresh: once it has expired, usage waits for the next Antigravity turn.
 //!
@@ -18,7 +20,8 @@ use super::{
     clamp_used_percent, http, number_field, ok_limits, parse_reset_timestamp,
 };
 
-const API: &str = "https://cloudcode-pa.googleapis.com/v1internal";
+/// Where `agy` sends its turns, and so where they are counted.
+const API: &str = "https://daily-cloudcode-pa.googleapis.com/v1internal";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// `agy` refreshes its token when it runs; nothing here does.

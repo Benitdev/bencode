@@ -13,6 +13,9 @@ tagging (`docs/releasing.md`).
   Commit / Push, Check for Updates, Show Logs, Reload BenCode), and the
   Inbox's own while it is open. It listed one command before.
 - View › Automations opens the Automations view from the menu bar.
+- Antigravity's usage is no longer always 0%: it was asked of a Google
+  host that answers but counts none of `agy`'s turns, and is now asked of
+  the one `agy` sends them to.
 - A new thread in a narrow split pane wraps "What should we work on in
   …?" instead of cutting both ends of the line off.
 - A thread's name in the navigator keeps room beside its ticket's key and
