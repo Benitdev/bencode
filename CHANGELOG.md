@@ -20,6 +20,10 @@ tagging (`docs/releasing.md`).
   banner now show your Fable weekly limit alongside 5-hour and weekly
   limits, plus any free limit resets (Full reset, Fable reset) with a
   "Reset for free" action.
+- Antigravity (`agy acp`) turns no longer end prematurely while a
+  background command or task is still running: BenCode tells `agy` via
+  `systemPrompt.append` not to yield before tasks finish and keeps the
+  turn open if a tool call is still in progress.
 - A new thread in a narrow split pane wraps "What should we work on in
   …?" instead of cutting both ends of the line off.
 - A thread's name in the navigator keeps room beside its ticket's key and

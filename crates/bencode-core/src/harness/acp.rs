@@ -23,6 +23,10 @@ pub(crate) const QUESTION_TOOL: &str = "AskUserQuestion";
 /// JSON-RPC "method not found".
 pub(crate) const METHOD_NOT_FOUND: i64 = -32601;
 const MAX_DETAIL_CHARS: usize = 8_000;
+const MAX_OPEN_TOOL_RETRIES: u8 = 2;
+const OPEN_TOOLS_CONTINUE_PROMPT: &str = "Background task(s) are still running in this turn. \
+    Wait for them to finish (check with manage_task if needed) and complete your response \
+    before ending your turn.";
 
 /// Where one CLI's ACP differs from another's.
 pub struct Dialect {
@@ -38,6 +42,9 @@ pub struct Dialect {
     pub prompt_error: fn(String) -> String,
     /// `session/new`'s params: cwd, access, plan mode and MCP servers.
     pub new_session_params: fn(&str, PermissionPolicy, bool, &Value) -> Value,
+    /// Extra `_meta` attached to `session/new`, `session/resume` and
+    /// `session/load` (Antigravity's `systemPrompt.append`).
+    pub session_meta: fn() -> Option<Value>,
     /// `session/resume` names the cwd and MCP servers even when there are
     /// none (Grok's resume has always been sent bare).
     pub resume_with_cwd: bool,
@@ -56,6 +63,9 @@ pub struct Dialect {
     /// else it goes to the user, as Antigravity's own Auto mode asks only
     /// before what leaves its sandbox.
     pub approves_in_auto: bool,
+    /// If `session/prompt` ends while started tools are still in progress,
+    /// keep the same ACP process and prompt it to wait for them.
+    pub wait_open_tools: bool,
 }
 
 /// MonoCode `CLIENT_CAPABILITIES` and `clientInfo`.
@@ -141,6 +151,9 @@ pub struct AcpParser {
     /// The prompt returned while follow-ups were unacknowledged; the turn
     /// ends with their answers.
     finishing: Option<DoneStatus>,
+    /// How many times we nudged an ACP server that ended `session/prompt`
+    /// while a started tool call was still in progress.
+    unfinished_tools_retry: u8,
     replies: Vec<String>,
 }
 
@@ -170,6 +183,7 @@ impl AcpParser {
             interjections: HashMap::new(),
             followups: Vec::new(),
             finishing: None,
+            unfinished_tools_retry: 0,
             replies: Vec::new(),
         }
     }
@@ -234,11 +248,10 @@ impl AcpParser {
                 );
                 let id = self.resume_id.clone().unwrap_or_default();
                 self.muted = true;
-                self.request(
-                    "session/load",
-                    json!({ "sessionId": id, "cwd": self.cwd, "mcpServers": self.mcp_servers }),
-                    Step::Load,
-                );
+                let mut params =
+                    json!({ "sessionId": id, "cwd": self.cwd, "mcpServers": self.mcp_servers });
+                self.attach_session_meta(&mut params);
+                self.request("session/load", params, Step::Load);
             }
             (Step::Load, Err(err)) => {
                 self.muted = false;
@@ -279,6 +292,20 @@ impl AcpParser {
         }
     }
 
+    fn attach_session_meta(&self, params: &mut Value) {
+        if let Some(meta) = (self.dialect.session_meta)()
+            && let Some(obj) = params.as_object_mut()
+        {
+            obj.insert("_meta".into(), meta);
+        }
+    }
+
+    fn has_unfinished_tools(&self) -> bool {
+        self.tools
+            .keys()
+            .any(|id| !self.finished_tools.contains(id))
+    }
+
     fn open_session(&mut self, events: &mut Vec<AgentEvent>) {
         match self.resume_id.clone() {
             Some(id) => {
@@ -288,6 +315,7 @@ impl AcpParser {
                     params["cwd"] = json!(self.cwd);
                     params["mcpServers"] = self.mcp_servers.clone();
                 }
+                self.attach_session_meta(&mut params);
                 self.request("session/resume", params, Step::Resume)
             }
             None if self.compact => fail(self.nothing_to_compact(), events),
@@ -296,12 +324,13 @@ impl AcpParser {
     }
 
     fn new_session(&mut self) {
-        let params = (self.dialect.new_session_params)(
+        let mut params = (self.dialect.new_session_params)(
             &self.cwd,
             self.permission,
             self.plan,
             &self.mcp_servers,
         );
+        self.attach_session_meta(&mut params);
         self.request("session/new", params, Step::New);
     }
 
@@ -379,11 +408,21 @@ impl AcpParser {
             events.push(AgentEvent::Done(status));
         } else if !self.interjections.is_empty() {
             self.finishing = Some(status);
-        } else if self.followups.is_empty() {
-            events.push(AgentEvent::Done(status));
-        } else {
+        } else if !self.followups.is_empty() {
             self.prompt = std::mem::take(&mut self.followups);
             self.send_prompt(events);
+        } else if self.dialect.wait_open_tools
+            && self.unfinished_tools_retry < MAX_OPEN_TOOL_RETRIES
+            && self.has_unfinished_tools()
+        {
+            self.unfinished_tools_retry += 1;
+            self.prompt = vec![json!({
+                "type": "text",
+                "text": OPEN_TOOLS_CONTINUE_PROMPT,
+            })];
+            self.send_prompt(events);
+        } else {
+            events.push(AgentEvent::Done(status));
         }
     }
 

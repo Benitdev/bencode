@@ -32,6 +32,7 @@ static GROK: Dialect = Dialect {
     start_error,
     prompt_error,
     new_session_params: session_new_params,
+    session_meta: || None,
     resume_with_cwd: false,
     // Plan mode and approvals go on argv and in `session/new`'s meta.
     mode: |_, _| None,
@@ -39,6 +40,7 @@ static GROK: Dialect = Dialect {
     interject: true,
     cached_in_input: true,
     approves_in_auto: true,
+    wait_open_tools: false,
 };
 
 /// The parser for one Grok turn.

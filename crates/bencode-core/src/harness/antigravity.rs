@@ -58,6 +58,21 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
 // ACP
 // ---------------------------------------------------------------------------
 
+const ACP_BACKGROUND_NOTE: &str = "ACP execution note: This client runs one session/prompt per turn and \
+    does not auto-resume after end_turn. Never end your turn while waiting for a background \
+    command, subagent, schedule, or workflow you started; wait for all tasks to finish (or check \
+    them with manage_task) before giving your final reply.";
+
+fn acp_session_meta() -> Option<Value> {
+    Some(json!({
+        "antigravity": {
+            "systemPrompt": {
+                "append": ACP_BACKGROUND_NOTE
+            }
+        }
+    }))
+}
+
 /// Antigravity's ACP.
 static AGY: Dialect = Dialect {
     label: "Antigravity",
@@ -67,12 +82,14 @@ static AGY: Dialect = Dialect {
     start_error,
     prompt_error,
     new_session_params: |cwd, _, _, servers| json!({ "cwd": cwd, "mcpServers": servers }),
+    session_meta: acp_session_meta,
     resume_with_cwd: true,
     mode: acp_mode,
     compact: None,
     interject: false,
     cached_in_input: false,
     approves_in_auto: false,
+    wait_open_tools: true,
 };
 
 fn spawn_acp(req: &SpawnRequest, program: PathBuf) -> Result<(HarnessProcessHandle, EventRx)> {
@@ -736,6 +753,11 @@ mod tests {
         assert_eq!(requests[2]["params"]["modeId"], "accept-edits");
         assert_eq!(requests[3]["params"]["sessionId"], "ses-1");
         assert_eq!(requests[3]["params"]["prompt"][0]["text"], "hi");
+        assert!(
+            requests[0]["params"]["_meta"]["antigravity"]["systemPrompt"]["append"]
+                .as_str()
+                .is_some_and(|s| s.contains("manage_task"))
+        );
     }
 
     #[test]
@@ -947,5 +969,68 @@ mod tests {
             Some(&AgentEvent::Done(DoneStatus::Completed))
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn open_tool_call_keeps_acp_turn_alive_until_finished() {
+        let (mut parser, requests) = opened(&acp_request(PermissionPolicy::AutoApprove));
+        let prompt_id = requests.last().unwrap()["id"].clone();
+
+        // `run_command` starts in progress and the prompt returns `end_turn`
+        // before `tool_call_update` finishes it.
+        let started = parser.parse_line(
+            &json!({
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "sessionId": "ses-1",
+                    "update": {
+                        "sessionUpdate": "tool_call",
+                        "toolCallId": "call-bg-1",
+                        "name": "run_command",
+                        "status": "in_progress",
+                        "kind": "execute",
+                        "title": "npm test"
+                    }
+                }
+            })
+            .to_string(),
+        );
+        assert!(started.iter().any(|e| matches!(e, AgentEvent::ToolCallStart { id, .. } if id == "call-bg-1")));
+
+        let premature = parser.parse_line(&reply(&prompt_id, json!({ "stopReason": "end_turn" })));
+        assert!(
+            !premature.iter().any(|e| matches!(e, AgentEvent::Done(_))),
+            "turn must not end while call-bg-1 is still in progress: {premature:?}"
+        );
+        let followups: Vec<Value> = parser
+            .take_replies()
+            .into_iter()
+            .map(|l| serde_json::from_str(&l).unwrap())
+            .collect();
+        assert_eq!(followups.len(), 1);
+        assert_eq!(followups[0]["method"], "session/prompt");
+        let second_id = followups[0]["id"].clone();
+
+        let finished = parser.parse_line(
+            &json!({
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "sessionId": "ses-1",
+                    "update": {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "call-bg-1",
+                        "status": "completed",
+                        "content": [{ "type": "content", "content": { "type": "text", "text": "ok" } }]
+                    }
+                }
+            })
+            .to_string(),
+        );
+        assert!(finished.iter().any(|e| matches!(e, AgentEvent::ToolCallFinish { id, success: true, .. } if id == "call-bg-1")));
+
+        let done = parser.parse_line(&reply(&second_id, json!({ "stopReason": "end_turn" })));
+        assert!(done.contains(&AgentEvent::Done(DoneStatus::Completed)));
     }
 }
