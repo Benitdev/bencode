@@ -11,7 +11,8 @@ use serde_json::Value;
 use super::{Fetched, http, parse_claude_oauth_usage};
 use crate::harness::accounts::AccountProfile;
 
-const OAUTH_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1";
+const OAUTH_USAGE_URL: &str =
+    "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1";
 const OAUTH_BETA: &str = "oauth-2025-04-20";
 const USER_AGENT: &str = "claude-cli/2.1.325 (external, cli)";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -115,8 +116,8 @@ pub fn claim_reset(
 }
 
 fn parse_claim_reset_response(body: &str) -> Result<ClaimResetResult, String> {
-    let parsed: Value = serde_json::from_str(body)
-        .map_err(|_| "Claude reset response was not JSON".to_string())?;
+    let parsed: Value =
+        serde_json::from_str(body).map_err(|_| "Claude reset response was not JSON".to_string())?;
     let result = parsed
         .get("result")
         .and_then(Value::as_str)
@@ -150,16 +151,10 @@ fn parse_claim_reset_response(body: &str) -> Result<ClaimResetResult, String> {
         }
         (_, Some("paused")) => "This reset is currently paused".into(),
         (_, Some("expired")) => "This reset has expired".into(),
-        (_, Some("blocked_five_hour")) => {
-            "Can't be used while you're at your 5-hour limit".into()
-        }
-        (_, Some("blocked_seven_day")) => {
-            "Can't be used while you're at your weekly limit".into()
-        }
+        (_, Some("blocked_five_hour")) => "Can't be used while you're at your 5-hour limit".into(),
+        (_, Some("blocked_seven_day")) => "Can't be used while you're at your weekly limit".into(),
         (_, Some("blocked_opus")) => "Can't be used while you're at your Opus limit".into(),
-        (_, Some("blocked_sonnet")) => {
-            "Can't be used while you're at your Sonnet limit".into()
-        }
+        (_, Some("blocked_sonnet")) => "Can't be used while you're at your Sonnet limit".into(),
         (_, Some("blocked_other")) => {
             "Can't be used while you're at another limit it doesn't refill".into()
         }

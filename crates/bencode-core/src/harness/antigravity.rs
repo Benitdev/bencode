@@ -996,7 +996,11 @@ mod tests {
             })
             .to_string(),
         );
-        assert!(started.iter().any(|e| matches!(e, AgentEvent::ToolCallStart { id, .. } if id == "call-bg-1")));
+        assert!(
+            started
+                .iter()
+                .any(|e| matches!(e, AgentEvent::ToolCallStart { id, .. } if id == "call-bg-1"))
+        );
 
         let premature = parser.parse_line(&reply(&prompt_id, json!({ "stopReason": "end_turn" })));
         assert!(

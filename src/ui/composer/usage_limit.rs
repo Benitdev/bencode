@@ -435,9 +435,11 @@ impl BenCodeApp {
         let menu = grants.into_iter().fold(Menu::new(), |menu, grant| {
             let acct = account_id.clone();
             let title = grant.title().to_string();
-            menu.item(MenuItem::new(title).on_click(app_callback(cx, move |this, cx| {
-                this.prompt_claude_reset(&acct, grant.clone(), cx)
-            })))
+            menu.item(
+                MenuItem::new(title).on_click(app_callback(cx, move |this, cx| {
+                    this.prompt_claude_reset(&acct, grant.clone(), cx)
+                })),
+            )
         });
         Some(
             DropdownMenu::new(id, "Reset for free", menu)

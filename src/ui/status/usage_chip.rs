@@ -628,9 +628,8 @@ impl BenCodeApp {
         now: i64,
         cx: &Context<Self>,
     ) -> Option<AnyElement> {
-        let grants: Vec<&LimitResetGrant> = resets
-            .map(|r| r.available_grants(now))
-            .unwrap_or_default();
+        let grants: Vec<&LimitResetGrant> =
+            resets.map(|r| r.available_grants(now)).unwrap_or_default();
         let error = self.usage.reset_error.as_ref();
         if grants.is_empty() && error.is_none() {
             return None;
@@ -676,9 +675,7 @@ impl BenCodeApp {
                         let can_claim = grant.can_claim(resets, now);
                         let disabled_reason = grant.disabled_reason(resets, now);
                         let info = grant.info_tooltip();
-                        let expires = grant
-                            .ends_at
-                            .and_then(|at| format_reset_expiry(at, &tz));
+                        let expires = grant.ends_at.and_then(|at| format_reset_expiry(at, &tz));
                         let desc = grant.description();
                         let acct = account_id.to_string();
                         let grant_owned = grant.clone();

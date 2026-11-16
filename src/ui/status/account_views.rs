@@ -17,8 +17,8 @@ use crate::app::accounts::{LoginOrigin, SignIn};
 use crate::app::usage::UsageView;
 use crate::harness::accounts::ProviderAccount;
 use crate::rate_limits::{
-    AccountStatus, AccountTone, ProviderRateLimits, RateLimitProvider, RateLimitWindow,
-    WindowKind, account_status, clamp_used_percent, format_reset_duration, format_usage_percent,
+    AccountStatus, AccountTone, ProviderRateLimits, RateLimitProvider, RateLimitWindow, WindowKind,
+    account_status, clamp_used_percent, format_reset_duration, format_usage_percent,
 };
 use crate::ui::HarnessIcon;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};

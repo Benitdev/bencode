@@ -286,11 +286,7 @@ impl BenCodeApp {
         }
     }
 
-    pub fn confirm_claude_reset(
-        &mut self,
-        pending: PendingLimitReset,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn confirm_claude_reset(&mut self, pending: PendingLimitReset, cx: &mut Context<Self>) {
         if self.usage.claiming_reset.is_some() {
             return;
         }

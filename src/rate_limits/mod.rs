@@ -685,7 +685,9 @@ pub fn parse_claude_oauth_usage(body: &str, now: i64) -> Result<ProviderRateLimi
         now,
     );
     limits.fable = parse_claude_fable_window(&parsed);
-    limits.resets = parsed.get("cedar_ember").and_then(parse_claude_limit_resets);
+    limits.resets = parsed
+        .get("cedar_ember")
+        .and_then(parse_claude_limit_resets);
     Ok(limits)
 }
 
@@ -1031,10 +1033,7 @@ mod tests {
         let fable = limits.fable.as_ref().unwrap();
         assert_eq!(fable.used_percent, 13.0);
         assert_eq!(WindowKind::Fable.title(), "Fable limit");
-        assert_eq!(
-            WindowKind::Fable.short_label(fable.window_minutes),
-            "Fable"
-        );
+        assert_eq!(WindowKind::Fable.short_label(fable.window_minutes), "Fable");
         assert_eq!(limits.windows().len(), 3);
 
         let resets = limits.resets.as_ref().unwrap();
