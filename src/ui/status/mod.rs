@@ -171,11 +171,11 @@ impl BenCodeApp {
     }
 
     /// BenCode's own: shows the in-app browser (a new tab when none is open),
-    /// lit while a browser tab is the pane's active one.
+    /// lit while a browser tab is the pane's active one and in view.
     pub(crate) fn render_browser_toggle(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
-        let shown = self.active_browser_id().is_some();
+        let shown = self.active_browser_id().is_some() && !self.bot_covers();
         let tint = if shown {
             colors.accent
         } else {

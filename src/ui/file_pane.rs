@@ -21,6 +21,12 @@ impl BenCodeApp {
     /// Focuses `tab` or opens it (MonoCode `openEditorTab`, `openChangesTab`,
     /// `openCommitTab`); `pin` keeps it from being a preview.
     pub(crate) fn open_pane_tab(&mut self, tab: PaneTab, pin: bool, cx: &mut Context<Self>) {
+        // The file pane is under the Bot's view: the tab opens in the
+        // workspace, or it would open out of sight.
+        self.surface_shown_session(None, cx);
+        if self.leave_bot_view(cx) {
+            self.sync_selection(cx);
+        }
         if let PaneTab::Changes { cwd, .. } = &tab {
             self.file_pane.drop_reviews(cwd);
         }

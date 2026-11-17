@@ -6,6 +6,10 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+- The browser opens from a Bot's view: its title bar gains the Browser
+  button, and ⌘⇧O, the Browser button or anything else that opens a tab
+  (a file, a review, blame) leaves the Bot's view to show it. Before, the
+  tab opened under the Bot's view, out of sight.
 - Reloading a browser tab whose server has stopped now says the page did
   not load. Before, WebKit kept showing the page from before the reload,
   as if the server still answered.

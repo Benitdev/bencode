@@ -2,8 +2,9 @@
 //! `MonoTitle` and its trailing controls): its figure, moving with its
 //! mood, its name and the status in words (in the accent while it needs
 //! you, a "!" over its figure then; a failed last turn, or the habit it
-//! sleeps until), then the Overview pill and the gear, "{name} settings",
-//! which opens its settings dialog.
+//! sleeps until), then the browser toggle (BenCode's own: it leaves the
+//! Bot's view for the browser tab), the Overview pill and the gear,
+//! "{name} settings", which opens its settings dialog.
 //!
 //! MonoCode's header has no floating-chat button; BenCode opens the float
 //! from the Bot's rail menu, as MonoCode does.
@@ -126,8 +127,8 @@ impl BenCodeApp {
             )
     }
 
-    /// MonoCode's trailing Bot controls (`flex items-center gap-1 px-3`):
-    /// the Overview pill, `h-6 rounded-md px-2 text-[12px]` with its icon,
+    /// MonoCode's trailing Bot controls (`flex items-center gap-1 px-3`),
+    /// after BenCode's browser toggle: the Overview pill, `h-6 rounded-md px-2 text-[12px]` with its icon,
     /// lit while on, and the gear.
     fn render_bot_title_controls(&self, bot: &Bot, cx: &Context<Self>) -> impl IntoElement {
         let fg = cx.theme().colors.fg;
@@ -139,6 +140,7 @@ impl BenCodeApp {
             .items_center()
             .gap_1()
             .px_3()
+            .child(self.render_browser_toggle(cx))
             .child(
                 div()
                     .id("bot-overview-toggle")
