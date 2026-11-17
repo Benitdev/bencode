@@ -164,9 +164,10 @@ fn main() {
             }
             // BenCode's state, running agents included, lives in its one
             // window, and macOS keeps the app running when it closes. So the
-            // close button hides the app, as ⌘H does, and the Dock icon brings
-            // it back; ⌘Q quits. With the floating chat open, only this
-            // window goes: hiding the app would take the chat with it.
+            // close button takes the window off screen and hides the app, as
+            // ⌘H does; ⌘Q quits. Off screen, not only hidden: the floating
+            // chat taking the keys never brings it back. With the floating
+            // chat open, only this window goes.
             let hide_on_close = window.update(cx, |_, window, cx| {
                 window.on_window_should_close(cx, |window, cx| {
                     ui::native_window::order_out(window, cx);
@@ -178,6 +179,20 @@ fn main() {
             });
             if let Err(err) = hide_on_close {
                 log::error!("could not make the close button hide BenCode: {err:#}");
+            }
+            // Coming back to BenCode (⌘Tab, the Dock) brings back the window
+            // the close button took off screen, as unhiding the app would.
+            if shown {
+                ui::native_window::on_app_active(cx, move |cx| {
+                    let shown = window.update(cx, |_, window, _| {
+                        if ui::native_window::is_ordered_out(window) {
+                            window.activate_window();
+                        }
+                    });
+                    if let Err(err) = shown {
+                        log::debug!("BenCode became active with its window gone: {err:#}");
+                    }
+                });
             }
             if let Some(err) = import_error {
                 let detail = format!(

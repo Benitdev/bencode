@@ -22,6 +22,14 @@ pub fn present_floating_panel(window: &gpui::Window, _: &gpui::App) {
 #[cfg(not(target_os = "macos"))]
 pub fn order_out(_: &gpui::Window, _: &gpui::App) {}
 
+#[cfg(not(target_os = "macos"))]
+pub fn is_ordered_out(_: &gpui::Window) -> bool {
+    false
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn on_app_active(_: &gpui::App, _: impl Fn(&mut gpui::App) + 'static) {}
+
 /// Brings BenCode forward, over the other apps.
 #[cfg(not(target_os = "macos"))]
 pub fn activate_app(cx: &gpui::App) {
@@ -38,8 +46,8 @@ pub fn display_under_pointer() -> Option<u64> {
 
 #[cfg(target_os = "macos")]
 pub use macos::{
-    activate_app, display_under_pointer, invalidate_shadow, make_floating_panel, order_out,
-    present_floating_panel,
+    activate_app, display_under_pointer, invalidate_shadow, is_ordered_out, make_floating_panel,
+    on_app_active, order_out, present_floating_panel,
 };
 
 // objc 0.2's `msg_send!` expands to a `cargo-clippy` feature check.
@@ -57,6 +65,11 @@ mod macos {
 
     unsafe extern "C" {
         fn object_setClass(obj: Id, cls: *const Class) -> *const Class;
+    }
+
+    #[link(name = "AppKit", kind = "framework")]
+    unsafe extern "C" {
+        static NSApplicationDidBecomeActiveNotification: Id;
     }
 
     /// `NSWindowStyleMaskResizable`.
@@ -288,6 +301,53 @@ mod macos {
                 }
             })
             .detach();
+    }
+
+    /// Whether the window is off screen by `order_out`: neither shown nor
+    /// minimized to the Dock.
+    pub fn is_ordered_out(window: &gpui::Window) -> bool {
+        let Some(native) = ns_window(window) else {
+            return false;
+        };
+        // SAFETY: as in `ns_window`.
+        unsafe {
+            let visible: BOOL = msg_send![native, isVisible];
+            let minimized: BOOL = msg_send![native, isMiniaturized];
+            visible == NO && minimized == NO
+        }
+    }
+
+    /// Calls `on_active` each time BenCode becomes the active app (⌘Tab,
+    /// the Dock, `activate_app`), in an update of its own: AppKit's
+    /// notification only wakes a task, which runs when GPUI is free.
+    pub fn on_app_active(cx: &gpui::App, on_active: impl Fn(&mut gpui::App) + 'static) {
+        use objc::class;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let handler = block::ConcreteBlock::new(move |_note: Id| {
+            if tx.send(()).is_err() {
+                log::debug!("BenCode became active after its watcher ended");
+            }
+        })
+        .copy();
+        // SAFETY: on the main thread; the centre copies the block and keeps
+        // the observer it returns for the app's life (it is never removed).
+        unsafe {
+            let center: Id = msg_send![class!(NSNotificationCenter), defaultCenter];
+            let queue: Id = msg_send![class!(NSOperationQueue), mainQueue];
+            let _observer: Id = msg_send![
+                center,
+                addObserverForName: NSApplicationDidBecomeActiveNotification
+                object: std::ptr::null_mut::<Object>()
+                queue: queue
+                usingBlock: &*handler
+            ];
+        }
+        cx.spawn(async move |cx| {
+            while rx.recv().await.is_some() {
+                cx.update(|cx| on_active(cx));
+            }
+        })
+        .detach();
     }
 
     /// Brings BenCode forward, over the other apps (`App::activate(true)`),
