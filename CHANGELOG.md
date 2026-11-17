@@ -6,6 +6,10 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+- Closing or hiding the floating Bot chat (`X`, ⌘W or the summon key)
+  no longer activates BenCode or pulls BenCode's main window forward
+  over the app you were in: the floating chat is now a non-activating
+  panel.
 - Opening the browser from a Bot's view (the Browser button, ⌘⇧O, a link
   in its chat or an agent's browser tool) now shows the browser beside the
   Bot's chat instead of leaving the Bot's view for Threads.

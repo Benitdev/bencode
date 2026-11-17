@@ -460,7 +460,7 @@ impl BenCodeApp {
                 float
                     .update(cx, |float, window, cx| {
                         float.show(&bot_id, window, cx);
-                        window.activate_window();
+                        crate::ui::native_window::present_floating_panel(window, cx);
                     })
                     .ok()
                     .map(|()| float)

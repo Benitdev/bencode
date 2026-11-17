@@ -169,9 +169,8 @@ fn main() {
             // window goes: hiding the app would take the chat with it.
             let hide_on_close = window.update(cx, |_, window, cx| {
                 window.on_window_should_close(cx, |window, cx| {
-                    if cx.windows().len() > 1 {
-                        ui::native_window::order_out(window, cx);
-                    } else {
+                    ui::native_window::order_out(window, cx);
+                    if cx.windows().len() <= 1 {
                         cx.hide();
                     }
                     false

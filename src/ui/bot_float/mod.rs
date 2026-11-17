@@ -1484,11 +1484,17 @@ pub fn open(
         window_min_size: Some(min),
         // Clear round the rounded frame.
         window_background: WindowBackgroundAppearance::Transparent,
+        // Presented after `make_floating_panel` sets `NonactivatingPanel`, so
+        // opening never activates BenCode or pulls its main window forward.
+        show: false,
+        focus: false,
         ..Default::default()
     };
     cx.open_window(options, |window, cx| {
         crate::ui::native_window::make_floating_panel(window);
-        cx.new(|cx| BotFloat::new(app, main, bot_id, window, cx))
+        let float = cx.new(|cx| BotFloat::new(app, main, bot_id, window, cx));
+        crate::ui::native_window::present_floating_panel(window, cx);
+        float
     })
 }
 
