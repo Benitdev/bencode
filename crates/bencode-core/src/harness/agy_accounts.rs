@@ -475,7 +475,10 @@ mod tests {
             "token": { "access_token": "a", "refresh_token": "r" },
             "id_token_email": " me@example.com ",
         });
-        assert_eq!(email_of(&newer.to_string()).as_deref(), Some("me@example.com"));
+        assert_eq!(
+            email_of(&newer.to_string()).as_deref(),
+            Some("me@example.com")
+        );
         assert_eq!(email_of(r#"{"id_token_email":""}"#), None);
         assert_eq!(email_of("go-keyring-base64:not base64"), None);
         assert_eq!(email_of(""), None);
