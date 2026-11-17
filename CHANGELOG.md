@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.52] - 2026-11-17
 
 - The browser opens from a Bot's view: its title bar gains the Browser
   button, and ⌘⇧O, the Browser button or anything else that opens a tab
