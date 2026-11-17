@@ -4,6 +4,12 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- Reloading a browser tab whose server has stopped now says the page did
+  not load. Before, WebKit kept showing the page from before the reload,
+  as if the server still answered.
+
 ## [0.1.51] - 2026-11-17
 
 - Antigravity no longer reads as signed out after BenCode restarts:

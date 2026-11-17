@@ -43,6 +43,18 @@ const LOAD_POLL: Duration = Duration::from_millis(250);
 /// The widest screenshot an agent gets; wider ones are scaled down.
 const AGENT_SCREENSHOT_WIDTH: u32 = 1280;
 
+/// What started a load `watch_load` follows.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LoadKind {
+    /// An address: it loads, unless it only moves inside the page (a hash).
+    Address,
+    /// A reload: it loads the page again, so ending at the same address
+    /// with no finish is a failure (WebKit keeps showing the page before).
+    Reload,
+    /// Back or Forward: may only move inside the page.
+    History,
+}
+
 pub struct BrowserTab {
     /// None when WebKit made no view (`error` says why).
     pub page: Option<Rc<Page>>,
@@ -389,7 +401,7 @@ impl BenCodeApp {
             .tabs
             .insert(id, BrowserTab::new(page, url.clone(), error));
         if url != "about:blank" {
-            self.watch_load(id, true, cx);
+            self.watch_load(id, LoadKind::Address, cx);
         }
         // Opening it fills the address bar (`settle_browser_tabs`).
         self.open_pane_tab(PaneTab::Browser { id }, true, cx);
@@ -497,21 +509,21 @@ impl BenCodeApp {
                 page.load(url);
             }
         }
-        self.watch_load(id, true, cx);
+        self.watch_load(id, LoadKind::Address, cx);
         cx.notify();
     }
 
     pub(crate) fn browser_back(&mut self, id: u64, cx: &mut Context<Self>) {
         if let Some(page) = self.browser_page(id) {
             page.back();
-            self.watch_load(id, false, cx);
+            self.watch_load(id, LoadKind::History, cx);
         }
     }
 
     pub(crate) fn browser_forward(&mut self, id: u64, cx: &mut Context<Self>) {
         if let Some(page) = self.browser_page(id) {
             page.forward();
-            self.watch_load(id, false, cx);
+            self.watch_load(id, LoadKind::History, cx);
         }
     }
 
@@ -534,7 +546,7 @@ impl BenCodeApp {
             } else {
                 page.reload();
             }
-            self.watch_load(id, true, cx);
+            self.watch_load(id, LoadKind::Reload, cx);
             cx.notify();
         }
     }
@@ -542,16 +554,14 @@ impl BenCodeApp {
     /// Follows a load just asked for until it finishes or gives up. wry
     /// passes on a load that starts and one that finishes, never one that
     /// fails (nothing listens at the address), so the view is asked.
-    /// `expected`: the load must happen (an address, a reload); Back and
-    /// Forward may only move inside the page.
-    fn watch_load(&mut self, id: u64, expected: bool, cx: &mut Context<Self>) {
+    fn watch_load(&mut self, id: u64, kind: LoadKind, cx: &mut Context<Self>) {
         let Some(tab) = self.browser.tabs.get_mut(&id) else {
             return;
         };
         tab.load_watch += 1;
         let (watch, finished) = (tab.load_watch, tab.loads_finished);
         cx.spawn(async move |this, cx| {
-            let (mut seen, mut idle) = (expected, 0);
+            let (mut seen, mut idle) = (kind != LoadKind::History, 0);
             loop {
                 cx.background_executor().timer(LOAD_POLL).await;
                 let over = this.update(cx, |this, cx| {
@@ -571,7 +581,7 @@ impl BenCodeApp {
                         return false;
                     }
                     if seen {
-                        this.browser_load_stalled(id, cx);
+                        this.browser_load_stalled(id, kind, cx);
                     }
                     true
                 });
@@ -585,12 +595,14 @@ impl BenCodeApp {
 
     /// A watched load ended with no finish. It failed, unless the view is
     /// where it was sent: a move inside the page (a hash) loads nothing.
-    fn browser_load_stalled(&mut self, id: u64, cx: &mut Context<Self>) {
+    /// A reload has no such move: the view is where it was either way.
+    fn browser_load_stalled(&mut self, id: u64, kind: LoadKind, cx: &mut Context<Self>) {
         let Some(tab) = self.browser.tabs.get_mut(&id) else {
             return;
         };
         let at = tab.page.as_ref().and_then(|page| page.url());
-        let arrived = at.is_some_and(|at| same_address(&at, &tab.url));
+        let arrived =
+            kind != LoadKind::Reload && at.is_some_and(|at| same_address(&at, &tab.url));
         tab.loading = false;
         tab.load_failed = !arrived;
         for waiter in std::mem::take(&mut tab.load_waiters) {
