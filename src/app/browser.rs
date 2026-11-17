@@ -601,8 +601,7 @@ impl BenCodeApp {
             return;
         };
         let at = tab.page.as_ref().and_then(|page| page.url());
-        let arrived =
-            kind != LoadKind::Reload && at.is_some_and(|at| same_address(&at, &tab.url));
+        let arrived = kind != LoadKind::Reload && at.is_some_and(|at| same_address(&at, &tab.url));
         tab.loading = false;
         tab.load_failed = !arrived;
         for waiter in std::mem::take(&mut tab.load_waiters) {
