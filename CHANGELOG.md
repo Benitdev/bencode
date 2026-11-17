@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.51] - 2026-11-17
 
 - Antigravity no longer reads as signed out after BenCode restarts:
   newer `agy` saves its sign-in with the email as `id_token_email` and no
