@@ -4,7 +4,7 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.53] - 2026-11-17
 
 - Closing or hiding the floating Bot chat (`X`, ⌘W or the summon key)
   no longer activates BenCode or pulls BenCode's main window forward
