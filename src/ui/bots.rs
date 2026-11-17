@@ -91,8 +91,6 @@ impl BenCodeApp {
                             cx.listener(|this, _, _, cx| this.end_bot_overview_resize(cx)),
                         )
                 })
-                .child(self.render_bot_titlebar(&bot, &state, cx))
-                // The plan's usage is under the composer instead.
                 .child(
                     div()
                         .flex()

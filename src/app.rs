@@ -1931,7 +1931,35 @@ impl Render for BenCodeApp {
         });
         let column = || StyleRefinement::default().flex_1().min_w_0().h_full();
         let surface = surface_open.then(|| region(self, Region::Surface, column(), cx));
-        let bot_view = bot_open.then(|| region(self, Region::Bot, column(), cx));
+        let bot_has_browser = bot_open && self.active_browser_id().is_some();
+        let bot_view = bot_open.then(|| {
+            let titlebar = region(self, Region::Titlebar, titlebar_style(), cx);
+            let bot = region(self, Region::Bot, column(), cx);
+            let body = if bot_has_browser {
+                self.split_with_file_pane("bot-file-split", bot, cx)
+            } else {
+                div()
+                    .size_full()
+                    .flex()
+                    .capture_any_mouse_down(
+                        cx.listener(|this, _, _, _| this.file_pane_focused = false),
+                    )
+                    .child(bot)
+                    .into_any_element()
+            };
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .h_full()
+                .min_w_0()
+                .overflow_hidden()
+                .child(titlebar)
+                .child(div().flex().flex_1().min_h_0().child(body))
+        });
+        if bot_has_browser {
+            drawn.push(Region::FilePane);
+        }
         if workspace_visible {
             drawn.push(Region::Chat);
             if !self.file_pane.is_empty() {

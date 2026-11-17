@@ -461,8 +461,14 @@ const SCENES: &[(&str, SetUp)] = &[
             app.ask_bot_about(&id, Some("the rail redraws on every keystroke".into()), cx);
         }
     }),
+    // The browser open beside the Bot's chat, without leaving the Bot's view.
+    ("bot-browser", |app, window, cx| {
+        app.bots.overview_open = false;
+        app.show_browser(window, cx);
+    }),
     // A project's menu: its name, colour and the figure's "Look" row.
     ("project-menu", |app, _, cx| {
+        app.close_active_pane_tab(cx);
         app.leave_bot_view(cx);
         app.is_rail_open = true;
         if let Some(path) = app.rail_order().first().cloned() {

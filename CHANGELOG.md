@@ -4,6 +4,12 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- Opening the browser from a Bot's view (the Browser button, ⌘⇧O, a link
+  in its chat or an agent's browser tool) now shows the browser beside the
+  Bot's chat instead of leaving the Bot's view for Threads.
+
 ## [0.1.52] - 2026-11-17
 
 - The browser opens from a Bot's view: its title bar gains the Browser

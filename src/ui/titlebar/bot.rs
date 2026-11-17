@@ -2,8 +2,8 @@
 //! `MonoTitle` and its trailing controls): its figure, moving with its
 //! mood, its name and the status in words (in the accent while it needs
 //! you, a "!" over its figure then; a failed last turn, or the habit it
-//! sleeps until), then the browser toggle (BenCode's own: it leaves the
-//! Bot's view for the browser tab), the Overview pill and the gear,
+//! sleeps until), then the browser toggle (BenCode's own: shows the
+//! browser beside the Bot's chat), the Overview pill and the gear,
 //! "{name} settings", which opens its settings dialog.
 //!
 //! MonoCode's header has no floating-chat button; BenCode opens the float
@@ -25,6 +25,22 @@ use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use crate::ui::window_drag::claim_press;
 
 impl BenCodeApp {
+    /// The Bot's title bar as its own region (`Region::Titlebar`), spanning
+    /// across both the Bot's view and any browser tab open beside it.
+    pub(crate) fn render_bot_view_titlebar(&self, cx: &Context<Self>) -> gpui::AnyElement {
+        let Some(bot) = self.bot_in_view() else {
+            return div().into_any_element();
+        };
+        let state = self.bot_state(bot);
+        let glass = self.glass(cx);
+        let bg = cx.theme().colors.bg;
+        div()
+            .w_full()
+            .bg(glass.body(bg))
+            .child(self.render_bot_titlebar(bot, &state, cx))
+            .into_any_element()
+    }
+
     /// MonoCode `TitleBar` in a Bot's view: `h-10 border-b border-stroke`,
     /// laid out as the views' title bar is, so the traffic lights and Back
     /// have the same room.

@@ -175,7 +175,7 @@ impl BenCodeApp {
     pub(crate) fn render_browser_toggle(&self, cx: &Context<Self>) -> impl IntoElement {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
-        let shown = self.active_browser_id().is_some() && !self.bot_covers();
+        let shown = self.surface.is_none() && self.active_browser_id().is_some();
         let tint = if shown {
             colors.accent
         } else {

@@ -552,10 +552,10 @@ impl BenCodeApp {
             self.close_surface(cx);
             return;
         }
-        if self.close_bot_view(cx) {
+        if self.file_pane_has_keys() && self.close_active_pane_tab(cx) {
             return;
         }
-        if self.file_pane_has_keys() && self.close_active_pane_tab(cx) {
+        if self.close_bot_view(cx) {
             return;
         }
         if let Some(id) = self.selected_session_id.clone() {

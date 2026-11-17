@@ -333,7 +333,13 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         match region {
-            Region::Titlebar => self.render_titlebar(window, cx).into_any_element(),
+            Region::Titlebar => {
+                if self.bot_covers() {
+                    self.render_bot_view_titlebar(cx)
+                } else {
+                    self.render_titlebar(window, cx).into_any_element()
+                }
+            }
             Region::Rail => self.render_project_rail(cx).into_any_element(),
             Region::CompactRail => {
                 let usage = self.render_usage_status(UsageChipVariant::Icon, cx);

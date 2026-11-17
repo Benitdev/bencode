@@ -28,11 +28,13 @@ impl BenCodeApp {
     /// Focuses `tab` or opens it (MonoCode `openEditorTab`, `openChangesTab`,
     /// `openCommitTab`); `pin` keeps it from being a preview.
     pub(crate) fn open_pane_tab(&mut self, tab: PaneTab, pin: bool, cx: &mut Context<Self>) {
-        // The file pane is under the Bot's view: the tab opens in the
-        // workspace, or it would open out of sight.
-        self.surface_shown_session(None, cx);
-        if self.leave_bot_view(cx) {
-            self.sync_selection(cx);
+        // A browser tab opens beside the Bot's chat; any other tab opens in
+        // the workspace, or it would open out of sight.
+        if !matches!(tab, PaneTab::Browser { .. }) {
+            self.surface_shown_session(None, cx);
+            if self.leave_bot_view(cx) {
+                self.sync_selection(cx);
+            }
         }
         if let PaneTab::Changes { cwd, .. } = &tab {
             self.file_pane.drop_reviews(cwd);
@@ -117,7 +119,17 @@ impl BenCodeApp {
         if self.file_pane.activate(key) {
             self.file_pane_focused = true;
             self.settle_file_pane(cx);
-            self.redraw_regions(&[Region::FilePane, Region::Inspector], cx);
+            // Switching from a browser tab to a file/diff tab while in a
+            // Bot's view opens that tab in the workspace.
+            if self.bot_covers() && self.active_browser_id().is_none() {
+                self.surface_shown_session(None, cx);
+                if self.leave_bot_view(cx) {
+                    self.sync_selection(cx);
+                }
+                cx.notify();
+                return;
+            }
+            self.redraw_regions(&[Region::FilePane, Region::Inspector, Region::Titlebar], cx);
         }
     }
 
@@ -152,17 +164,34 @@ impl BenCodeApp {
     /// The chat, with the file pane beside it (right, or left once swapped)
     /// while it has tabs.
     pub(crate) fn render_workspace_split(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let chat = div()
-            .size_full()
-            .flex()
-            .capture_any_mouse_down(cx.listener(|this, _, _, _| this.file_pane_focused = false))
-            // The splits are the shell's; each pane is a region.
-            .child(self.render_pane_tree(cx));
+        let chat = self.render_pane_tree(cx).into_any_element();
         // A notice with no tab to show it over goes to the window's
         // corner (`render_editor_corner_notice`), not into an empty pane.
         if self.file_pane.is_empty() {
-            return chat.into_any_element();
+            return div()
+                .size_full()
+                .flex()
+                .capture_any_mouse_down(cx.listener(|this, _, _, _| this.file_pane_focused = false))
+                .child(chat)
+                .into_any_element();
         }
+        self.split_with_file_pane("workspace-file-split", chat, cx)
+    }
+
+    /// Places `Region::FilePane` beside `main` (right, or left once swapped),
+    /// tracking `file_pane_focused` and `file_pane_shares` for both the
+    /// workspace and a Bot's view.
+    pub(crate) fn split_with_file_pane(
+        &mut self,
+        split_id: &'static str,
+        main: impl IntoElement,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let main = div()
+            .size_full()
+            .flex()
+            .capture_any_mouse_down(cx.listener(|this, _, _, _| this.file_pane_focused = false))
+            .child(main);
         // The chat keeps its room beside the file pane (and the file pane
         // as much; `SplitPane` halves a window too narrow for both).
         let min = crate::ui::scale::px(crate::ui::layout::CHAT_MIN_WIDTH);
@@ -184,7 +213,7 @@ impl BenCodeApp {
         } else {
             [chat_share, pane_share]
         };
-        let split = SplitPane::new("workspace-file-split", Axis::Horizontal, min)
+        let split = SplitPane::new(split_id, Axis::Horizontal, min)
             .sizes(&sizes)
             .on_resize(move |shares, _window, cx| {
                 let landed = weak.update(cx, |this, _| {
@@ -201,9 +230,9 @@ impl BenCodeApp {
                 }
             });
         if left {
-            split.pane(pane).pane(chat)
+            split.pane(pane).pane(main)
         } else {
-            split.pane(chat).pane(pane)
+            split.pane(main).pane(pane)
         }
         .into_any_element()
     }
