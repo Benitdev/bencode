@@ -467,8 +467,8 @@ impl BenCodeApp {
     /// The thread the keys act on: the focused pane's, unless a view covers
     /// the workspace or the file pane or a terminal has the keyboard
     /// (MonoCode `focusedBusyAgentSessionId` and its `surfaceOpen` guard).
-    fn keyboard_session(&self, window: &Window, cx: &App) -> Option<String> {
-        if self.surface.is_some() || self.file_pane_focused || self.terminal_focused(window, cx) {
+    fn keyboard_session(&self, window: &Window) -> Option<String> {
+        if self.surface.is_some() || self.file_pane_has_keys() || self.terminal_focused(window) {
             return None;
         }
         self.selected_session_id.clone()
@@ -476,7 +476,7 @@ impl BenCodeApp {
 
     /// MonoCode `onArchiveFocusedSession` (⇧⌘A).
     fn archive_focused_session(&mut self, window: &Window, cx: &mut Context<Self>) {
-        if let Some(id) = self.keyboard_session(window, cx) {
+        if let Some(id) = self.keyboard_session(window) {
             self.set_session_archived(&id, true, cx);
         }
     }
@@ -491,7 +491,7 @@ impl BenCodeApp {
         window: &Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(current) = self.keyboard_session(window, cx) else {
+        let Some(current) = self.keyboard_session(window) else {
             return;
         };
         let next = adjacent_id(&self.sessions_ui.order, Some(&current), delta);
@@ -528,7 +528,7 @@ impl BenCodeApp {
     /// when nothing else on screen wanted the key.
     fn stop_focused_turn(&mut self, window: &Window, cx: &mut Context<Self>) -> bool {
         match self
-            .keyboard_session(window, cx)
+            .keyboard_session(window)
             .filter(|id| self.is_agent_running_in(id))
         {
             Some(id) => {
@@ -555,7 +555,7 @@ impl BenCodeApp {
         if self.close_bot_view(cx) {
             return;
         }
-        if self.file_pane_focused && self.close_active_pane_tab(cx) {
+        if self.file_pane_has_keys() && self.close_active_pane_tab(cx) {
             return;
         }
         if let Some(id) = self.selected_session_id.clone() {
@@ -648,7 +648,7 @@ impl BenCodeApp {
         )
         // The file pane's editor only: F12 in the chat is the chat's.
         .on_action(cx.listener(|this, _: &GoToDefinition, window, cx| {
-            if this.file_pane_focused
+            if this.file_pane_has_keys()
                 && matches!(this.file_pane.active(), Some(PaneTab::File { .. }))
             {
                 this.go_to_definition_at_caret(window, cx);

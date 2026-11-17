@@ -18,6 +18,13 @@ use crate::ui::diff_viewer::DocFocus;
 use crate::ui::region::Region;
 
 impl BenCodeApp {
+    /// Whether the keys are the file pane's (⌘W closes its tab, Escape
+    /// leaves the thread's turn alone): a press landed there last, and it
+    /// is on screen. A view over it keeps the press but not the keys.
+    pub(crate) fn file_pane_has_keys(&self) -> bool {
+        self.file_pane_focused && self.file_pane_drawn
+    }
+
     /// Focuses `tab` or opens it (MonoCode `openEditorTab`, `openChangesTab`,
     /// `openCommitTab`); `pin` keeps it from being a preview.
     pub(crate) fn open_pane_tab(&mut self, tab: PaneTab, pin: bool, cx: &mut Context<Self>) {

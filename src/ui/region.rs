@@ -388,7 +388,8 @@ impl BenCodeApp {
         if !focused_drawn {
             self.runner_geometry.clear();
         }
-        if !drawn.contains(&Region::FilePane) {
+        self.file_pane_drawn = drawn.contains(&Region::FilePane);
+        if !self.file_pane_drawn {
             self.browser.drawn.set(None);
             self.browser.hide_undrawn();
         }

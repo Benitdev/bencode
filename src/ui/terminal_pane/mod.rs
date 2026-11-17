@@ -322,13 +322,11 @@ impl BenCodeApp {
         }
     }
 
-    /// A terminal has the keyboard: its keys (Escape above all) are its own.
-    pub(crate) fn terminal_focused(&self, window: &gpui::Window, cx: &gpui::App) -> bool {
-        self.terminals(cx)
-            .docks
-            .values()
-            .flat_map(|dock| &dock.tabs)
-            .any(|tab| gpui::Focusable::focus_handle(tab.entity.read(cx), cx).is_focused(window))
+    /// A terminal on screen has the keyboard: its keys (Escape above all)
+    /// are its own. One hidden since (the dock closed, a view over it)
+    /// keeps its focus handle but not the keys.
+    pub(crate) fn terminal_focused(&self, window: &gpui::Window) -> bool {
+        bencode_ui::terminal::Terminal::has_keys(window)
     }
 
     /// Opens another terminal for the current project and shows the dock.

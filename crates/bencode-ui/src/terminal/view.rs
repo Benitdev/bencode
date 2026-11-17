@@ -82,6 +82,13 @@ impl Focusable for Terminal {
 }
 
 impl Terminal {
+    /// Whether a terminal drawn in `window` has the keyboard. A focus
+    /// handle's `is_focused` stays true after its terminal is no longer
+    /// drawn; the keys then go to the window's root, and this says no.
+    pub fn has_keys(window: &Window) -> bool {
+        (window.context_stack().iter()).any(|context| context.contains(input::CONTEXT))
+    }
+
     /// Starts `launch` on a pseudo-terminal; the first layout sizes its grid to the box.
     pub fn spawn(launch: Launch, cx: &mut Context<Self>) -> anyhow::Result<Self> {
         let size = (80, 24);

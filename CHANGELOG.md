@@ -10,6 +10,10 @@ tagging (`docs/releasing.md`).
   button, and ⌘⇧O, the Browser button or anything else that opens a tab
   (a file, a review, blame) leaves the Bot's view to show it. Before, the
   tab opened under the Bot's view, out of sight.
+- Esc stops the turn again after a file, review or terminal had the
+  keyboard and then went out of sight (a Bot's view over it, the
+  terminal dock closed): the hidden pane still counted as holding the
+  keys, so Esc found no thread to stop.
 - Reloading a browser tab whose server has stopped now says the page did
   not load. Before, WebKit kept showing the page from before the reload,
   as if the server still answered.

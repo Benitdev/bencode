@@ -179,8 +179,12 @@ pub struct BenCodeApp {
     pub diff_docs: HashMap<String, crate::ui::diff_viewer::DiffDoc>,
     /// Reviews show the old file beside the new one, saved in settings.
     pub diff_split: bool,
-    /// Whether ⌘W closes a tab of `file_pane` rather than the thread.
+    /// Whether a press last landed in `file_pane`; it has the keys only
+    /// while drawn (`file_pane_has_keys`).
     pub file_pane_focused: bool,
+    /// Whether the shell laid out `file_pane` this frame: a Bot's view or
+    /// a surface covers it while keeping its tabs.
+    pub file_pane_drawn: bool,
     /// The chat's and the file pane's shares of the width.
     pub file_pane_shares: [f32; 2],
     /// The file pane sits left of the chat, saved in settings.
@@ -1392,6 +1396,7 @@ impl BenCodeApp {
             diff_docs: HashMap::new(),
             diff_split: false,
             file_pane_focused: false,
+            file_pane_drawn: false,
             file_pane_shares: [1.0, 1.0],
             file_pane_left: false,
             browser,
