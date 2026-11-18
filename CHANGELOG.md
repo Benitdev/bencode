@@ -4,6 +4,11 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- Closing the floating Bot chat no longer crashes BenCode (0.1.53 made
+  the chat's window a kind AppKit could not free).
+
 ## [0.1.53] - 2026-11-17
 
 - Closing or hiding the floating Bot chat (`X`, ⌘W or the summon key)

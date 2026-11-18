@@ -54,17 +54,23 @@ pub use macos::{
 #[cfg(target_os = "macos")]
 #[allow(unexpected_cfgs)]
 mod macos {
-    use std::sync::OnceLock;
+    use std::sync::Once;
 
-    use objc::declare::ClassDecl;
     use objc::runtime::{BOOL, Class, NO, Object, Sel, YES};
     use objc::{msg_send, sel, sel_impl};
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
     type Id = *mut Object;
 
+    type Imp = extern "C" fn(&Object, Sel) -> BOOL;
+
     unsafe extern "C" {
-        fn object_setClass(obj: Id, cls: *const Class) -> *const Class;
+        fn class_replaceMethod(
+            cls: *const Class,
+            name: Sel,
+            imp: Imp,
+            types: *const std::ffi::c_char,
+        ) -> Option<Imp>;
     }
 
     #[link(name = "AppKit", kind = "framework")]
@@ -91,22 +97,30 @@ mod macos {
         NO
     }
 
-    /// Zero-ivar subclass of GPUI's `GPUIPanel` that cannot become main window:
-    /// becoming main (or activating BenCode) pulls BenCode's main window
-    /// forward when the floating chat is clicked or closed.
-    fn floating_panel_class(superclass: &Class) -> Option<&'static Class> {
-        static CLASS: OnceLock<Option<&'static Class>> = OnceLock::new();
-        *CLASS.get_or_init(|| {
-            let mut decl = ClassDecl::new("BenCodeFloatingPanel", superclass)?;
-            // SAFETY: signature matches `-[NSWindow canBecomeMainWindow]`.
+    /// Makes GPUI's `GPUIPanel` unable to become main window: becoming main
+    /// (or activating BenCode) pulls BenCode's main window forward when the
+    /// floating chat is clicked or closed. The class is changed, not the
+    /// window's: AppKit observes a window through KVO, which re-classes it
+    /// itself, and a window re-classed under KVO throws as it is freed. The
+    /// floating chat is the only `GPUIPanel` BenCode opens.
+    fn panels_never_main() {
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            let Some(panel) = Class::get("GPUIPanel") else {
+                log::warn!("GPUI's panel class is missing; the floating chat can become main");
+                return;
+            };
+            // SAFETY: `c@:` is `-[NSWindow canBecomeMainWindow]`'s signature,
+            // which `can_become_main_window` matches.
             unsafe {
-                decl.add_method(
+                class_replaceMethod(
+                    panel,
                     sel!(canBecomeMainWindow),
-                    can_become_main_window as extern "C" fn(&Object, Sel) -> BOOL,
+                    can_become_main_window,
+                    c"c@:".as_ptr(),
                 );
             }
-            Some(decl.register())
-        })
+        });
     }
 
     /// The window's `NSView` and `NSWindow`, if AppKit backs it.
@@ -131,23 +145,17 @@ mod macos {
 
     /// GPUI gives a window without a title bar no resizable style, whatever
     /// `is_resizable` says, and its floating `NSPanel` activates BenCode and
-    /// hides when BenCode loses focus. Re-classing it as a non-activating
-    /// panel keeps other apps in front while it takes keys and when it closes.
+    /// hides when BenCode loses focus. Making it a non-activating panel that
+    /// never becomes main keeps other apps in front while it takes keys and when it closes.
     pub fn make_floating_panel(window: &gpui::Window) {
         let Some(native) = ns_window(window) else {
             log::warn!("the floating chat has no native window to set up");
             return;
         };
-        // SAFETY: as in `ns_window`; `floating_panel_class` adds no ivars, so
-        // its instance size matches `GPUIPanel`. Each button is borrowed and
-        // checked for nil.
+        panels_never_main();
+        // SAFETY: as in `ns_window`; each button is borrowed and checked for
+        // nil.
         unsafe {
-            let current = (*native).class();
-            if let Some(panel_class) = floating_panel_class(current)
-                && panel_class.instance_size() == current.instance_size()
-            {
-                object_setClass(native, panel_class);
-            }
             let mask: usize = msg_send![native, styleMask];
             let _: () = msg_send![native, setStyleMask: mask | RESIZABLE | NONACTIVATING_PANEL];
             // Setting `NonactivatingPanel` after creation does not update
