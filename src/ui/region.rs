@@ -145,6 +145,19 @@ fn new_view(
     view
 }
 
+/// Reads `view` as the shell lays it out, so the window counts it as shown.
+/// GPUI delivers a view's notify only to a window that accessed the view in
+/// its last draw, and a cached view reused as painted counts only what its
+/// last render read. A view made in this draw was already accessed (made)
+/// before that render, so the render leaves it out: reused from then on,
+/// its notifies (a scroll in its list, a redraw asked for) reached no
+/// window until something redrew the whole window, such as a click moving
+/// the focus. The shell draws every frame, so reading the view here keeps
+/// it counted.
+fn keep_tracked(view: &Entity<RegionView>, cx: &App) {
+    view.read(cx);
+}
+
 impl Regions {
     /// `regions` redraw whenever `model` notifies. Set before the regions
     /// are first drawn (`BenCodeApp::new`).
@@ -188,6 +201,7 @@ impl Regions {
             .views
             .entry(region)
             .or_insert_with(|| new_view(RegionKind::Fixed(region), &self.follows, cx));
+        keep_tracked(view, cx);
         view.clone().cached(style).into_any_element()
     }
 
@@ -198,6 +212,7 @@ impl Regions {
         let view = self.panes.entry(session_id.to_string()).or_insert_with(|| {
             new_view(RegionKind::Pane(session_id.to_string()), &self.follows, cx)
         });
+        keep_tracked(view, cx);
         view.clone()
             .cached(StyleRefinement::default().size_full())
             .into_any_element()
