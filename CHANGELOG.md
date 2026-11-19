@@ -4,10 +4,13 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.1.54] - 2026-11-19
 
 - Closing the floating Bot chat no longer crashes BenCode (0.1.53 made
   the chat's window a kind AppKit could not free).
+- Coming back to a thread from Inbox, Notes or Automations no longer
+  leaves its chat frozen: scrolling over it moves it again without a
+  click first.
 
 ## [0.1.53] - 2026-11-17
 
