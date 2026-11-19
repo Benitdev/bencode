@@ -81,7 +81,7 @@ fn insert_token(text: &str, at: usize, token: &str) -> (String, usize) {
 impl BenCodeApp {
     /// The harness the focused composer sends to (`claude`, `codex`, …).
     fn composer_harness(&self) -> &'static str {
-        catalog::find(&self.composer_model_key()).map_or("claude", |m| m.harness.id())
+        catalog::harness_of(&self.composer_model_key()).map_or("claude", |h| h.id())
     }
 
     fn mcp_rows(&self, cx: &Context<Self>) -> Vec<PickerServer> {

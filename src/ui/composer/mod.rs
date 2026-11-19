@@ -321,6 +321,8 @@ fn model_chip_tooltip(
     if let Some(model) = catalog::find(key) {
         parts.push(model.harness.label().to_string());
         parts.extend(model.provider.clone());
+    } else if let Some(harness) = catalog::harness_of(key) {
+        parts.push(harness.label().to_string());
     }
     parts.push(catalog::label_for(key));
     if let Some(effort) = catalog::effort_setting(key) {

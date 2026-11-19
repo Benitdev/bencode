@@ -218,6 +218,7 @@ impl BenCodeApp {
             session.model_settings = old.model_settings.clone();
             session.worktree_cwd = old.worktree_cwd.clone();
             session.branch = old.branch.clone();
+            repair_blank_session_harness(session);
         }
         self.persist_session(&fresh);
         if self.tabs.replace_pane(&old.id, &fresh) {
@@ -626,9 +627,10 @@ impl BenCodeApp {
         let now = now_ms();
         let seq = NEXT_SESSION.fetch_add(1, Ordering::Relaxed);
         let id = format!("bencode-{now}-{seq}");
-        let harness = catalog::find(&self.selected_model)
-            .map(|m| m.harness)
-            .unwrap_or(HarnessKind::Claude);
+        // Derive the harness from the `harness:model` key directly so a new
+        // thread opened before live model catalogs finish probing (or on a
+        // model outside the built-in seeds) never falls back to Claude.
+        let harness = catalog::harness_of(&self.selected_model).unwrap_or(HarnessKind::Claude);
         // MonoCode keeps `cwd` on the project and records the worktree apart.
         let worktree_cwd = self
             .worktree_focus()
@@ -698,6 +700,7 @@ impl BenCodeApp {
             session.provider_account_id = old.provider_account_id;
             session.worktree_cwd = old.worktree_cwd;
             session.branch = old.branch;
+            repair_blank_session_harness(session);
         }
         self.persist_session(&fresh);
         if !self.tabs.replace_pane(id, &fresh) {
@@ -714,5 +717,78 @@ impl BenCodeApp {
         self.tabs.open(&id);
         self.sync_selection(cx);
         id
+    }
+}
+
+/// Aligns a blank thread's `harness` with its `harness:model` key if they
+/// disagree (for example, a thread created before live catalogs loaded).
+/// Threads that already have messages or a provider session id are untouched.
+pub(crate) fn repair_blank_session_harness(session: &mut SessionRow) -> bool {
+    if !session.blocks.is_empty() || session.provider_session_id.is_some() {
+        return false;
+    }
+    let Some(harness) = catalog::harness_of(&session.model) else {
+        return false;
+    };
+    if session.harness == harness.id() {
+        return false;
+    }
+    session.harness = harness.id().to_string();
+    session.provider_account_id = None;
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::db::Block;
+
+    #[test]
+    fn repair_blank_session_harness_aligns_mismatched_blank_rows() {
+        let mut session = SessionRow {
+            id: "s1".into(),
+            harness: "claude".into(),
+            model: "antigravity:gemini-4-neon-high".into(),
+            provider_account_id: Some("acct".into()),
+            ..Default::default()
+        };
+        assert!(repair_blank_session_harness(&mut session));
+        assert_eq!(session.harness, "antigravity");
+        assert_eq!(session.provider_account_id, None);
+        assert!(!repair_blank_session_harness(&mut session));
+    }
+
+    #[test]
+    fn repair_blank_session_harness_leaves_started_or_legacy_rows_alone() {
+        let mut started = SessionRow {
+            id: "s2".into(),
+            harness: "claude".into(),
+            model: "antigravity:gemini-4-neon-high".into(),
+            blocks: vec![Arc::new(Block::new("u1", "user", "hi"))],
+            ..Default::default()
+        };
+        assert!(!repair_blank_session_harness(&mut started));
+        assert_eq!(started.harness, "claude");
+
+        let mut resumed = SessionRow {
+            id: "s3".into(),
+            harness: "claude".into(),
+            model: "antigravity:gemini-4-neon-high".into(),
+            provider_session_id: Some("prov-1".into()),
+            ..Default::default()
+        };
+        assert!(!repair_blank_session_harness(&mut resumed));
+        assert_eq!(resumed.harness, "claude");
+
+        let mut legacy = SessionRow {
+            id: "s4".into(),
+            harness: "cursor".into(),
+            model: "cursor:auto".into(),
+            ..Default::default()
+        };
+        assert!(!repair_blank_session_harness(&mut legacy));
+        assert_eq!(legacy.harness, "cursor");
     }
 }

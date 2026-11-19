@@ -265,10 +265,16 @@ impl BenCodeApp {
     /// since. Folder members the database no longer has leave their folders.
     fn apply_loaded_sessions(&mut self, loaded: LoadedSessions, cx: &mut Context<Self>) {
         let mut known: HashSet<String> = self.sessions.iter().map(|s| s.id.clone()).collect();
-        let fresh: Vec<SessionRow> = loaded
+        let mut fresh: Vec<SessionRow> = loaded
             .rows
             .into_iter()
             .filter(|row| known.insert(row.id.clone()))
+            .collect();
+        let repaired: Vec<String> = fresh
+            .iter_mut()
+            .filter_map(|row| {
+                crate::app::panes::repair_blank_session_harness(row).then(|| row.id.clone())
+            })
             .collect();
         let gone: Vec<String> = loaded
             .gone
@@ -277,6 +283,9 @@ impl BenCodeApp {
             .collect();
         let changed = !fresh.is_empty();
         self.sessions.extend(fresh);
+        for id in &repaired {
+            self.persist_session(id);
+        }
         if !gone.is_empty() {
             self.remove_sessions_from_folders(&gone, cx);
         }

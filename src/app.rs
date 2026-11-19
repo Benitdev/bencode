@@ -578,11 +578,15 @@ impl BenCodeApp {
         let crate::launch::LaunchData {
             settings: saved,
             db,
-            sessions,
+            mut sessions,
             notes: saved_notes,
             automations: saved_automations,
             ..
         } = launch;
+        let repaired_sessions: Vec<String> = sessions
+            .iter_mut()
+            .filter_map(|s| panes::repair_blank_session_harness(s).then(|| s.id.clone()))
+            .collect();
         let db_writer = db.file_path().and_then(|path| {
             crate::db::DbWriter::open(&path)
                 .map_err(|err| {
@@ -1617,6 +1621,9 @@ impl BenCodeApp {
             app.start_frame_bench(window, cx);
             return app;
         }
+        for id in &repaired_sessions {
+            app.persist_session(id);
+        }
         app.init_remote(cx);
         // First on the writer, before any turn can write a new list.
         app.load_interrupted_turns(cx);
@@ -1664,12 +1671,13 @@ impl BenCodeApp {
 
     /// Switches the model (and, if needed, the harness) of the current thread.
     pub fn set_session_model(&mut self, model_key: &str, cx: &mut Context<Self>) {
-        let Some(option) = catalog::find(model_key) else {
+        let Some(harness) = catalog::harness_of(model_key) else {
             log::warn!("unknown model key {model_key}");
             return;
         };
-        self.selected_model = option.key.clone();
-        self.record_recent_model(&option.key, cx);
+        let key = model_key.to_string();
+        self.selected_model = key.clone();
+        self.record_recent_model(&key, cx);
 
         // MonoCode `onModelChange`: the old thread's settings fill the
         // remembered ones, and the new model takes what it accepts.
@@ -1679,8 +1687,8 @@ impl BenCodeApp {
         if let Some(current) = &current {
             self.save_last_model_settings(current, true, cx);
         }
-        let settings = self.preferred_model_settings(&option.key, current.as_ref());
-        let harness_id = option.harness.id();
+        let settings = self.preferred_model_settings(&key, current.as_ref());
+        let harness_id = harness.id();
         let account = self
             .selected_session()
             .and_then(|session| self.account_for_harness(session, harness_id));
@@ -1691,13 +1699,13 @@ impl BenCodeApp {
                 session.provider_session_id = None;
                 session.provider_account_id = account;
             }
-            if session.model != option.key {
+            if session.model != key {
                 // MonoCode `dropContextWindow`: the old model's window no
                 // longer measures this thread.
                 session.context_window = None;
                 session.context_used = None;
             }
-            session.model = option.key.clone();
+            session.model = key.clone();
             session.harness = harness_id.to_string();
             session.model_settings = Some(settings);
             session.id.clone()

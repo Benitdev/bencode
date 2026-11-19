@@ -99,7 +99,7 @@ pub fn filtered_models(
         ModelTab::Favorites => favorites
             .iter()
             .filter_map(|k| {
-                let kind = HarnessKind::from_id(k.split_once(':')?.0)?;
+                let kind = catalog::harness_of(k)?;
                 listed(kind)
                     .into_iter()
                     .find(|m| &m.key == k)
@@ -184,7 +184,7 @@ impl BenCodeApp {
         let favorites: Vec<String> = self
             .favorite_models
             .iter()
-            .filter(|k| catalog::find(k).is_some_and(|m| self.harness_available(m.harness)))
+            .filter(|k| catalog::harness_of(k).is_some_and(|h| self.harness_available(h)))
             .cloned()
             .collect();
         filtered_models(
@@ -275,8 +275,8 @@ impl BenCodeApp {
                 }
             }
             None => {
-                if let Some(model) = catalog::find(&current) {
-                    self.refresh_model_catalog(model.harness, cx);
+                if let Some(harness) = catalog::harness_of(&current) {
+                    self.refresh_model_catalog(harness, cx);
                 }
             }
         }
@@ -287,9 +287,9 @@ impl BenCodeApp {
         // Favorites.
         let rail = self.rail_harnesses();
         let menus = &mut self.composer_menus;
-        menus.model_tab = catalog::find(&current)
-            .filter(|m| rail.contains(&m.harness))
-            .map_or(ModelTab::Favorites, |m| ModelTab::Harness(m.harness));
+        menus.model_tab = catalog::harness_of(&current)
+            .filter(|harness| rail.contains(harness))
+            .map_or(ModelTab::Favorites, ModelTab::Harness);
         self.model_search_input
             .update(cx, |input, cx| input.set_text("", cx));
         self.highlight_current_model(cx);
@@ -331,7 +331,7 @@ impl BenCodeApp {
     }
 
     fn pick_model(&mut self, key: &str, cx: &mut Context<Self>) {
-        if catalog::find(key).is_some_and(|m| !self.harness_available(m.harness)) {
+        if catalog::harness_of(key).is_some_and(|harness| !self.harness_available(harness)) {
             return;
         }
         if self.composer_menus.models_only == Some(ModelsAnchor::Translate) {
@@ -343,10 +343,7 @@ impl BenCodeApp {
         // harness is the key's own: a machine's model may be in no local
         // catalog, and the pair must not name two CLIs.
         if self.composer_menus.models_only == Some(ModelsAnchor::Automation) {
-            let harness = key
-                .split_once(':')
-                .and_then(|(id, _)| HarnessKind::from_id(id))
-                .map(|kind| kind.id().to_string());
+            let harness = catalog::harness_of(key).map(|kind| kind.id().to_string());
             self.edit_automation(cx, |draft| {
                 draft.model = key.to_string();
                 if let Some(harness) = harness {
@@ -598,7 +595,7 @@ impl BenCodeApp {
             }
         });
         let model_ix = settings.len();
-        let current = catalog::find(current_key);
+        let current_harness = catalog::harness_of(current_key);
         let model_row = row(model_ix, "model-row".into())
             .on_click(cx.listener(move |this, _, _, cx| this.show_entry_submenu(model_ix, cx)))
             .child(div().flex_1().min_w_0().child("Model"))
@@ -610,7 +607,7 @@ impl BenCodeApp {
                     .min_w_0()
                     .max_w(px(144.0))
                     .text_color(colors.fg.ink(Ink::Secondary))
-                    .children(current.map(|m| HarnessIcon::new(m.harness.id()).size(px(14.0))))
+                    .children(current_harness.map(|h| HarnessIcon::new(h.id()).size(px(14.0))))
                     .child(
                         div()
                             .min_w_0()

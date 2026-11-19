@@ -258,9 +258,9 @@ impl BenCodeApp {
                 session.worktree_cwd = Some(tree.path);
                 session.branch = tree.branch;
             }
-            if let Some(option) = catalog::find(&auto.model) {
-                session.model = option.key.to_string();
-                session.harness = option.harness.id().to_string();
+            if let Some(harness) = catalog::harness_of(&auto.model) {
+                session.model = auto.model.clone();
+                session.harness = harness.id().to_string();
             }
             if let Some(mode) = auto
                 .runtime_mode

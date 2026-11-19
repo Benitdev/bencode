@@ -248,8 +248,8 @@ impl BenCodeApp {
         let colors = &cx.theme().colors;
         let fg = colors.fg;
         let model = &self.selected_model;
-        let on = match catalog::find(model) {
-            Some(found) => format!("{} · {}", found.harness.label(), catalog::label_for(model)),
+        let on = match catalog::harness_of(model) {
+            Some(harness) => format!("{} · {}", harness.label(), catalog::label_for(model)),
             None => catalog::label_for(model),
         };
         let inbox = self.inbox(cx);

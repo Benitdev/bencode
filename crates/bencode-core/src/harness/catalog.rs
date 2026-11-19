@@ -295,14 +295,22 @@ pub fn models_for(harness: HarnessKind) -> Arc<[ModelOption]> {
     })
 }
 
+/// The harness named by a `harness:model` key, whether or not the live
+/// catalog has listed that model yet.
+pub fn harness_of(key: &str) -> Option<HarnessKind> {
+    let (harness, id) = key.split_once(':')?;
+    (!id.trim().is_empty())
+        .then(|| HarnessKind::from_id(harness))
+        .flatten()
+}
+
 /// A `harness:model` key of a harness BenCode drives, listed yet or not.
 pub fn is_model_key(key: &str) -> bool {
-    key.split_once(':')
-        .is_some_and(|(h, id)| HarnessKind::from_id(h).is_some() && !id.trim().is_empty())
+    harness_of(key).is_some()
 }
 
 pub fn find(key: &str) -> Option<ModelOption> {
-    let harness = HarnessKind::from_id(key.split_once(':')?.0)?;
+    let harness = harness_of(key)?;
     let found = models_for(harness).iter().find(|m| m.key == key).cloned();
     found.or_else(|| SEEDS.get(&harness)?.iter().find(|m| m.key == key).cloned())
 }
@@ -733,6 +741,23 @@ mod tests {
         let values: Vec<_> = effort.options.iter().map(|(v, _)| v.as_str()).collect();
         assert_eq!(values, ["low", "medium", "high", "max", "ultrathink"]);
         assert_eq!(effort.default, "high");
+    }
+
+    #[test]
+    fn harness_of_reads_unlisted_model_keys() {
+        assert_eq!(
+            harness_of("antigravity:gemini-4-neon-high"),
+            Some(HarnessKind::Antigravity)
+        );
+        assert_eq!(harness_of("codex:gpt-5.4"), Some(HarnessKind::Codex));
+        assert_eq!(
+            harness_of("opencode:anthropic/claude-sonnet-4"),
+            Some(HarnessKind::OpenCode)
+        );
+        assert_eq!(harness_of("antigravity:"), None);
+        assert_eq!(harness_of("antigravity:   "), None);
+        assert_eq!(harness_of("unknown:model"), None);
+        assert_eq!(harness_of("gemini-4-neon-high"), None);
     }
 
     #[test]
