@@ -4,6 +4,12 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.56] - 2026-11-19
+
+- UI icons across the window, navigator, title bar, composer, inspector and
+  Settings now use Hugeicons Stroke Rounded (1.75px stroke weight, MIT)
+  instead of Lucide.
+
 ## [0.1.55] - 2026-11-19
 
 - Opening a new thread (or running an automation) with a model not in the
