@@ -4,6 +4,14 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.55] - 2026-11-19
+
+- Opening a new thread (or running an automation) with a model not in the
+  built-in list — such as a newer Antigravity, Codex or OpenCode model —
+  before its CLI's live model catalog finishes loading no longer falls back
+  to Claude's icon and CLI behind that model's theme and name. Blank
+  threads saved with a mismatched harness are repaired on launch.
+
 ## [0.1.54] - 2026-11-19
 
 - Closing the floating Bot chat no longer crashes BenCode (0.1.53 made
