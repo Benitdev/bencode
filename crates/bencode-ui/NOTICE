@@ -14,4 +14,4 @@ auto_scroll.rs; https://github.com/longbridge/gpui-kit), Apache-2.0
 held by document, segment and byte instead of by painted point, so it
 outlives its text leaving a virtual list; no touch selection or scopes.
 
-assets/icons are Lucide (ISC, assets/icons/LICENSE).
+assets/icons are Hugeicons Stroke Rounded (@hugeicons/core-free-icons 4.3.0, MIT, assets/icons/LICENSE).

@@ -330,6 +330,6 @@ bật ký số và notarize khi có Apple Developer ID, nằm trong
 ## Giấy phép
 
 BenCode miễn phí và mã nguồn mở theo [giấy phép MIT](../../LICENSE). Icon
-Lucide trong `assets/icons` (ISC) và Material Icon Theme trong
-`assets/file-icons` (MIT) giữ giấy phép riêng trong thư mục của chúng; logo các
-provider thuộc về chủ sở hữu tương ứng.
+Hugeicons Stroke Rounded trong `crates/bencode-ui/assets/icons` và `assets/icons`
+(MIT) cùng Material Icon Theme trong `assets/file-icons` (MIT) giữ giấy phép
+riêng trong thư mục của chúng; logo các provider thuộc về chủ sở hữu tương ứng.

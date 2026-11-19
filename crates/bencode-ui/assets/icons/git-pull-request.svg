@@ -1,18 +1,1 @@
-<!-- @license lucide-static v1.48.0 - ISC -->
-<svg
-  class="lucide lucide-git-pull-request"
-  xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="currentColor"
-  stroke-width="2"
-  stroke-linecap="round"
-  stroke-linejoin="round"
->
-  <circle cx="18" cy="18" r="3" />
-  <circle cx="6" cy="6" r="3" />
-  <path d="M13 6h3a2 2 0 0 1 2 2v7" />
-  <line x1="6" x2="6" y1="9" y2="21" />
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M6 8L6 16" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"/><path d="M18 16V12C18 9.17156 18 7.75735 17.1213 6.87867C16.2426 5.99999 14.8284 5.99999 12 5.99999L11 5.99999M11 5.99999C11 5.29976 12.9943 3.99152 13.5 3.49999M11 5.99999C11 6.70022 12.9943 8.00846 13.5 8.49999" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"/><circle cx="6" cy="18" r="2" stroke="currentColor" stroke-width="1.75"/><circle cx="6" cy="6" r="2" stroke="currentColor" stroke-width="1.75"/><circle cx="18" cy="18" r="2" stroke="currentColor" stroke-width="1.75"/></svg>

@@ -9,7 +9,7 @@ use crate::theme::{ActiveTheme, IconSize};
 
 macro_rules! icons {
     ($($variant:ident => $file:literal,)*) => {
-        /// Lucide icons bundled with bencode-ui.
+        /// Hugeicons Stroke Rounded icons bundled with bencode-ui.
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum IconName {
             $($variant,)*
@@ -24,7 +24,7 @@ macro_rules! icons {
                 }
             }
 
-            /// Lucide name, such as `chevron-down`.
+            /// Icon file stem, such as `chevron-down`.
             pub fn name(self) -> &'static str {
                 match self {
                     $(IconName::$variant => $file,)*

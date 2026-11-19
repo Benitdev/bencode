@@ -195,7 +195,7 @@ BenCode's code, changed like the app's.
   number through `scale::logical(..)`.
 - An image drawn smaller than its file goes through `ui/thumbnail.rs`,
   not `img(path)`.
-- Icons: `bencode_ui::primitives::IconName` (Lucide; a new one adds its
+- Icons: `bencode_ui::primitives::IconName` (Hugeicons Stroke Rounded; a new one adds its
   SVG to `crates/bencode-ui/assets/icons`), else `assets/icons/` +
   `ui/icons.rs::ExtraIcon`;
   file names take `file_tree::resolve_entry_icon(..)`.

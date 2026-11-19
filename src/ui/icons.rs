@@ -1,4 +1,4 @@
-//! Lucide icons MonoCode uses that bencode-ui does not ship. [`Assets`] serves
+//! Extra Hugeicons SVGs BenCode uses that bencode-ui does not ship. [`Assets`] serves
 //! their embedded SVGs beside bencode-ui's own, so [`ExtraIcon::icon`] is a bencode-ui
 //! `Icon` with the theme's sizes, colours and hover.
 

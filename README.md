@@ -311,7 +311,7 @@ bencode/
 ├── Cargo.toml
 ├── AGENTS.md            the detailed guide for developers and AI agents
 ├── CHANGELOG.md         changes in each release
-├── assets/              SVG icons (extra Lucide icons, file icons, provider logos)
+├── assets/              SVG icons (extra Hugeicons, file icons, provider logos)
 ├── crates/
 │   ├── bencode-core/    what the app and its host share: harnesses, file index, search, remote protocol
 │   ├── bencode-host/    the daemon on a remote machine
@@ -405,7 +405,7 @@ ID, are in [`docs/releasing.md`](docs/releasing.md).
 
 ## License
 
-BenCode is free and open source under the [MIT License](LICENSE). The Lucide
-icons in `assets/icons` (ISC) and the Material Icon Theme in
-`assets/file-icons` (MIT) keep their own licenses in their folders; provider
-logos belong to their respective owners.
+BenCode is free and open source under the [MIT License](LICENSE). The Hugeicons
+Stroke Rounded icons in `crates/bencode-ui/assets/icons` and `assets/icons`
+(MIT) and the Material Icon Theme in `assets/file-icons` (MIT) keep their own
+licenses in their folders; provider logos belong to their respective owners.
