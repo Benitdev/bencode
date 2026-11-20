@@ -70,6 +70,11 @@ impl Cmd {
         self
     }
 
+    pub fn stdin(mut self, bytes: Vec<u8>) -> Self {
+        self.stdin = Some(bytes);
+        self
+    }
+
     /// Runs it and collects what it printed, as `Command::output` does.
     pub fn output(self) -> io::Result<Output> {
         match self.cwd.as_deref().and_then(super::route) {

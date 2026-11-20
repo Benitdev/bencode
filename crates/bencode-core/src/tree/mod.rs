@@ -278,6 +278,7 @@ fn stamp() -> u128 {
 pub fn rename(root: &Path, rel: &str, name: &str) -> Result<String, String> {
     let rel = entry_rel(rel)?;
     let from = abs(root, rel);
+    ensure_inside(root, from.parent().unwrap_or(root))?;
     if from.symlink_metadata().is_err() {
         return Err(format!("{}: No such file or directory", from.display()));
     }
@@ -319,10 +320,13 @@ pub fn rename(root: &Path, rel: &str, name: &str) -> Result<String, String> {
 /// MonoCode `delete_path_sync` (permanent, like MonoCode).
 pub fn delete(root: &Path, rel: &str) -> Result<(), String> {
     let path = abs(root, entry_rel(rel)?);
-    if path.symlink_metadata().is_err() {
-        return Err(format!("{}: No such file or directory", path.display()));
-    }
-    let result = if path.is_dir() && !path.is_symlink() {
+    ensure_inside(root, path.parent().unwrap_or(root))?;
+    let meta = path
+        .symlink_metadata()
+        .map_err(|_| format!("{}: No such file or directory", path.display()))?;
+    // `symlink_metadata().is_dir()` is false for symlinks, so a symlinked
+    // folder is unlinked itself rather than recursively emptied.
+    let result = if meta.is_dir() {
         std::fs::remove_dir_all(&path)
     } else {
         std::fs::remove_file(&path)
@@ -573,5 +577,33 @@ mod tests {
         delete(&dir, "f").unwrap();
         assert!(!dir.join("f").exists());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn delete_and_rename_refuse_to_follow_symlinks_outside_root() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_dir("symlink-root");
+        let outside = temp_dir("symlink-outside");
+        let secret = outside.join("secret.txt");
+        std::fs::write(&secret, "keep").unwrap();
+        symlink(&outside, root.join("link")).unwrap();
+
+        // Deleting or renaming a target reached through a symlinked folder
+        // pointing outside `root` must fail and leave the external file intact.
+        assert!(delete(&root, "link/secret.txt").is_err());
+        assert!(secret.is_file());
+        assert!(rename(&root, "link/secret.txt", "renamed.txt").is_err());
+        assert!(secret.is_file());
+
+        // Deleting the symlink itself inside `root` is allowed and must not
+        // remove the external directory or its contents.
+        delete(&root, "link").unwrap();
+        assert!(root.join("link").symlink_metadata().is_err());
+        assert!(secret.is_file());
+
+        std::fs::remove_dir_all(&root).unwrap();
+        std::fs::remove_dir_all(&outside).unwrap();
     }
 }

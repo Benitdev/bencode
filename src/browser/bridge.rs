@@ -5,21 +5,27 @@
 //! The socket sits in the user's temporary folder (private to them), named
 //! for this process, so two BenCodes never answer each other's agents.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
 /// The longest a call may take: a page load waits up to 30s.
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(90);
+/// Cap on one tool call's JSON line (matches `app_cli::server::MAX_REQUEST`).
+const MAX_REQUEST: usize = 262_144;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct ToolRequest {
+    #[serde(default)]
+    pub token: String,
     pub tool: String,
     #[serde(default)]
     pub args: Value,
@@ -55,7 +61,7 @@ impl ToolReply {
 /// A call waiting for the app.
 pub struct ToolCall {
     pub request: ToolRequest,
-    pub reply: oneshot::Sender<ToolReply>,
+    pub reply: std::sync::mpsc::Sender<ToolReply>,
 }
 
 impl ToolCall {
@@ -68,6 +74,7 @@ impl ToolCall {
 
 const SOCKET_PREFIX: &str = "bencode-browser-";
 const SOCKET_SUFFIX: &str = ".sock";
+const TOKEN_SUFFIX: &str = ".token";
 
 fn socket_path() -> PathBuf {
     std::env::temp_dir().join(format!(
@@ -76,12 +83,43 @@ fn socket_path() -> PathBuf {
     ))
 }
 
-/// The process a socket file is named for.
+fn token_path(socket: &Path) -> PathBuf {
+    let mut name = socket.as_os_str().to_os_string();
+    name.push(TOKEN_SUFFIX);
+    PathBuf::from(name)
+}
+
+/// The process a socket or token file is named for.
 fn socket_pid(name: &str) -> Option<u32> {
-    name.strip_prefix(SOCKET_PREFIX)?
-        .strip_suffix(SOCKET_SUFFIX)?
-        .parse()
-        .ok()
+    let rest = name.strip_prefix(SOCKET_PREFIX)?;
+    let pid = rest
+        .strip_suffix(SOCKET_SUFFIX)
+        .or_else(|| rest.strip_suffix(&format!("{SOCKET_SUFFIX}{TOKEN_SUFFIX}")))?;
+    pid.parse().ok()
+}
+
+fn write_token(path: &Path, token: &str) -> Result<()> {
+    if path.exists() {
+        let _ = std::fs::remove_file(path);
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .with_context(|| format!("could not create {}", path.display()))?;
+    file.write_all(token.as_bytes())
+        .with_context(|| format!("could not write {}", path.display()))?;
+    Ok(())
+}
+
+/// Constant-time comparison so the token is not leaked by timing.
+fn token_matches(expected: &str, given: &str) -> bool {
+    let (a, b) = (expected.as_bytes(), given.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 /// `kill` with no signal only asks; a process of another user (EPERM) runs.
@@ -121,8 +159,14 @@ pub fn listen(calls: mpsc::UnboundedSender<ToolCall>) -> Result<PathBuf> {
     {
         log::warn!("browser: could not remove {}: {err}", path.display());
     }
+    let token = crate::app_cli::random_hex(32);
+    let token_file = token_path(&path);
+    write_token(&token_file, &token)?;
     let listener = UnixListener::bind(&path)
         .with_context(|| format!("could not listen on {}", path.display()))?;
+    if let Err(err) = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)) {
+        log::warn!("browser: could not restrict {}: {err}", path.display());
+    }
     std::thread::Builder::new()
         .name("browser-bridge".into())
         .spawn(move || {
@@ -131,10 +175,11 @@ pub fn listen(calls: mpsc::UnboundedSender<ToolCall>) -> Result<PathBuf> {
                 match stream {
                     Ok(stream) => {
                         let calls = calls.clone();
+                        let token = token.clone();
                         let spawned = std::thread::Builder::new()
                             .name("browser-call".into())
                             .spawn(move || {
-                                if let Err(err) = serve(stream, &calls) {
+                                if let Err(err) = serve(stream, &calls, &token) {
                                     log::warn!("browser tool call failed: {err:#}");
                                 }
                             });
@@ -150,26 +195,50 @@ pub fn listen(calls: mpsc::UnboundedSender<ToolCall>) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// Removes the socket on the way out.
+/// Removes the socket and its token file on the way out.
 pub fn remove(path: &Path) {
-    if let Err(err) = std::fs::remove_file(path)
-        && err.kind() != std::io::ErrorKind::NotFound
-    {
-        log::debug!("browser: could not remove {}: {err}", path.display());
+    for target in [path.to_path_buf(), token_path(path)] {
+        if let Err(err) = std::fs::remove_file(&target)
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            log::debug!("browser: could not remove {}: {err}", target.display());
+        }
     }
 }
 
-fn serve(stream: UnixStream, calls: &mpsc::UnboundedSender<ToolCall>) -> Result<()> {
+fn serve(
+    stream: UnixStream,
+    calls: &mpsc::UnboundedSender<ToolCall>,
+    expected_token: &str,
+) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(10)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(10)))?;
     let mut line = String::new();
-    BufReader::new(&stream).read_line(&mut line)?;
-    let request: ToolRequest = serde_json::from_str(&line).context("unreadable tool call")?;
-    let (tx, rx) = oneshot::channel();
-    let reply = if calls.send(ToolCall { request, reply: tx }).is_err() {
-        ToolReply::error("BenCode is closing.")
+    BufReader::new(&stream)
+        .take(MAX_REQUEST as u64 + 1)
+        .read_line(&mut line)?;
+    let reply = if line.len() > MAX_REQUEST {
+        ToolReply::error("Request exceeds 256 KiB.")
     } else {
-        rx.blocking_recv()
-            .unwrap_or_else(|_| ToolReply::error("BenCode dropped the call."))
+        let request: ToolRequest = serde_json::from_str(&line).context("unreadable tool call")?;
+        if !token_matches(expected_token, &request.token) {
+            ToolReply::error("Unauthorized browser tool call.")
+        } else {
+            let (tx, rx) = std::sync::mpsc::channel();
+            if calls.send(ToolCall { request, reply: tx }).is_err() {
+                ToolReply::error("BenCode is closing.")
+            } else {
+                rx.recv_timeout(CALL_TIMEOUT)
+                    .unwrap_or_else(|err| match err {
+                        RecvTimeoutError::Timeout => ToolReply::error(
+                            "BenCode did not answer the browser tool call in time.",
+                        ),
+                        RecvTimeoutError::Disconnected => {
+                            ToolReply::error("BenCode dropped the call.")
+                        }
+                    })
+            }
+        }
     };
     let mut out = serde_json::to_vec(&reply)?;
     out.push(b'\n');
@@ -182,7 +251,18 @@ pub fn call(socket: &Path, request: &ToolRequest) -> Result<ToolReply> {
     let stream = UnixStream::connect(socket)
         .context("BenCode's browser is not reachable; is BenCode still open?")?;
     stream.set_read_timeout(Some(CALL_TIMEOUT))?;
-    let mut out = serde_json::to_vec(request)?;
+    let mut authed = ToolRequest {
+        token: request.token.clone(),
+        tool: request.tool.clone(),
+        args: request.args.clone(),
+    };
+    if authed.token.is_empty() {
+        authed.token = std::fs::read_to_string(token_path(socket))
+            .context("could not read BenCode browser bridge token")?
+            .trim()
+            .to_string();
+    }
+    let mut out = serde_json::to_vec(&authed)?;
     out.push(b'\n');
     (&stream).write_all(&out)?;
     let mut line = String::new();
@@ -199,15 +279,52 @@ mod tests {
         let name = socket_path().file_name().unwrap().to_owned();
         assert_eq!(socket_pid(name.to_str().unwrap()), Some(std::process::id()));
         assert_eq!(socket_pid("bencode-browser-41.sock"), Some(41));
+        assert_eq!(socket_pid("bencode-browser-41.sock.token"), Some(41));
         assert_eq!(socket_pid("bencode-browser-x.sock"), None);
         assert_eq!(socket_pid("pty.sock"), None);
         assert!(is_running(std::process::id()));
     }
 
     #[test]
-    fn a_call_round_trips_through_the_socket() {
+    fn a_call_round_trips_through_the_socket_and_rejects_bad_requests() {
         let (tx, mut rx) = mpsc::unbounded_channel::<ToolCall>();
         let path = listen(tx).unwrap();
+        let sock_mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        let tok_mode = std::fs::metadata(token_path(&path))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(sock_mode, 0o600);
+        assert_eq!(tok_mode, 0o600);
+
+        // Wrong token is rejected before reaching the app channel.
+        let unauth = call(
+            &path,
+            &ToolRequest {
+                token: "wrong-token".into(),
+                tool: "browser_snapshot".into(),
+                args: Value::Null,
+            },
+        )
+        .unwrap();
+        assert!(!unauth.ok);
+        assert!(unauth.text.contains("Unauthorized"), "{}", unauth.text);
+
+        // Oversized request is rejected.
+        let big = call(
+            &path,
+            &ToolRequest {
+                token: String::new(),
+                tool: "browser_evaluate".into(),
+                args: Value::String("x".repeat(MAX_REQUEST + 10)),
+            },
+        )
+        .unwrap();
+        assert!(!big.ok);
+        assert!(big.text.contains("256 KiB"), "{}", big.text);
+
+        // Valid request (auto-reads token from the 0600 token file) succeeds.
         std::thread::spawn(move || {
             let call = rx.blocking_recv().unwrap();
             assert_eq!(call.request.tool, "browser_snapshot");
@@ -216,6 +333,7 @@ mod tests {
         let reply = call(
             &path,
             &ToolRequest {
+                token: String::new(),
                 tool: "browser_snapshot".into(),
                 args: Value::Null,
             },
@@ -224,5 +342,6 @@ mod tests {
         assert!(reply.ok);
         assert_eq!(reply.text, "page");
         remove(&path);
+        assert!(!token_path(&path).exists());
     }
 }

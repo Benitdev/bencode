@@ -268,7 +268,7 @@ impl Runs {
         // Attachments come only from the host's attachment folder.
         request
             .attachments
-            .retain(|file| Path::new(&file.path).starts_with(&self.attachments));
+            .retain(|file| self.is_attachment_path(&file.path));
         let (handle, mut events) = harness::spawn(&request)?;
         crate::dirs::write_private(&meta_path(&self.dir, &id), &serde_json::to_vec(&meta)?)?;
         let journal = std::fs::OpenOptions::new()
@@ -353,10 +353,29 @@ impl Runs {
     pub fn steer(&self, id: &str, prompt: &str, attachments: &[Attachment]) -> Result<bool> {
         let files: Vec<Attachment> = attachments
             .iter()
-            .filter(|file| Path::new(&file.path).starts_with(&self.attachments))
+            .filter(|file| self.is_attachment_path(&file.path))
             .cloned()
             .collect();
         Ok(self.handle(id)?.steer(prompt, &files))
+    }
+
+    /// True only when `path` resolves inside `self.attachments` (never `..`
+    /// traversal or a symlink pointing outside).
+    fn is_attachment_path(&self, path: &str) -> bool {
+        let candidate = Path::new(path);
+        if candidate
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return false;
+        }
+        let Ok(root) = std::fs::canonicalize(&self.attachments) else {
+            return false;
+        };
+        let Ok(resolved) = std::fs::canonicalize(candidate) else {
+            return false;
+        };
+        resolved.starts_with(&root) && resolved != root
     }
 
     pub fn cancel(&self, id: &str) -> Result<()> {
@@ -421,6 +440,40 @@ impl Runs {
             if old && let Err(err) = std::fs::remove_dir_all(entry.path()) {
                 log::warn!("could not remove {}: {err}", entry.path().display());
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attachment_check_blocks_traversal_and_escaping_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let runs_dir = dir.path().join("runs");
+        let attachments = dir.path().join("attachments");
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(&attachments).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+
+        let inside_file = attachments.join("note.txt");
+        let outside_file = outside.join("secret.txt");
+        std::fs::write(&inside_file, "ok").unwrap();
+        std::fs::write(&outside_file, "nope").unwrap();
+
+        let runs = Runs::load(runs_dir, attachments.clone());
+        assert!(runs.is_attachment_path(inside_file.to_str().unwrap()));
+        assert!(!runs.is_attachment_path(attachments.to_str().unwrap()));
+
+        let traversal = format!("{}/../outside/secret.txt", attachments.display());
+        assert!(!runs.is_attachment_path(&traversal));
+
+        #[cfg(unix)]
+        {
+            let link = attachments.join("escape.txt");
+            std::os::unix::fs::symlink(&outside_file, &link).unwrap();
+            assert!(!runs.is_attachment_path(link.to_str().unwrap()));
         }
     }
 }

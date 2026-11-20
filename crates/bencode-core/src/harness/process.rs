@@ -24,6 +24,9 @@ const STDERR_TAIL_LINES: usize = 20;
 const EXIT_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 /// How long a child asked to stop (SIGTERM) has before it is killed.
 pub const RETIRE_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+/// How long to wait for `stderr` to flush after the child has exited; a
+/// detached grandchild inheriting `stderr` must not hold the turn open forever.
+const STDERR_DRAIN_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// Turns one stdout line into zero or more events. Implementations are pure
 /// state machines so they can be unit-tested with recorded transcripts.
@@ -94,6 +97,10 @@ pub fn spawn(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    // Isolate the harness in its own process group so `retire()` signals
+    // descendants (dev servers, subshells) too rather than stranding them.
+    #[cfg(unix)]
+    cmd.process_group(0);
     if let Some(account) = &spec.account {
         account.apply_async(&mut cmd);
     }
@@ -249,11 +256,12 @@ async fn retire(child: &mut Child, stdin_tx: &mpsc::UnboundedSender<StdinMsg>) {
     }
     #[cfg(unix)]
     if let Some(pid) = child.id().and_then(|pid| libc::pid_t::try_from(pid).ok()) {
-        // SAFETY: `kill` takes a pid and a signal; the pid is our child's,
-        // not yet reaped (`try_wait` above), so it names no other process.
-        if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
+        // SAFETY: `kill(-pid, ...)` targets our child's own process group
+        // (`process_group(0)` in `spawn`); the child is not yet reaped
+        // (`try_wait` above), so the pgid cannot belong to another process.
+        if unsafe { libc::kill(-pid, libc::SIGTERM) } != 0 {
             log::debug!(
-                "SIGTERM to harness {pid}: {}",
+                "SIGTERM to harness group -{pid}: {}",
                 std::io::Error::last_os_error()
             );
         }
@@ -261,7 +269,14 @@ async fn retire(child: &mut Child, stdin_tx: &mpsc::UnboundedSender<StdinMsg>) {
             log::debug!("harness {pid} stopped: {exit:?}");
             return;
         }
-        log::debug!("harness {pid} ignored SIGTERM for {RETIRE_GRACE:?}; killing it");
+        log::debug!("harness {pid} ignored SIGTERM for {RETIRE_GRACE:?}; killing its group");
+        // SAFETY: same un-reaped process group.
+        if unsafe { libc::kill(-pid, libc::SIGKILL) } != 0 {
+            log::debug!(
+                "SIGKILL to harness group -{pid}: {}",
+                std::io::Error::last_os_error()
+            );
+        }
     }
     if let Err(err) = child.kill().await {
         log::debug!("killing harness: {err}");
@@ -288,6 +303,7 @@ async fn pump<P: LineParser>(mut ctx: PumpCtx<P>) {
     let quiet_deadline = tokio::time::sleep(std::time::Duration::MAX);
     tokio::pin!(quiet_deadline);
     let mut quiet_armed = false;
+    let mut cancel_open = true;
 
     loop {
         tokio::select! {
@@ -296,13 +312,19 @@ async fn pump<P: LineParser>(mut ctx: PumpCtx<P>) {
                 retire(&mut ctx.child, &ctx.stdin_tx).await;
                 break;
             }
-            Ok(()) = &mut ctx.cancel_rx => {
-                if !done {
-                    let _ = ctx.event_tx.send(AgentEvent::Done(DoneStatus::Cancelled));
+            res = &mut ctx.cancel_rx, if cancel_open => match res {
+                Ok(()) => {
+                    if !done {
+                        let _ = ctx.event_tx.send(AgentEvent::Done(DoneStatus::Cancelled));
+                    }
+                    retire(&mut ctx.child, &ctx.stdin_tx).await;
+                    ctx.stderr_task.abort();
+                    return;
                 }
-                retire(&mut ctx.child, &ctx.stdin_tx).await;
-                return;
-            }
+                // Every handle was dropped without cancelling; never poll the
+                // completed oneshot again.
+                Err(_) => cancel_open = false,
+            },
             steer = next_steer(&mut ctx.steer_rx), if !done => match steer {
                 Some(steer) => {
                     ctx.parser.steer(&steer.prompt, &steer.attachments);
@@ -339,9 +361,15 @@ async fn pump<P: LineParser>(mut ctx: PumpCtx<P>) {
     }
 
     let exit = ctx.child.wait().await;
-    let _ = ctx.stderr_task.await;
     if done {
+        ctx.stderr_task.abort();
         return;
+    }
+    if tokio::time::timeout(STDERR_DRAIN_GRACE, &mut ctx.stderr_task)
+        .await
+        .is_err()
+    {
+        ctx.stderr_task.abort();
     }
 
     let succeeded = exit.as_ref().is_ok_and(|status| status.success());
@@ -609,5 +637,45 @@ mod tests {
         }
         let (_handle, rx) = spawn(sh("echo a; echo b"), DoneThenNoise).unwrap();
         assert_eq!(collect(rx), vec![AgentEvent::Done(DoneStatus::Completed)]);
+    }
+
+    #[test]
+    fn dropping_handle_does_not_panic_pump() {
+        let mut spec = sh("sleep 0.05; echo one; echo two");
+        spec.can_steer = true;
+        let (handle, rx) = spawn(spec, EchoParser).unwrap();
+        drop(handle);
+        assert_eq!(
+            collect(rx),
+            vec![
+                AgentEvent::TextDelta("one".into()),
+                AgentEvent::TextDelta("two".into()),
+                AgentEvent::Done(DoneStatus::Completed),
+            ]
+        );
+    }
+
+    #[test]
+    fn grandchild_holding_stderr_does_not_hang_turn() {
+        let started = std::time::Instant::now();
+        // Background grandchild inherits stderr (closed stdout so the parent's
+        // stdout hits EOF as soon as the shell exits).
+        let (_handle, rx) = spawn(
+            sh("echo ok; (sleep 30 >/dev/null) >/dev/null &"),
+            EchoParser,
+        )
+        .unwrap();
+        assert_eq!(
+            collect(rx),
+            vec![
+                AgentEvent::TextDelta("ok".into()),
+                AgentEvent::Done(DoneStatus::Completed),
+            ]
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "turn hung waiting on grandchild stderr: {:?}",
+            started.elapsed()
+        );
     }
 }

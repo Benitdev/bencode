@@ -67,6 +67,12 @@ impl BenCodeApp {
     /// them before the surface is opened), then checks for due automations
     /// now and every `POLL_INTERVAL`.
     pub fn start_automation_scheduler(&mut self, cx: &mut Context<Self>) {
+        // Only the instance holding `in-flight.lock` recovers stale runs and
+        // fires schedules; a second instance still loads history for display.
+        if !self.owns_data_folder() {
+            self.load_recent_automation_runs(cx);
+            return;
+        }
         let now = now_ms();
         // Queued ahead of the first claim, so it still runs first.
         self.db_write("recover automation runs", move |db| {

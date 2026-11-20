@@ -1031,7 +1031,12 @@ impl BenCodeApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let ToolRequest { tool, args } = std::mem::take(&mut call.request);
+        if self.runs.is_empty() {
+            return call.answer(ToolReply::error(
+                "Browser tools are only active while an agent turn is running.",
+            ));
+        }
+        let ToolRequest { tool, args, .. } = std::mem::take(&mut call.request);
         let text = |key: &str| args.get(key).and_then(Value::as_str).map(str::to_string);
         let flag = |key: &str| args.get(key).and_then(Value::as_bool).unwrap_or(false);
         let address = match (tool == "browser_navigate").then(|| text("url")) {

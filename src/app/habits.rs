@@ -73,6 +73,9 @@ impl HabitsState {
 impl BenCodeApp {
     /// MonoCode `useMonoHabits`: checks for due habits now and every minute.
     pub fn start_habit_scheduler(&mut self, cx: &mut Context<Self>) {
+        if !self.owns_data_folder() {
+            return;
+        }
         self.check_habits(cx);
         cx.spawn(async move |this, cx| {
             loop {

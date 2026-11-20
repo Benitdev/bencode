@@ -8,7 +8,10 @@
 use std::io::{Read as _, Write as _};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, UNIX_EPOCH};
+
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 use anyhow::{Context as _, Result, bail};
 use bencode_core::harness::catalog::ModelOption;
@@ -242,9 +245,13 @@ pub fn write_file(path: &str, bytes: &[u8], create_new: bool) -> Result<()> {
         bail!("{} already exists", path.display());
     }
     let name = path.file_name().context("no file name")?.to_string_lossy();
-    let tmp = path.with_file_name(format!(".{name}.bencode-{}", std::process::id()));
+    let seq = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp = path.with_file_name(format!(".{name}.bencode-{}-{seq}", std::process::id()));
     let result = (|| -> Result<()> {
-        let mut file = std::fs::File::create(&tmp)?;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
         file.write_all(bytes)?;
         file.sync_all()?;
         if let Some(meta) = &existing {
@@ -419,5 +426,29 @@ mod tests {
         assert!(Path::new(&path).starts_with(dir.path()));
         assert!(path.ends_with("_a_b.png"), "{path}");
         assert!(upload(dir.path(), "big", &vec![0; MAX_UPLOAD_BYTES + 1]).is_err());
+    }
+
+    #[test]
+    fn concurrent_write_file_uses_unique_temp_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("shared.txt");
+        let target_str = target.to_string_lossy().into_owned();
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                let path = target_str.clone();
+                std::thread::spawn(move || {
+                    let payload = format!("writer-{i}-{}", "x".repeat(4096));
+                    for _ in 0..10 {
+                        write_file(&path, payload.as_bytes(), false).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        let final_content = std::fs::read_to_string(&target).unwrap();
+        assert!(final_content.starts_with("writer-"));
+        assert_eq!(final_content.len(), "writer-0-".len() + 4096);
     }
 }

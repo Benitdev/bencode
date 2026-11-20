@@ -192,6 +192,38 @@ impl BenCodeApp {
             .detach();
             return;
         }
+        if let Some((path, _)) = &plan.worktree
+            && !crate::app::same_project_path(path, &plan.cwd)
+            && !crate::app::same_project_path(&self.workspace(cx).cwd, &plan.cwd)
+        {
+            let cwd = plan.cwd.clone();
+            let target = path.clone();
+            let task = cx.background_executor().spawn(async move {
+                crate::git::worktrees::list_worktrees(&cwd).map(|trees| {
+                    trees.iter().any(|tree| {
+                        crate::app::same_project_path(&tree.path, &target) && !tree.missing
+                    })
+                })
+            });
+            cx.spawn(async move |this, cx| {
+                let allowed = task.await.unwrap_or(false);
+                let landed = this.update(cx, |this, cx| {
+                    if allowed {
+                        this.launch_session(caller, plan, call, cx);
+                    } else {
+                        call.fail(
+                            "Worktree is unavailable in this project; run worktrees.list",
+                            true,
+                        );
+                    }
+                });
+                if let Err(err) = landed {
+                    log::debug!("worktree check for a bot's session after app drop: {err:#}");
+                }
+            })
+            .detach();
+            return;
+        }
         self.launch_session(caller, plan, call, cx);
     }
 

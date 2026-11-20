@@ -5,6 +5,7 @@
 //! run and nobody has been attached for a while.
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::fs::File;
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
@@ -28,6 +29,9 @@ use super::screen::Screen;
 const IDLE_EXIT: Duration = Duration::from_secs(60);
 /// A client that stops reading for this long is let go, not waited on.
 const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+/// Tighter timeout during the initial attach hand-over while `session.state`
+/// is held, so a slow client cannot stall `pump()` or `resize()` for seconds.
+const HANDOVER_WRITE_TIMEOUT: Duration = Duration::from_millis(500);
 
 pub fn run() -> i32 {
     crate::logging::init_file("pty-host.log");
@@ -207,10 +211,28 @@ impl Host {
             None => match Session::spawn(&request) {
                 Ok(session) => {
                     let session = Arc::new(session);
-                    lock(&self.sessions).insert(request.id.clone(), session.clone());
-                    let reader = session.clone();
-                    std::thread::spawn(move || reader.pump());
-                    (session, true)
+                    let mut sessions = lock(&self.sessions);
+                    match sessions.entry(request.id.clone()) {
+                        Entry::Vacant(slot) => {
+                            slot.insert(session.clone());
+                            drop(sessions);
+                            let reader = session.clone();
+                            std::thread::spawn(move || reader.pump());
+                            (session, true)
+                        }
+                        Entry::Occupied(slot) => {
+                            let winner = slot.get().clone();
+                            drop(sessions);
+                            // Another attach raced and created this id first;
+                            // terminate and reap the duplicate shell.
+                            session.hang_up();
+                            if let Some(mut child) = lock(&session.child).take() {
+                                let _ = child.kill();
+                                let _ = child.wait();
+                            }
+                            (winner, false)
+                        }
+                    }
                 }
                 Err(err) => {
                     write_frame(&mut stream, &Frame::Error(format!("{err:#}")))?;
@@ -231,18 +253,20 @@ impl Host {
                 session.resize(request.cols, request.rows);
             }
         }
-        {
+        let attached = Attached {
+            pid: session.pid,
+            created,
+        };
+        write_frame(
+            &mut writer,
+            &Frame::Attached(serde_json::to_vec(&attached)?),
+        )?;
+        let previous = {
             // The screen and the hand-over in one lock: output the shell
-            // writes meanwhile goes after it, once.
+            // writes meanwhile goes after it, once. Use a tight timeout while
+            // holding the lock so a stalled client cannot block `pump()`.
+            writer.set_write_timeout(Some(HANDOVER_WRITE_TIMEOUT))?;
             let mut state = lock(&session.state);
-            let attached = Attached {
-                pid: session.pid,
-                created,
-            };
-            write_frame(
-                &mut writer,
-                &Frame::Attached(serde_json::to_vec(&attached)?),
-            )?;
             if !created {
                 let screen = state.screen.redraw();
                 write_frame(&mut writer, &Frame::Output(screen))?;
@@ -250,11 +274,13 @@ impl Host {
             if let Some(code) = state.exited {
                 write_frame(&mut writer, &Frame::Exited(code))?;
             }
-            if let Some((_, previous)) = state.client.replace((client, writer)) {
-                // One client at a time: a window shown again takes it over.
-                if let Err(err) = previous.shutdown(std::net::Shutdown::Both) {
-                    log::debug!("pty host: previous client of {}: {err}", session.id);
-                }
+            writer.set_write_timeout(Some(CLIENT_WRITE_TIMEOUT))?;
+            state.client.replace((client, writer))
+        };
+        if let Some((_, previous)) = previous {
+            // One client at a time: a window shown again takes it over.
+            if let Err(err) = previous.shutdown(std::net::Shutdown::Both) {
+                log::debug!("pty host: previous client of {}: {err}", session.id);
             }
         }
         loop {
@@ -456,14 +482,18 @@ impl Session {
         if child.is_none() {
             return;
         }
-        // SAFETY: a signal to the process this session started, not yet
-        // waited on.
-        if unsafe { libc::kill(self.pid as libc::pid_t, libc::SIGHUP) } == -1 {
-            log::debug!(
-                "pty host: SIGHUP to {}: {}",
-                self.pid,
-                io::Error::last_os_error()
-            );
+        // SAFETY: `Session::spawn` calls `setsid()`, so `self.pid` leads its
+        // own process group and has not yet been reaped while `self.child` is
+        // `Some`. Signal `-pid` so foreground/background jobs receive SIGHUP too.
+        let pid = self.pid as libc::pid_t;
+        if unsafe { libc::kill(-pid, libc::SIGHUP) } == -1 {
+            let err = io::Error::last_os_error();
+            if err.raw_os_error() == Some(libc::ESRCH) {
+                // Fallback if the process group is already gone.
+                let _ = unsafe { libc::kill(pid, libc::SIGHUP) };
+            } else {
+                log::debug!("pty host: SIGHUP to group -{}: {err}", self.pid);
+            }
         }
     }
 }

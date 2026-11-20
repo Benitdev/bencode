@@ -442,19 +442,25 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    pub fn remove_queued_prompt(&mut self, session_id: &str, ix: usize, cx: &mut Context<Self>) {
-        if self
-            .queue_editing
-            .as_ref()
-            .is_some_and(|(sid, edited)| sid == session_id && *edited == ix)
+    fn adjust_queue_editing_after_remove(&mut self, session_id: &str, ix: usize) {
+        if let Some((sid, edited)) = self.queue_editing.as_mut()
+            && sid == session_id
         {
-            self.queue_editing = None;
+            if *edited == ix {
+                self.queue_editing = None;
+            } else if *edited > ix {
+                *edited -= 1;
+            }
         }
+    }
+
+    pub fn remove_queued_prompt(&mut self, session_id: &str, ix: usize, cx: &mut Context<Self>) {
         let taken = self
             .threads
             .get_mut(session_id)
             .and_then(|thread| take_queued(thread, ix));
         if taken.is_some() {
+            self.adjust_queue_editing_after_remove(session_id, ix);
             cx.notify();
         }
     }
@@ -764,12 +770,15 @@ impl BenCodeApp {
             return;
         };
         if !self.is_agent_running_in(session_id) {
+            self.adjust_queue_editing_after_remove(session_id, ix);
             self.send_turn(session_id, input, cx);
             cx.notify();
             return;
         }
         if let Err(input) = self.steer(session_id, input, cx) {
             self.thread_mut(session_id).queue.insert(ix, *input);
+        } else {
+            self.adjust_queue_editing_after_remove(session_id, ix);
         }
         cx.notify();
     }
@@ -1376,6 +1385,7 @@ impl BenCodeApp {
         };
         run.handle.cancel();
         self.sync_in_flight();
+        self.forget_remote_run(session_id, cx);
         if self.is_habit_run(session_id) {
             self.habit_run_settled(session_id, false, cx);
             return;
@@ -1391,6 +1401,7 @@ impl BenCodeApp {
         }
         if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
             let now = now_ms();
+            cancel_open_tools(session);
             push_notice(session, STOPPED_NOTICE, now);
             finish_turn(session, now);
         }

@@ -37,6 +37,7 @@ impl Server for Browser<'_> {
 
     fn call(&self, tool: &str, args: &Value) -> Reply {
         let request = ToolRequest {
+            token: String::new(),
             tool: tool.to_string(),
             args: args.clone(),
         };

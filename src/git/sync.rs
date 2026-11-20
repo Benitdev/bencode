@@ -91,7 +91,9 @@ pub fn repo_name(cwd: &str) -> Option<String> {
         return folder(cwd);
     };
     let top = top.trim().to_string();
-    stdout(&top, &["remote", "get-url", "origin"])
+    // Run in `cwd` (preserving any `remote://` prefix) rather than the bare
+    // host path `top` returned by `--show-toplevel`.
+    stdout(cwd, &["remote", "get-url", "origin"])
         .and_then(|url| url_repo_name(&url))
         .or_else(|| folder(&top))
 }
@@ -711,30 +713,24 @@ pub fn pr_create(
     if title.is_empty() {
         return Err("Pull request title cannot be empty".into());
     }
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
-    let body_path = std::env::temp_dir().join(format!("bencode-pr-{stamp}.md"));
-    std::fs::write(&body_path, body.trim()).map_err(|err| err.to_string())?;
-    let result = gh(
-        cwd,
+    // Pass the body on stdin (`--body-file -`) so this works identically on
+    // both local and `remote://` checkouts without a local temp file.
+    let output = crate::github::gh_with_stdin(
+        Path::new(cwd),
         &[
             "pr",
             "create",
             "--title",
             title,
             "--body-file",
-            &body_path.to_string_lossy(),
+            "-",
             "--base",
             base.trim(),
             "--head",
             head.trim(),
         ],
-    );
-    if let Err(err) = std::fs::remove_file(&body_path) {
-        log::warn!("could not remove {}: {err}", body_path.display());
-    }
-    let output = result?;
+        body.trim().as_bytes(),
+    )?;
     output
         .lines()
         .rev()

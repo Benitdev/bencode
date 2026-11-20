@@ -37,6 +37,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// MonoCode's `DEFAULT_RUNTIME_MODE` (src/features/sessions/model/session.ts).
 pub const DEFAULT_SESSION_RUNTIME_MODE: &str = "supervised";
+/// How long SQLite waits on a concurrent writer/checkpoint before returning
+/// `SQLITE_BUSY`.
+const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Maximum automation runs returned by `list_automation_runs`.
 const AUTOMATION_RUN_HISTORY_LIMIT: i64 = 50;
@@ -472,7 +475,8 @@ impl AppDb {
                 | rusqlite::OpenFlags::SQLITE_OPEN_CREATE
                 | rusqlite::OpenFlags::SQLITE_OPEN_URI,
         )?;
-        conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+        conn.busy_timeout(BUSY_TIMEOUT)?;
+        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
         Self::from_connection(conn)
     }
 
@@ -491,6 +495,7 @@ impl AppDb {
             path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
         )?;
+        conn.busy_timeout(BUSY_TIMEOUT)?;
         Ok(Self { conn })
     }
 
@@ -2245,5 +2250,31 @@ mod tests {
         assert_eq!(auto.extra["lastRunError"], "boom");
         assert!(auto.last_run_at.is_some());
         assert!(run["completedAt"].as_i64().is_some());
+    }
+
+    #[test]
+    fn disk_connections_configure_busy_timeout() {
+        let dir = std::env::temp_dir().join(format!("bencode-db-busy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test.db");
+
+        let rw = AppDb::open_at(&path).unwrap();
+        let rw_timeout: i64 = rw
+            .conn
+            .query_row("PRAGMA busy_timeout;", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rw_timeout, BUSY_TIMEOUT.as_millis() as i64);
+
+        let ro = AppDb::open_reader(&path).unwrap();
+        let ro_timeout: i64 = ro
+            .conn
+            .query_row("PRAGMA busy_timeout;", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(ro_timeout, BUSY_TIMEOUT.as_millis() as i64);
+
+        drop(ro);
+        drop(rw);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

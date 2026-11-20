@@ -50,35 +50,79 @@ fn gh_path() -> Option<PathBuf> {
 /// MonoCode `gh_run`: stdout, or the CLI's own error text. Runs as the
 /// account the project in `cwd` uses (`github_accounts`).
 pub(crate) fn gh(cwd: &Path, args: &[&str]) -> Result<String, String> {
+    gh_inner(cwd, args, None)
+}
+
+/// Like `gh`, but feeds `stdin` bytes to the CLI (works on both local and
+/// `remote://` projects without needing a shared temp file).
+pub(crate) fn gh_with_stdin(cwd: &Path, args: &[&str], stdin: &[u8]) -> Result<String, String> {
+    gh_inner(cwd, args, Some(stdin))
+}
+
+fn gh_inner(cwd: &Path, args: &[&str], stdin: Option<&[u8]>) -> Result<String, String> {
     // A project on a machine uses the host's own `gh` sign-in (MonoCode's
     // host runs `gh` there too); BenCode's accounts are this computer's.
     if crate::remote::route(cwd).is_some() {
-        let output = crate::remote::exec::Cmd::gh(cwd.as_os_str())
-            .args(args)
-            .output()
-            .map_err(|err| err.to_string())?;
+        let mut cmd = crate::remote::exec::Cmd::gh(cwd.as_os_str()).args(args);
+        if let Some(bytes) = stdin {
+            cmd = cmd.stdin(bytes.to_vec());
+        }
+        let output = cmd.output().map_err(|err| err.to_string())?;
         return gh_result(&output, args);
     }
     let token = crate::github_accounts::token_for(cwd);
-    run_gh(cwd, args, token.as_deref())
+    run_gh_inner(cwd, args, token.as_deref(), stdin)
 }
 
 /// `gh` as the account `token` belongs to, or as its active account.
 pub(crate) fn run_gh(cwd: &Path, args: &[&str], token: Option<&str>) -> Result<String, String> {
+    run_gh_inner(cwd, args, token, None)
+}
+
+fn run_gh_inner(
+    cwd: &Path,
+    args: &[&str],
+    token: Option<&str>,
+    stdin: Option<&[u8]>,
+) -> Result<String, String> {
+    use std::io::Write as _;
+    use std::process::Stdio;
     let program = gh_path().ok_or_else(|| "GitHub CLI (`gh`) is not installed.".to_string())?;
     let mut command = Command::new(program);
     if let Some(token) = token {
         command.env("GH_TOKEN", token);
     }
-    let output = command
+    command
         .current_dir(cwd)
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GH_PROMPT_DISABLED", "1")
         .env("GH_PAGER", "cat")
-        .env("GIT_PAGER", "cat")
-        .output()
-        .map_err(|err| err.to_string())?;
+        .env("GIT_PAGER", "cat");
+    let output = if let Some(bytes) = stdin {
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|err| err.to_string())?;
+        let owned = bytes.to_vec();
+        let mut pipe = child
+            .stdin
+            .take()
+            .ok_or_else(|| "could not write to gh stdin".to_string())?;
+        let writer = std::thread::spawn(move || pipe.write_all(&owned));
+        let output = child.wait_with_output().map_err(|err| err.to_string())?;
+        match writer.join() {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) if err.kind() == std::io::ErrorKind::BrokenPipe => {}
+            Ok(Err(err)) => return Err(err.to_string()),
+            Err(_) => return Err("gh stdin writer panicked".into()),
+        }
+        output
+    } else {
+        command.output().map_err(|err| err.to_string())?
+    };
     gh_result(&output, args)
 }
 
