@@ -19,7 +19,7 @@ use anyhow::Result;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use serde_json::{Map, Value, json};
 
@@ -90,6 +90,7 @@ static AGY: Dialect = Dialect {
     cached_in_input: false,
     approves_in_auto: false,
     wait_open_tools: true,
+    usage_limit,
 };
 
 fn spawn_acp(req: &SpawnRequest, program: PathBuf) -> Result<(HarnessProcessHandle, EventRx)> {
@@ -127,6 +128,70 @@ fn acp_mode(permission: PermissionPolicy, plan: bool) -> Option<&'static str> {
         (false, PermissionPolicy::Auto) => "auto",
         (false, PermissionPolicy::Ask | PermissionPolicy::AutoApprove) => "default",
     })
+}
+
+/// `agy` answers a turn past the plan's quota with a standalone notice line at
+/// the end of the reply, not an error: "⚠ Individual quota reached. Please
+/// upgrade your subscription to increase your limits. Resets in 3h53m4s."
+fn usage_limit(reply: &str) -> Option<Option<Duration>> {
+    let line = reply
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())?;
+    let lower = line.to_lowercase();
+    let warned = lower.starts_with('⚠');
+    let body = lower
+        .trim_start_matches('⚠')
+        .trim_start_matches('\u{fe0f}')
+        .trim_start();
+    let is_quota = if warned {
+        body.contains("quota reached") || body.contains("quota exceeded")
+    } else {
+        (body.starts_with("individual quota reached")
+            || body.starts_with("quota reached")
+            || body.starts_with("quota exceeded"))
+            && (body.contains("resets in ")
+                || body.contains("upgrade your subscription")
+                || matches!(
+                    body.trim_end_matches('.'),
+                    "individual quota reached" | "quota reached" | "quota exceeded"
+                ))
+    };
+    if !is_quota {
+        return None;
+    }
+    let after = body
+        .find("resets in ")
+        .map(|at| &body[at + "resets in ".len()..]);
+    Some(after.and_then(reset_duration))
+}
+
+/// "3h53m4s", "26m31s", "1d2h": what a reset is counted down in.
+fn reset_duration(text: &str) -> Option<Duration> {
+    let mut seconds = 0u64;
+    let mut number: Option<u64> = None;
+    for c in text.chars() {
+        if let Some(digit) = c.to_digit(10) {
+            number = Some(
+                number
+                    .unwrap_or(0)
+                    .checked_mul(10)?
+                    .checked_add(u64::from(digit))?,
+            );
+            continue;
+        }
+        let unit = match c {
+            'd' => 86_400,
+            'h' => 3_600,
+            'm' => 60,
+            's' => 1,
+            _ => break,
+        };
+        let part = number.take()?.checked_mul(unit)?;
+        seconds = seconds.checked_add(part)?;
+    }
+    (seconds > 0).then(|| Duration::from_secs(seconds))
 }
 
 fn mentions_sign_in(detail: &str) -> bool {
@@ -1061,5 +1126,61 @@ mod tests {
         let done = parser.parse_line(&reply(&asked[0]["id"], json!({ "stopReason": "end_turn" })));
         // `call-bg-1` is still open: the follow-up's turn waits on it too.
         assert!(!is_done(&done));
+    }
+
+    #[test]
+    fn a_quota_reply_is_a_usage_limit_with_its_reset() {
+        let (mut parser, requests) = opened(&acp_request(PermissionPolicy::AutoApprove));
+        let prompt_id = requests.last().unwrap()["id"].clone();
+        parser.parse_line(&update(json!({
+            "sessionUpdate": "agent_message_chunk",
+            "content": { "type": "text", "text": "\n⚠ Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 3h53m4s.\n" },
+        })));
+        let before = acp_now();
+        let events = parser.parse_line(&reply(&prompt_id, json!({ "stopReason": "end_turn" })));
+        let resets_at = events.iter().find_map(|e| match e {
+            AgentEvent::UsageLimited { resets_at } => Some(*resets_at),
+            _ => None,
+        });
+        let at = resets_at.flatten().expect("a reset time");
+        let due = before + (3 * 3_600 + 53 * 60 + 4) * 1_000;
+        assert!((due..due + 5_000).contains(&at), "{at} vs {due}");
+        assert_eq!(events.last(), Some(&AgentEvent::Done(DoneStatus::Failed)));
+    }
+
+    #[test]
+    fn quota_text_reads_its_reset() {
+        assert_eq!(
+            usage_limit("⚠ Individual quota reached. Resets in 26m31s."),
+            Some(Some(Duration::from_secs(26 * 60 + 31)))
+        );
+        assert_eq!(
+            usage_limit("⚠️ Model quota exceeded. Resets in 10m."),
+            Some(Some(Duration::from_secs(600)))
+        );
+        assert_eq!(usage_limit("Quota exceeded."), Some(None));
+        assert_eq!(usage_limit("The quota module is fine. Resets in 2h."), None);
+        // Normal prose discussing quota handling must not trigger a limit.
+        assert_eq!(
+            usage_limit("Fixed the bug where quota reached was not detected."),
+            None
+        );
+        assert_eq!(
+            usage_limit("Quota exceeded errors should be retried after backoff."),
+            None
+        );
+        assert_eq!(
+            usage_limit("⚠ Individual quota reached. Resets in 1h.\nThat was just a log example."),
+            None
+        );
+        assert_eq!(reset_duration("1d2h"), Some(Duration::from_secs(93_600)));
+        assert_eq!(reset_duration("99999999999999999999d"), None);
+    }
+
+    fn acp_now() -> i64 {
+        SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
     }
 }

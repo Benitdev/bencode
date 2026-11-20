@@ -4,6 +4,12 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- An Antigravity turn that stops on the plan's quota ("Individual quota
+  reached … Resets in 3h53m4s") now shows the amber usage-limit tab on the
+  composer, with when it resets and Resume at reset, as Claude's limit does.
+
 ## [0.1.59] - 2026-11-21
 
 - Expanded the built-in Backlog MCP server (`bencode --backlog-mcp`) to 33

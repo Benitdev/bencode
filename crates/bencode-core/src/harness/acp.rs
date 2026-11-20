@@ -68,7 +68,14 @@ pub struct Dialect {
     /// finish, or after `OPEN_TOOLS_GRACE` of silence; the process stays up
     /// meanwhile so they are not killed with it. No prompt is added.
     pub wait_open_tools: bool,
+    /// The turn's reply is the provider's usage limit, not an answer
+    /// (Antigravity says so as text): `Some(time until it resets)`, the
+    /// time when it says one.
+    pub usage_limit: fn(&str) -> Option<Option<Duration>>,
 }
+
+/// How much of a prompt's reply `Dialect::usage_limit` reads: its end.
+const REPLY_TAIL_CHARS: usize = 1_024;
 
 /// MonoCode `CLIENT_CAPABILITIES` and `clientInfo`.
 pub fn initialize_params() -> Value {
@@ -157,6 +164,8 @@ pub struct AcpParser {
     /// The prompt returned while tool calls still ran: the turn ends when
     /// they finish (`wait_open_tools`).
     awaiting_tools: bool,
+    /// The end of the running prompt's reply, for `Dialect::usage_limit`.
+    reply_tail: String,
     replies: Vec<String>,
 }
 
@@ -187,7 +196,19 @@ impl AcpParser {
             followups: Vec::new(),
             finishing: None,
             awaiting_tools: false,
+            reply_tail: String::new(),
             replies: Vec::new(),
+        }
+    }
+
+    fn keep_reply_tail(&mut self, text: &str) {
+        self.reply_tail.push_str(text);
+        let excess = self.reply_tail.len().saturating_sub(REPLY_TAIL_CHARS);
+        if excess > 0 {
+            let cut = (excess..=self.reply_tail.len())
+                .find(|&i| self.reply_tail.is_char_boundary(i))
+                .unwrap_or(self.reply_tail.len());
+            self.reply_tail.drain(..cut);
         }
     }
 
@@ -277,8 +298,18 @@ impl AcpParser {
             (Step::Prompt, Ok(result)) => {
                 events.extend(self.usage_events(result));
                 let stop = str_field(result, "stopReason");
+                let limited = (stop != Some("cancelled"))
+                    .then(|| (self.dialect.usage_limit)(&self.reply_tail))
+                    .flatten();
+                if let Some(after) = limited {
+                    let resets_at = after
+                        .and_then(|after| i64::try_from(after.as_millis()).ok())
+                        .and_then(|ms| now_ms().checked_add(ms));
+                    events.push(AgentEvent::UsageLimited { resets_at });
+                }
                 let status = match stop {
                     Some("cancelled") => DoneStatus::Cancelled,
+                    _ if limited.is_some() => DoneStatus::Failed,
                     _ => DoneStatus::Completed,
                 };
                 // Only a turn the model ended itself waits on its tools; one
@@ -411,6 +442,7 @@ impl AcpParser {
             return;
         }
         self.metrics_reported = false;
+        self.reply_tail.clear();
         let params = json!({ "sessionId": self.session_id, "prompt": self.prompt });
         self.request("session/prompt", params, Step::Prompt);
     }
@@ -502,6 +534,7 @@ impl AcpParser {
                 let separator = if kind == "agent_message" { "\n" } else { "" };
                 let text = text_from_content(content(), separator);
                 if !text.is_empty() {
+                    self.keep_reply_tail(&text);
                     events.push(AgentEvent::TextDelta(text));
                 }
             }
@@ -884,6 +917,12 @@ pub(crate) fn task_items(entries: &[Value]) -> Vec<TaskItem> {
             })
         })
         .collect()
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis() as i64)
 }
 
 pub(crate) fn fail(message: String, events: &mut Vec<AgentEvent>) {
