@@ -4,6 +4,17 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.58] - 2026-11-20
+
+- Settings now opens as a floating frosted-glass dialog over the window
+  instead of replacing the workspace and navigator: its three section groups
+  (App, Agents, Workspace) live in a left column inside the dialog, with
+  Esc, ⌘W, the close button or clicking outside returning to whatever was
+  behind it.
+- Eleven of the most visible UI icons (Inbox, Notes, Bots, Sparkles, Chat,
+  Terminal, Lightbulb, Sidebars, Usage and Overview) now use Hugeicons' own
+  Stroke Rounded designs instead of Lucide-like aliases.
+
 ## [0.1.57] - 2026-11-20
 
 - Agent turns no longer hang indefinitely when a command spawned by an agent
