@@ -4,6 +4,35 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.57] - 2026-11-20
+
+- Agent turns no longer hang indefinitely when a command spawned by an agent
+  leaves a background process holding `stderr` open: each CLI now runs in its
+  own process group and drains `stderr` with a short bound on exit, and
+  dropping a run handle no longer panics the output pump.
+- Hardened the in-app browser's MCP socket: both the socket and its
+  per-process token file are restricted to `0600`, calls require the token,
+  enforce size and reply timeouts, and are only accepted while an agent turn
+  is running.
+- SQLite connections now wait up to 5 seconds on concurrent writes or WAL
+  checkpoints (`busy_timeout`) instead of failing immediately with
+  `SQLITE_BUSY`.
+- Explorer delete and rename refuse to traverse symlinked folders pointing
+  outside the project root (unlinking a symlink itself inside the project
+  still works safely).
+- Remote projects: creating a pull request now sends the PR body over stdin
+  (`--body-file -`) so it works on remote machines, repository name detection
+  keeps the `remote://` prefix, host file writes use unique temporary names
+  to avoid concurrent-save races, and host attachment checks reject `..` and
+  escaping symlinks.
+- Stopping a running turn now cleans up remote run state and marks open tool
+  cards cancelled; removing or steering an earlier queued message keeps the
+  inline queue editor pointing at the right item.
+- Secondary BenCode instances no longer recover or double-fire Automations
+  and Bot habits, Bot `sessions.start` verifies `worktreeCwd` even for
+  non-active projects, and the terminal host prevents duplicate-attach races,
+  bounds handover writes, and sends `SIGHUP` to the shell's process group.
+
 ## [0.1.56] - 2026-11-19
 
 - UI icons across the window, navigator, title bar, composer, inspector and
