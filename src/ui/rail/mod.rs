@@ -1,9 +1,9 @@
 //! The navigator (MonoCode's `ProjectRail` and Sessions sidebar in one
 //! column): the visit arrows, Search with the views' icons, the agents at
 //! work, the Pinned, Groups and Projects lists with their diff stats, the
-//! project's threads, and Settings and the usage chip at the foot; while
-//! Settings is open its sections take the body. Rows drag to reorder and
-//! the right edge drags to resize. The saved state lives in [`model`].
+//! project's threads, and Settings and the usage chip at the foot. Rows drag
+//! to reorder and the right edge drags to resize. The saved state lives in
+//! [`model`].
 
 mod cards;
 mod compact;
@@ -16,7 +16,6 @@ pub mod model;
 mod notify;
 mod remove;
 mod reorder;
-mod settings_nav;
 mod state;
 mod update;
 pub(crate) mod widgets;
@@ -128,16 +127,12 @@ impl BenCodeApp {
 
     /// The navigator, top to bottom: Search and the views, the Bots, the
     /// projects, the project's threads, the agents at work, and the
-    /// focused thread's usage beside Settings. While Settings is open its
-    /// sections take the body.
+    /// focused thread's usage beside Settings.
     pub fn render_project_rail(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let settings_open = self.surface == Some(Surface::Settings);
         // The list keeps its picks and row heights as it draws, and the
         // usage chip loads its account's usage the first time it shows.
-        let threads = (!settings_open).then(|| self.render_session_list(cx));
-        let usage = (!settings_open)
-            .then(|| self.render_usage_status(crate::ui::status::UsageChipVariant::Navigator, cx))
-            .flatten();
+        let threads = self.render_session_list(cx);
+        let usage = self.render_usage_status(crate::ui::status::UsageChipVariant::Navigator, cx);
         let theme = cx.theme();
         let colors = &theme.colors;
         // `.sidebar-glass`: the background mixed 10% toward black, plain in
@@ -170,23 +165,19 @@ impl BenCodeApp {
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| this.finish_rail_drags(cx)),
             )
-            .child(self.render_rail_top_strip(settings_open, cx))
-            .map(|el| match threads {
-                None => el.child(self.render_settings_nav(cx)),
-                Some(threads) => el
-                    .child(self.render_rail_actions(cx))
-                    // MonoCode: the Bots section above the projects, out of
-                    // their scroll so neither crowds the other.
-                    .when(self.bots_enabled(), |el| {
-                        el.child(self.render_rail_bots(cx))
-                    })
-                    .child(self.render_rail_projects(cx))
-                    .child(self.render_threads_header(cx))
-                    .child(threads)
-                    .children(self.render_live_agents(cx))
-                    .children(self.render_update_footer(false, cx))
-                    .child(self.render_rail_foot(usage, cx)),
+            .child(self.render_rail_top_strip(cx))
+            .child(self.render_rail_actions(cx))
+            // MonoCode: the Bots section above the projects, out of
+            // their scroll so neither crowds the other.
+            .when(self.bots_enabled(), |el| {
+                el.child(self.render_rail_bots(cx))
             })
+            .child(self.render_rail_projects(cx))
+            .child(self.render_threads_header(cx))
+            .child(threads)
+            .children(self.render_live_agents(cx))
+            .children(self.render_update_footer(false, cx))
+            .child(self.render_rail_foot(usage, cx))
             .child(self.render_rail_sash(cx))
     }
 
@@ -207,7 +198,11 @@ impl BenCodeApp {
                 "rail-settings",
                 IconName::Settings,
                 "Settings (⌘,)",
-                TitleButtonState::Normal,
+                if self.settings_open {
+                    TitleButtonState::Active
+                } else {
+                    TitleButtonState::Normal
+                },
                 cx,
                 |this, _, _, cx| this.open_settings(cx),
             ))
@@ -223,9 +218,8 @@ impl BenCodeApp {
     }
 
     /// `flex h-10 shrink-0 select-none items-center pr-1.5`, a drag region
-    /// holding the traffic-light gap and `TabVisitNav` (without the panel
-    /// toggle while Settings is open).
-    fn render_rail_top_strip(&self, settings_open: bool, cx: &Context<Self>) -> impl IntoElement {
+    /// holding the traffic-light gap and `TabVisitNav`.
+    fn render_rail_top_strip(&self, cx: &Context<Self>) -> impl IntoElement {
         self.window_drag_region(div(), cx)
             .flex()
             .flex_none()
@@ -243,20 +237,18 @@ impl BenCodeApp {
                     .flex_none()
                     .items_center()
                     .children(self.history_buttons("rail", cx))
-                    .when(!settings_open, |el| {
-                        el.child(title_icon_button(
-                            "rail-toggle-projects",
-                            IconName::PanelLeft,
-                            "Hide Navigator (⌘B)",
-                            TitleButtonState::Active,
-                            cx,
-                            |this, _, _, cx| {
-                                this.is_rail_open = false;
-                                this.close_rail_menu(cx);
-                                cx.notify();
-                            },
-                        ))
-                    }),
+                    .child(title_icon_button(
+                        "rail-toggle-projects",
+                        IconName::PanelLeft,
+                        "Hide Navigator (⌘B)",
+                        TitleButtonState::Active,
+                        cx,
+                        |this, _, _, cx| {
+                            this.is_rail_open = false;
+                            this.close_rail_menu(cx);
+                            cx.notify();
+                        },
+                    )),
             )
     }
 
@@ -520,25 +512,20 @@ impl BenCodeApp {
         self.set_pinned_projects(next, cx);
     }
 
-    /// The rail's menus and dialogs, drawn over the window.
-    /// The Delete confirmation also serves Settings › Archive, so it shows
-    /// with the rail hidden; the menus belong to the rail.
+    /// The rail's menus, drawn over the window while the rail is shown.
     pub fn render_rail_overlays(&self, cx: &Context<Self>) -> Vec<AnyElement> {
-        let menus = if self.is_rail_open || self.compact_rail_active() {
-            vec![
-                self.render_rail_menu(cx),
-                self.render_inbox_menu(cx),
-                self.render_rail_submenu(cx),
-                self.render_mute_picker(cx),
-            ]
-        } else {
-            Vec::new()
-        };
-        menus
-            .into_iter()
-            .chain(std::iter::once(self.render_remove_project_dialog(cx)))
-            .flatten()
-            .collect()
+        if !(self.is_rail_open || self.compact_rail_active()) {
+            return Vec::new();
+        }
+        [
+            self.render_rail_menu(cx),
+            self.render_inbox_menu(cx),
+            self.render_rail_submenu(cx),
+            self.render_mute_picker(cx),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
     }
 
     /// Back / Forward over visited tabs (MonoCode `TabVisitNav`), dimmed

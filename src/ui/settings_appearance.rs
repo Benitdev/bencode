@@ -10,7 +10,7 @@ use bencode_ui::settings::{Appearance, ThemeSelector};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     Anchor, Context, Hsla, IntoElement, MouseButton, ObjectFit, ParentElement, SharedString,
-    Styled, anchored, deferred, div, img, point, prelude::*,
+    Styled, anchored, div, img, point, prelude::*,
 };
 
 use crate::app::BenCodeApp;
@@ -278,14 +278,14 @@ impl BenCodeApp {
                     .offset(point(px(0.0), px(6.0)))
                     .snap_to_window()
                     .child(popover);
-                // In the project's dialog, a bencode-ui layer: raised in it,
-                // as a deferred element would draw under it.
-                let placed = match scope {
-                    ColorScope::App => deferred(placed).with_priority(3).into_any_element(),
-                    ColorScope::Project(_) => raise("project-accent-color-layer", placed)
-                        .with_priority(1)
-                        .into_any_element(),
-                };
+                // Both Settings and a project's Theme Colors are bencode-ui
+                // layers: raised in them, as a deferred element would draw
+                // under the layer (or not at all).
+                let placed = raise(
+                    SharedString::from(format!("{prefix}accent-color-layer")),
+                    placed,
+                )
+                .with_priority(1);
                 el.child(div().absolute().bottom_0().right_0().child(placed))
             })
     }

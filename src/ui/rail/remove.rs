@@ -31,6 +31,7 @@ impl BenCodeApp {
     /// MonoCode `onRestoreProject`: back on the rail, and opened.
     pub(crate) fn restore_rail_project(&mut self, path: &str, cx: &mut Context<Self>) {
         self.update_rail_prefs(|prefs| prefs.with_restored(path), cx);
+        self.close_settings(cx);
         self.close_surface(cx);
         self.switch_project(path.to_string(), cx);
     }
@@ -165,7 +166,7 @@ impl BenCodeApp {
     }
 
     /// MonoCode `RemoveProjectDialog`, as a `ConfirmDialog`.
-    pub(super) fn render_remove_project_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn render_remove_project_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let removing = self.rail_ui.removing.clone()?;
         let close = app_callback(cx, |this, cx| {
             this.rail_ui.removing = None;

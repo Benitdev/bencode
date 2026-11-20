@@ -1,6 +1,5 @@
 //! The full-height views that replace the workspace to the right of the
-//! rail: Inbox, Notes, Automations and Settings. Only one is open
-//! at a time; Settings returns to the view it was opened from (MonoCode
+//! rail: Inbox, Notes and Automations. Only one is open at a time (MonoCode
 //! `App.tsx:9788-9950,10881-11160`).
 
 use bencode_ui::buttons::{ButtonVariant, IconButton};
@@ -17,7 +16,6 @@ pub enum Surface {
     Inbox,
     Notes,
     Automations,
-    Settings,
 }
 
 impl Surface {
@@ -26,7 +24,6 @@ impl Surface {
             Self::Inbox => "Inbox",
             Self::Notes => "Notes",
             Self::Automations => "Automations",
-            Self::Settings => "Settings",
         }
     }
 
@@ -35,7 +32,6 @@ impl Surface {
             Self::Inbox => IconName::Inbox,
             Self::Notes => IconName::NotebookPen,
             Self::Automations => IconName::Zap,
-            Self::Settings => IconName::Settings,
         }
     }
 }
@@ -53,16 +49,6 @@ impl BenCodeApp {
         if self.surface == Some(Surface::Notes) {
             self.save_note_if_dirty(cx);
         }
-        if surface == Surface::Settings {
-            self.settings_return = self.surface;
-            match self.settings_tab {
-                crate::ui::settings_modal::SettingsTab::Worktrees => self.open_worktrees_page(cx),
-                crate::ui::settings_modal::SettingsTab::Providers => {
-                    self.load_accounts_page(false, cx)
-                }
-                _ => {}
-            }
-        }
         if surface == Surface::Inbox {
             self.read_inbox_translations(cx);
         }
@@ -76,7 +62,7 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// Closes the open view; Settings goes back to where it came from.
+    /// Closes the open view.
     pub fn close_surface(&mut self, cx: &mut Context<Self>) {
         match self.surface {
             Some(Surface::Notes) => {
@@ -87,14 +73,6 @@ impl BenCodeApp {
                 self.automations.pending_delete = None;
                 self.automations.pending_discard = None;
                 self.automations.pause_pick = None;
-            }
-            Some(Surface::Settings) => {
-                self.surface = self.settings_return.take();
-                if self.surface == Some(Surface::Inbox) {
-                    self.focus_inbox_list(cx);
-                }
-                cx.notify();
-                return;
             }
             _ => {}
         }
@@ -113,7 +91,6 @@ impl BenCodeApp {
             Surface::Inbox => self.render_inbox_body(window, cx),
             Surface::Notes => self.render_notes_body(cx),
             Surface::Automations => self.render_automations_body(cx),
-            Surface::Settings => self.render_settings_body(cx),
         };
         // In MonoCode's `body-glass` column, like the workspace.
         let glass = self.glass(cx);
@@ -195,24 +172,7 @@ impl BenCodeApp {
                     .text_size(px(13.0))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(colors.fg)
-                    .map(|el| {
-                        if surface != Surface::Settings {
-                            return el.child(surface.title());
-                        }
-                        // MonoCode's `Settings / <page>` crumb.
-                        el.child(
-                            div()
-                                .text_color(colors.fg.opacity(0.45))
-                                .child(surface.title()),
-                        )
-                        .child(div().text_color(colors.fg.opacity(0.25)).child("/"))
-                        .child(div().truncate().child(self.settings_tab.label_icon().0))
-                    }),
-            )
-            .when(
-                surface == Surface::Settings
-                    && self.settings_tab == crate::ui::settings_modal::SettingsTab::Appearance,
-                |el| el.child(claim_press(div()).child(self.render_restore_appearance(cx))),
+                    .child(surface.title()),
             )
     }
 }

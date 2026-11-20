@@ -38,11 +38,8 @@ const POPOVER_GAP: f32 = 6.0;
 
 impl BenCodeApp {
     /// MonoCode `compactRailVisible`: the rail is collapsed to icons.
-    /// Settings brings its own navigation instead.
     pub fn compact_rail_active(&self) -> bool {
-        self.appearance.collapsed_rail == CollapsedRailMode::Compact
-            && !self.is_rail_open
-            && self.surface != Some(Surface::Settings)
+        self.appearance.collapsed_rail == CollapsedRailMode::Compact && !self.is_rail_open
     }
 
     /// MonoCode `compactTitleBar`: on macOS the title bar runs above the
@@ -65,7 +62,6 @@ impl BenCodeApp {
             Surface::Inbox => self.open_inbox_modal(cx),
             Surface::Notes => self.open_notes(cx),
             Surface::Automations => self.open_automations(cx),
-            Surface::Settings => self.open_settings(cx),
         }
     }
 
@@ -220,7 +216,7 @@ impl BenCodeApp {
                             "compact-rail-settings",
                             IconName::Settings,
                             "Settings (⌘,)",
-                            false,
+                            self.settings_open,
                             false,
                             cx,
                         )

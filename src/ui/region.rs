@@ -40,7 +40,7 @@ pub enum Region {
     /// The tabs beside the chat: files, reviews, commits, browser pages.
     FilePane,
     Terminal,
-    /// Inbox, Notes, Automations or Settings.
+    /// Inbox, Notes or Automations.
     Surface,
     /// A Bot in the main area, its Overview beside it.
     Bot,

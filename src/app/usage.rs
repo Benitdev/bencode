@@ -54,9 +54,9 @@ pub struct UsageTarget {
 }
 
 /// Each account's last usage and the reads running: a model, followed by
-/// the regions that show usage (`Region::Rail`, `CompactRail`, `Bot`,
-/// `Surface`), so a read landing redraws those and not the app
-/// (`docs/regions.md`).
+/// the regions that show usage (`Region::Rail`, `CompactRail`, `Bot`), so a
+/// read landing redraws those and not the app (`docs/regions.md`). Settings ›
+/// Providers observes it while open.
 #[derive(Default)]
 pub struct UsageSnapshots {
     snapshots: HashMap<UsageKey, ProviderRateLimits>,

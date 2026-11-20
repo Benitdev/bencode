@@ -468,7 +468,11 @@ impl BenCodeApp {
     /// the workspace or the file pane or a terminal has the keyboard
     /// (MonoCode `focusedBusyAgentSessionId` and its `surfaceOpen` guard).
     fn keyboard_session(&self, window: &Window) -> Option<String> {
-        if self.surface.is_some() || self.file_pane_has_keys() || self.terminal_focused(window) {
+        if self.settings_open
+            || self.surface.is_some()
+            || self.file_pane_has_keys()
+            || self.terminal_focused(window)
+        {
             return None;
         }
         self.selected_session_id.clone()
@@ -508,7 +512,7 @@ impl BenCodeApp {
 
     /// MonoCode `onNavigateProjectList`: the rail's next or previous project.
     fn step_project(&mut self, delta: isize, cx: &mut Context<Self>) {
-        if self.surface.is_some() {
+        if self.settings_open || self.surface.is_some() {
             return;
         }
         // MonoCode: in the order the rail draws them.
@@ -547,6 +551,9 @@ impl BenCodeApp {
     }
 
     fn close_active(&mut self, cx: &mut Context<Self>) {
+        if self.close_settings(cx) {
+            return;
+        }
         // An open view closes first (notes are saved on the way out).
         if self.surface.is_some() {
             self.close_surface(cx);
@@ -761,6 +768,8 @@ impl BenCodeApp {
         .on_action(cx.listener(|this, _: &CloseView, window, cx| {
             if this.search.open {
                 this.close_search_modal(cx);
+            } else if this.close_settings_layer(cx) {
+                return;
             } else if this.surface.is_some() {
                 this.close_surface(cx);
             } else if !this.close_lightbox(cx)

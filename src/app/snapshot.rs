@@ -389,7 +389,9 @@ const SCENES: &[(&str, SetUp)] = &[
         app.open_quick_open_from(window, true, cx);
     }),
     ("settings", |app, _, cx| {
-        app.show_surface(Surface::Settings, cx)
+        app.close_quick_open(cx);
+        app.close_surface(cx);
+        app.open_settings(cx);
     }),
     // The first bot's view: its figure and status in the title bar, its
     // digest of the staged threads over the composer.

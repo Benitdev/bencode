@@ -23,7 +23,7 @@ use gpui::{
 
 use super::InboxState;
 use super::blocks::cut;
-use crate::app::{BenCodeApp, Surface};
+use crate::app::BenCodeApp;
 use crate::github::WorkItem;
 use crate::harness::catalog;
 use crate::ui::app_callback::app_callback;
@@ -641,8 +641,7 @@ impl BenCodeApp {
             MenuItem::new(format!("Model: {model}…"))
                 .icon(IconName::Settings)
                 .on_click(app_callback(cx, |this, cx| {
-                    this.select_settings_tab(SettingsTab::Integrations, cx);
-                    this.show_surface(Surface::Settings, cx);
+                    this.open_settings_tab(SettingsTab::Integrations, cx);
                 })),
         );
         let label = match shown {

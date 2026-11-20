@@ -789,14 +789,24 @@ impl BenCodeApp {
             cx,
         )
         .on_click(cx.listener(move |this, _, _, cx| this.toggle_models_only(anchor, cx)));
+        let right = anchor == ModelsAnchor::Translate;
+        let popover = self.render_models_only(anchor, right, cx).map(|flyout| {
+            match anchor {
+                // Inside the Settings dialog's layer: raised in it, never
+                // deferred (GPUI draws no deferred element inside another).
+                ModelsAnchor::Translate => {
+                    bencode_ui::primitives::raise("translate-models", flyout)
+                        .with_priority(2)
+                        .into_any_element()
+                }
+                _ => super::menus::over_composer(flyout).into_any_element(),
+            }
+        });
         div()
             .relative()
             .min_w_0()
             .child(super::menus::popover_anchor(chip, cx))
-            .children(
-                self.render_models_only(anchor, false, cx)
-                    .map(super::menus::over_composer),
-            )
+            .children(popover)
             .into_any_element()
     }
 

@@ -418,10 +418,10 @@ pub struct BenCodeApp {
     /// through `terminals(cx)`, changed through `terminals_mut`.
     pub terminals_state: Entity<crate::ui::terminal_pane::TerminalDocks>,
     pub settings_tab: SettingsTab,
+    /// Whether the Settings dialog is open over the window.
+    pub settings_open: bool,
     /// The full-height view replacing the workspace, if any.
     pub surface: Option<Surface>,
-    /// What Settings returns to when it closes.
-    pub settings_return: Option<Surface>,
     /// The Notes surface: its notes, selection, fields and dialogs.
     pub notes: notes::NotesState,
     /// The Automations surface: definitions, run history, fields and dialogs.
@@ -727,12 +727,7 @@ impl BenCodeApp {
         let mut regions = crate::ui::region::Regions::default();
         regions.follow(
             &usage_data,
-            &[
-                Region::Rail,
-                Region::CompactRail,
-                Region::Bot,
-                Region::Surface,
-            ],
+            &[Region::Rail, Region::CompactRail, Region::Bot],
         );
         regions.follow(
             &inbox_state,
@@ -994,10 +989,19 @@ impl BenCodeApp {
                 &account_editor_input,
                 |this: &mut Self, _, event: &InputEvent, cx| match event {
                     InputEvent::Submit => this.submit_account_editor(cx),
-                    InputEvent::Changed => this.redraw_regions(&[Region::Surface], cx),
+                    InputEvent::Changed => cx.notify(),
                     _ => {}
                 },
             ),
+            // Settings › Providers reads each account's usage inside the
+            // dialog (drawn by the shell, not a region).
+            cx.observe(&usage_data, |this: &mut Self, _, cx| {
+                if this.settings_open
+                    && this.settings_tab == crate::ui::settings_modal::SettingsTab::Providers
+                {
+                    cx.notify();
+                }
+            }),
             // Enter sends the pasted sign-in code; its Submit button follows
             // the text in the popover or in Settings.
             cx.subscribe(
@@ -1528,8 +1532,8 @@ impl BenCodeApp {
             inbox_text_focus: cx.focus_handle(),
             terminals_state,
             settings_tab: SettingsTab::Providers,
+            settings_open: false,
             surface: None,
-            settings_return: None,
             notes,
             automations,
             project_search,
@@ -1653,10 +1657,6 @@ impl BenCodeApp {
         app.reopen_saved_bot(cx);
         trace("launch jobs started");
         app
-    }
-
-    pub fn open_settings(&mut self, cx: &mut Context<Self>) {
-        self.show_surface(Surface::Settings, cx);
     }
 
     pub fn selected_session(&self) -> Option<&SessionRow> {
@@ -1823,8 +1823,8 @@ impl Render for BenCodeApp {
         let glass = self.glass(cx);
         let colors = &cx.theme().colors;
         let (bg, fg) = (colors.bg, colors.fg);
-        // Inbox, Notes, Automations and Settings replace everything right
-        // of the navigator (MonoCode in-shell views).
+        // Inbox, Notes and Automations replace everything right of the
+        // navigator (MonoCode in-shell views).
         let surface_open = self.surface.is_some();
         // A Bot's conversation does too (MonoCode `monoCovers`).
         let bot_open = self.bot_covers() && self.bot_in_view().is_some();
@@ -1833,11 +1833,14 @@ impl Render for BenCodeApp {
         let title_bar_above = self.compact_title_bar();
         // A browser page is a native view above everything GPUI draws: it
         // hides while one of these dialogs or a menu is open
-        // (`app/browser.rs`).
+        // (`app/browser.rs`). Settings comes first so confirmations and
+        // sub-dialogs opened from it draw above it.
         let dialogs: Vec<AnyElement> = [
+            any_elements(self.render_settings_dialog(cx)),
             any_elements(self.render_link_dialog(cx)),
             any_elements(self.render_browser_sign_in(cx)),
             any_elements(self.render_session_dialog(cx)),
+            any_elements(self.render_remove_project_dialog(cx)),
             any_elements(self.render_worktree_deletion(cx)),
             any_elements(self.render_account_removal(cx)),
             any_elements(self.render_claude_reset_confirm(cx)),

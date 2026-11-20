@@ -37,8 +37,7 @@ impl BenCodeApp {
         let Some(machine) = machine else {
             let add = app_callback(cx, |this, cx| {
                 this.close_remote_folder_dialog(cx);
-                this.open_settings(cx);
-                this.select_settings_tab(SettingsTab::Connections, cx);
+                this.open_settings_tab(SettingsTab::Connections, cx);
             });
             return Some(
                 built

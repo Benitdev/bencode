@@ -17,7 +17,7 @@ use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div};
 
 use super::{DetailView, loading_icon, short_key};
 use crate::app::file_pane::PaneTab;
-use crate::app::{BenCodeApp, Surface};
+use crate::app::BenCodeApp;
 use crate::db::{LinkedWorkItem, WorkItemKind};
 use crate::github::{self, Kind};
 use crate::ui::tokens::{Ink, Text, Tone as _};
@@ -39,7 +39,7 @@ impl BenCodeApp {
         if self.leave_bot_view(cx) {
             self.sync_selection(cx);
         }
-        if self.surface.is_some_and(|s| s != Surface::Settings) {
+        if self.surface.is_some() {
             self.close_surface(cx);
         }
         // A fetch that failed is tried again.

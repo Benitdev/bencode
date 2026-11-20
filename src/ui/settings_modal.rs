@@ -1,24 +1,34 @@
-//! Settings: general defaults, provider CLIs, MCP, skills, integrations,
-//! appearance, shortcuts, about.
+//! Settings dialog: general defaults, provider CLIs, MCP, skills,
+//! integrations, appearance, shortcuts, about.
+//!
+//! Drawn in a bencode-ui layer (`Backdrop`), with the grouped section nav on
+//! the left and the active section scrolling on the right (matching
+//! `ui/bot_settings.rs`). What opens inside it is raised in that layer, never
+//! deferred.
 
 use bencode_ui::buttons::{Button, ButtonVariant, IconButton};
 use bencode_ui::data_display::{Badge, Tone};
 use bencode_ui::forms::Switch;
-use bencode_ui::primitives::{Icon, IconName};
-use bencode_ui::settings::SettingsLayout;
+use bencode_ui::primitives::{Backdrop, Icon, IconName};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    AnyElement, Context, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, div,
+    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, div, prelude::*, relative,
 };
 
 use crate::app::BenCodeApp;
 use crate::harness::HarnessInfo;
 use crate::ui::HarnessIcon;
+use crate::ui::app_callback::app_callback;
 use crate::ui::scale::px;
+use crate::ui::settings_appearance::ColorScope;
 use crate::ui::settings_parts::{SettingsGroup, SettingsPage, SettingsRow, icon_tile};
 use crate::ui::sidebar_popovers::pretty_path;
-use crate::ui::tokens::{Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+
+const DIALOG_WIDTH: f32 = 980.0;
+const DIALOG_HEIGHT: f32 = 720.0;
+const NAV_WIDTH: f32 = 208.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SettingsTab {
@@ -43,70 +53,25 @@ pub enum SettingsTab {
     Bots,
 }
 
-const SECTIONS: [(SettingsTab, &str, &str, IconName); 12] = [
-    (
-        SettingsTab::General,
-        "general",
-        "General",
-        IconName::Settings,
-    ),
-    (
-        SettingsTab::Connections,
-        "connections",
-        "Connections",
-        IconName::Globe,
-    ),
-    (
-        SettingsTab::Providers,
-        "providers",
-        "Providers",
-        IconName::Key,
-    ),
-    (
-        SettingsTab::Mcp,
-        "mcp",
-        "MCP servers",
-        IconName::SlidersHorizontal,
-    ),
-    (SettingsTab::Skills, "skills", "Skills", IconName::Sparkles),
-    (SettingsTab::Bots, "bots", "Bots", IconName::Bot),
-    (
-        SettingsTab::Appearance,
-        "appearance",
-        "Appearance",
-        IconName::Palette,
-    ),
-    (
-        SettingsTab::Shortcuts,
-        "shortcuts",
-        "Shortcuts",
-        IconName::Keyboard,
-    ),
-    (SettingsTab::About, "about", "About", IconName::Info),
-    (
-        SettingsTab::Archive,
-        "archive",
-        "Archive",
-        IconName::Archive,
-    ),
+const SECTIONS: [(SettingsTab, &str, IconName); 12] = [
+    (SettingsTab::General, "General", IconName::Settings),
+    (SettingsTab::Connections, "Connections", IconName::Globe),
+    (SettingsTab::Providers, "Providers", IconName::Key),
+    (SettingsTab::Mcp, "MCP servers", IconName::SlidersHorizontal),
+    (SettingsTab::Skills, "Skills", IconName::Sparkles),
+    (SettingsTab::Bots, "Bots", IconName::Bot),
+    (SettingsTab::Appearance, "Appearance", IconName::Palette),
+    (SettingsTab::Shortcuts, "Shortcuts", IconName::Keyboard),
+    (SettingsTab::About, "About", IconName::Info),
+    (SettingsTab::Archive, "Archive", IconName::Archive),
     // MonoCode's nav uses `FolderTree`, which bencode-ui's `IconName` lacks.
-    (
-        SettingsTab::Worktrees,
-        "worktrees",
-        "Worktrees",
-        IconName::GitBranch,
-    ),
-    (
-        SettingsTab::Integrations,
-        "integrations",
-        "Integrations",
-        IconName::Inbox,
-    ),
+    (SettingsTab::Worktrees, "Worktrees", IconName::GitBranch),
+    (SettingsTab::Integrations, "Integrations", IconName::Inbox),
 ];
 
 /// MonoCode `SETTINGS_GROUPS` with BenCode's sections in them (About is
-/// BenCode's own and sits with App), for the rail's settings nav.
-pub(crate) const SETTINGS_GROUPS: [(&str, &[SettingsTab]); 3] = [
+/// BenCode's own and sits with App), for the dialog's left nav.
+const SETTINGS_GROUPS: [(&str, &[SettingsTab]); 3] = [
     (
         "App",
         &[
@@ -137,19 +102,12 @@ pub(crate) const SETTINGS_GROUPS: [(&str, &[SettingsTab]); 3] = [
 ];
 
 impl SettingsTab {
-    fn key(self) -> &'static str {
-        SECTIONS
-            .iter()
-            .find(|(tab, ..)| *tab == self)
-            .map_or("general", |(_, key, ..)| key)
-    }
-
     /// The nav's label and icon.
     pub(crate) fn label_icon(self) -> (&'static str, IconName) {
         SECTIONS
             .iter()
             .find(|(tab, ..)| *tab == self)
-            .map_or(("General", IconName::Settings), |(_, _, name, icon)| {
+            .map_or(("General", IconName::Settings), |(_, name, icon)| {
                 (*name, *icon)
             })
     }
@@ -187,61 +145,270 @@ impl SettingsTab {
     pub(crate) fn page(self) -> SettingsPage {
         SettingsPage::new(self.label_icon().0).description(self.description())
     }
-
-    fn from_key(key: &str) -> Option<Self> {
-        SECTIONS
-            .iter()
-            .find(|(_, k, ..)| *k == key)
-            .map(|(tab, ..)| *tab)
-    }
 }
 
 impl BenCodeApp {
-    pub(crate) fn render_settings_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        // MonoCode: the project rail holds the sections while settings
-        // are open, so the page stands alone.
-        if self.is_rail_open {
-            // MonoCode `mx-auto w-full max-w-5xl px-8 py-8 pb-16`, scrolling.
-            let page = div()
-                .id("settings-page")
-                .size_full()
-                .overflow_y_scroll()
-                .child(
-                    div()
-                        .mx_auto()
-                        .w_full()
-                        .max_w(px(1024.0))
-                        .px_8()
-                        .pt_8()
-                        .pb_16()
-                        .child(self.render_settings_page(cx)),
-                );
-            return crate::ui::scrollbar::Scrolled::new("settings-page-scrollbar", page)
-                .into_any_element();
+    /// Opens the Settings dialog on its current section.
+    pub fn open_settings(&mut self, cx: &mut Context<Self>) {
+        let opening = !self.settings_open;
+        self.settings_open = true;
+        if opening {
+            self.load_settings_tab(self.settings_tab, cx);
         }
-        let layout = SettingsLayout::new(
-            "settings-layout",
-            SECTIONS
-                .iter()
-                .map(|(_, key, name, icon)| (*key, *name, *icon)),
-            self.settings_tab.key(),
-            cx.listener(
-                |this, key: &SharedString, _, cx| match SettingsTab::from_key(key) {
-                    Some(tab) => this.select_settings_tab(tab, cx),
-                    None => log::warn!("unknown settings section {key}"),
-                },
-            ),
-        )
-        // The page's `max-w-5xl`, as with the rail open.
-        .page(div().max_w(px(1024.0)).child(self.render_settings_page(cx)));
-        // bencode-ui's layout has no insets and does not scroll: the page's
-        // `px-8 py-8 pb-16`, with the sections nearer the window's edge.
+        cx.notify();
+    }
+
+    /// Opens the Settings dialog directly on `tab`.
+    pub(crate) fn open_settings_tab(&mut self, tab: SettingsTab, cx: &mut Context<Self>) {
+        self.settings_open = true;
+        self.select_settings_tab(tab, cx);
+    }
+
+    /// Closes the Settings dialog and any popover it opened. Returns whether
+    /// it was open.
+    pub fn close_settings(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.settings_open {
+            return false;
+        }
+        self.settings_open = false;
+        if self.accent_picker == Some(ColorScope::App) {
+            self.accent_picker = None;
+        }
+        if self.models_for_translation() {
+            self.close_model_picker(cx);
+        }
+        cx.notify();
+        true
+    }
+
+    /// Escape in the dialog: an open popover inside Settings closes first,
+    /// then the dialog itself.
+    pub fn close_settings_layer(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.settings_open {
+            return false;
+        }
+        if self.accent_picker == Some(ColorScope::App) {
+            self.accent_picker = None;
+            cx.notify();
+            return true;
+        }
+        if self.models_for_translation() {
+            self.close_model_picker(cx);
+            return true;
+        }
+        self.close_settings(cx)
+    }
+
+    pub(crate) fn select_settings_tab(&mut self, tab: SettingsTab, cx: &mut Context<Self>) {
+        self.settings_tab = tab;
+        if self.accent_picker == Some(ColorScope::App) {
+            self.accent_picker = None;
+        }
+        if self.models_for_translation() {
+            self.close_model_picker(cx);
+        }
+        self.load_settings_tab(tab, cx);
+        cx.notify();
+    }
+
+    fn load_settings_tab(&mut self, tab: SettingsTab, cx: &mut Context<Self>) {
+        match tab {
+            // MonoCode's page starts on the open project, freshly listed.
+            SettingsTab::Worktrees => self.open_worktrees_page(cx),
+            SettingsTab::Providers => self.load_accounts_page(false, cx),
+            SettingsTab::Integrations => self.open_integrations_page(cx),
+            // MonoCode checks each machine while the page shows.
+            SettingsTab::Connections => {
+                self.remote.checked = false;
+                self.check_machines(cx);
+            }
+            _ => {}
+        }
+    }
+
+    /// The Settings dialog, while `settings_open` is set. Full-window: in
+    /// `BenCodeApp::render`'s `dialogs` list ahead of confirmations it can
+    /// open.
+    pub(crate) fn render_settings_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        if !self.settings_open {
+            return None;
+        }
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let close = app_callback(cx, |this, cx| {
+            this.close_settings(cx);
+        });
+        let close_button = IconButton::new("settings-close", IconName::X)
+            .size(ControlSize::Sm)
+            .variant(ButtonVariant::Ghost)
+            .tooltip("Close (Esc)")
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.close_settings(cx);
+            }));
         let page = div()
             .id("settings-page")
             .size_full()
             .overflow_y_scroll()
-            .child(div().pl_3().pr_8().pt_8().pb_16().child(layout));
-        crate::ui::scrollbar::Scrolled::new("settings-page-scrollbar", page).into_any_element()
+            .child(
+                div()
+                    .w_full()
+                    .px_6()
+                    .pt_5()
+                    .pb_10()
+                    .child(self.render_settings_page(cx)),
+            );
+        let card = div()
+            .id("settings-dialog")
+            .relative()
+            .flex()
+            .w(px(DIALOG_WIDTH))
+            .max_w(relative(0.94))
+            .h(px(DIALOG_HEIGHT))
+            .max_h(relative(0.88))
+            .overflow_hidden()
+            .rounded(px(16.0))
+            .border_1()
+            .border_color(fg.fill(Fill::Line))
+            .shadow_2xl()
+            .text_color(fg)
+            .child(crate::ui::frost::dialog_frost(15.0, colors.bg, cx))
+            .child(self.render_settings_nav(cx))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .child(self.render_settings_header(cx))
+                    .child(
+                        div().flex_1().min_h_0().child(
+                            crate::ui::scrollbar::Scrolled::new("settings-page-scrollbar", page),
+                        ),
+                    ),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(6.0))
+                    .right(px(8.0))
+                    .child(close_button),
+            );
+        Some(
+            Backdrop::new("settings-scrim")
+                .on_dismiss(close)
+                .child(card)
+                .into_any_element(),
+        )
+    }
+
+    fn render_settings_nav(&self, cx: &Context<Self>) -> impl IntoElement {
+        let fg = cx.theme().colors.fg;
+        let current = self.settings_tab;
+        let groups = SETTINGS_GROUPS.iter().map(|(label, tabs)| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(1.0))
+                .child(
+                    div()
+                        .px(px(10.0))
+                        .pb_1()
+                        .text_size(Text::Sm.px())
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(fg.ink(Ink::Faint))
+                        .child(*label),
+                )
+                .children(tabs.iter().map(|&tab| {
+                    let (name, icon) = tab.label_icon();
+                    nav_row(
+                        SharedString::from(format!("settings-nav-{name}")),
+                        name,
+                        icon,
+                        tab == current,
+                        cx,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| this.select_settings_tab(tab, cx)))
+                }))
+        });
+        div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .w(px(NAV_WIDTH))
+            .h_full()
+            .border_r_1()
+            .border_color(fg.fill(Fill::Line))
+            .child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap_2()
+                    .h(px(40.0))
+                    .px_4()
+                    .border_b_1()
+                    .border_color(fg.fill(Fill::Line))
+                    .child(
+                        Icon::new(IconName::Settings)
+                            .size(IconSize::Sm)
+                            .color(fg.ink(Ink::Muted)),
+                    )
+                    .child(
+                        div()
+                            .text_size(Text::Md.px())
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(fg)
+                            .child("Settings"),
+                    ),
+            )
+            .child(
+                div().flex_1().min_h_0().child(
+                    crate::ui::scrollbar::Scrolled::new(
+                        "settings-nav-scrollbar",
+                        div()
+                            .id("settings-nav")
+                            .flex()
+                            .flex_col()
+                            .gap_4()
+                            .size_full()
+                            .overflow_y_scroll()
+                            .pl_2()
+                            .py_3()
+                            .children(groups),
+                    )
+                    .gutter(px(8.0)),
+                ),
+            )
+    }
+
+    fn render_settings_header(&self, cx: &Context<Self>) -> impl IntoElement {
+        let fg = cx.theme().colors.fg;
+        let (title, icon) = self.settings_tab.label_icon();
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap_2()
+            .h(px(40.0))
+            .pl_6()
+            .pr(px(12.0 + 32.0))
+            .border_b_1()
+            .border_color(fg.fill(Fill::Line))
+            .child(Icon::new(icon).size(IconSize::Sm).color(fg.ink(Ink::Muted)))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(Text::Md.px())
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(fg)
+                    .child(title),
+            )
+            .when(self.settings_tab == SettingsTab::Appearance, |el| {
+                el.child(self.render_restore_appearance(cx))
+            })
     }
 
     fn render_settings_page(&self, cx: &Context<Self>) -> AnyElement {
@@ -827,16 +994,58 @@ impl BenCodeApp {
     }
 }
 
+fn nav_row(
+    id: impl Into<SharedString>,
+    label: &'static str,
+    icon: IconName,
+    active: bool,
+    cx: &Context<BenCodeApp>,
+) -> gpui::Stateful<gpui::Div> {
+    let fg = cx.theme().colors.fg;
+    let id: SharedString = id.into();
+    let ink = if active { fg } else { fg.ink(Ink::Body) };
+    div()
+        .id(id.clone())
+        .group(id.clone())
+        .flex()
+        .w_full()
+        .items_center()
+        .gap(px(10.0))
+        .rounded(px(8.0))
+        .px(px(10.0))
+        .py_1p5()
+        .text_size(Text::Md.px())
+        .text_color(ink)
+        .cursor_pointer()
+        .map(|el| {
+            if active {
+                el.bg(fg.fill(Fill::Selected))
+            } else {
+                el.hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
+            }
+        })
+        .child(
+            Icon::new(icon)
+                .size(IconSize::Sm)
+                .color(ink.opacity(if active { 0.9 } else { 0.7 }))
+                .group_hover_color(id, fg),
+        )
+        .child(div().min_w_0().flex_1().truncate().child(label))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn section_keys_round_trip() {
-        for (tab, key, ..) in SECTIONS {
-            assert_eq!(tab.key(), key);
-            assert_eq!(SettingsTab::from_key(key), Some(tab));
+    fn every_section_belongs_to_a_group() {
+        let grouped: Vec<SettingsTab> = SETTINGS_GROUPS
+            .iter()
+            .flat_map(|(_, tabs)| tabs.iter().copied())
+            .collect();
+        for (tab, ..) in SECTIONS {
+            assert!(grouped.contains(&tab), "{tab:?} missing from SETTINGS_GROUPS");
         }
-        assert_eq!(SettingsTab::from_key("nope"), None);
+        assert_eq!(grouped.len(), SECTIONS.len());
     }
 }

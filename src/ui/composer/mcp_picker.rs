@@ -215,8 +215,7 @@ impl BenCodeApp {
 
     fn manage_mcp_servers(&mut self, cx: &mut Context<Self>) {
         self.close_mcp_picker(false, cx);
-        self.settings_tab = SettingsTab::Mcp;
-        self.open_settings(cx);
+        self.open_settings_tab(SettingsTab::Mcp, cx);
     }
 
     pub(super) fn render_mcp_picker(&self, cx: &Context<Self>) -> Option<AnyElement> {

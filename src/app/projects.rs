@@ -155,10 +155,8 @@ impl BenCodeApp {
 
     /// Opening a project leaves the full-screen views, as in MonoCode.
     fn close_overlay_views(&mut self) {
-        if self.surface.is_some() {
-            self.surface = None;
-            self.settings_return = None;
-        }
+        self.surface = None;
+        self.settings_open = false;
     }
 
     fn return_to_project(&mut self, cwd: &str, cx: &gpui::App) {

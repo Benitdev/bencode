@@ -128,7 +128,7 @@ impl BenCodeApp {
                 if let Some(provider) = app.usage.popover {
                     app.load_account_details(provider, false, cx);
                 }
-                if app.surface_open(crate::app::surfaces::Surface::Settings)
+                if app.settings_open
                     && app.settings_tab == crate::ui::settings_modal::SettingsTab::Providers
                 {
                     app.load_accounts_page(false, cx);
@@ -731,16 +731,9 @@ impl BenCodeApp {
 
     /// The popover's Manage accounts…: Settings › Providers.
     pub fn manage_accounts(&mut self, cx: &mut Context<Self>) {
-        use crate::app::surfaces::Surface;
         use crate::ui::settings_modal::SettingsTab;
         self.close_usage_popover(cx);
-        if self.surface_open(Surface::Settings) {
-            self.select_settings_tab(SettingsTab::Providers, cx);
-        } else {
-            // Opening Settings reads the page's accounts.
-            self.settings_tab = SettingsTab::Providers;
-            self.open_settings(cx);
-        }
+        self.open_settings_tab(SettingsTab::Providers, cx);
     }
 
     /// The sign-in panel's button: signs the chip's account in again,

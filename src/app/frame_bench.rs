@@ -429,7 +429,13 @@ fn openings(long: Option<String>, other: Option<String>) -> Vec<Opening> {
         surface("open Inbox", Surface::Inbox),
         surface("open Notes", Surface::Notes),
         surface("open Automations", Surface::Automations),
-        surface("open Settings", Surface::Settings),
+        Opening {
+            name: "open Settings",
+            open: Box::new(|app, cx| app.open_settings(cx)),
+            close: Box::new(|app, cx| {
+                app.close_settings(cx);
+            }),
+        },
     ]
 }
 

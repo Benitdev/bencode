@@ -525,7 +525,7 @@ impl BenCodeApp {
             self.save_note_if_dirty(cx);
         }
         self.surface = None;
-        self.settings_return = None;
+        self.close_settings(cx);
         let another = self.bots.view.as_deref() != Some(id);
         if another {
             // Another Bot's view closes the last one's dialog.

@@ -93,7 +93,7 @@ bencode/
 | `go_to_definition.rs` | Go to Definition (⌘-click, F12): the name at the caret searched in the project as a declaration (`bencode_core::definitions`), one clear candidate opened, several handed to the picker (`ui/definition_picker.rs`) |
 | `blame.rs` | Line blame and File History: each open file's `git blame` per saved copy, the caret line's note, commits' messages and changes for the blame card, the File History tabs' commits |
 | `panes.rs` | Workspace tabs and split panes: focus, split, close, docking |
-| `surfaces.rs` | `Surface`: Search, Inbox, Notes, Automations, Settings (full-height views) |
+| `surfaces.rs` | `Surface`: Inbox, Notes, Automations (full-height views) |
 | `workspace_sync.rs` | `WorkspaceCache`: the git and filesystem snapshot views read; the 2s git poll |
 | `preferences.rs` | Applying and saving `settings.json` |
 | `integrations.rs` | Cached discovery of external editors and MCP servers |
@@ -169,7 +169,7 @@ bencode/
 | `selection_area.rs` | What the transcript, a review and an Inbox item share about selecting text with `bencode_ui::selection`: the keys while they hold the selection, a press beside the text, ⌘C |
 | `terminal_pane/` | Terminal dock: tabs, splits (`split.rs`), menus, running jobs, host sessions (`sessions.rs`), terminals moved to a tab beside the chat (`moved.rs`, `PaneTab::Terminal`) |
 | `status/` | The window's status items: the provider usage chip with its details popover and account pages (at the navigator's foot, or on the icon rail), the browser and terminal toggles and the running jobs' chip (in the title bar) |
-| `inbox_view*`, `notes/`, `automations/`, `settings_modal.rs` | The four surfaces; `search_view/` is the ⌘K dialog |
+| `inbox_view*`, `notes/`, `automations/` | The three surfaces; `search_view/` is the ⌘K dialog and `settings_modal.rs` is the ⌘, Settings dialog |
 | `relative_time.rs` | Relative timestamps ("5 minutes ago") |
 | `settings_connections.rs`, `remote_folder.rs` | Settings › Connections (machines, the SSH form, a setup's progress and SSH's questions); the Open folder on a machine dialog |
 | `settings_parts.rs` | What Settings pages, Bot settings and the Automations / Notes surfaces share: `SettingsPage` (title and line), `SettingsGroup` (a titled card), `SettingsRow`, `panel`, `rule`, `section_title` |

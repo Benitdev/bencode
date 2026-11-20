@@ -85,7 +85,7 @@ impl BenCodeApp {
         use bencode_ui::forms::InputEvent;
         match event {
             InputEvent::Submit => self.connect_backlog(cx),
-            InputEvent::Changed => self.redraw_regions(&[crate::ui::region::Region::Surface], cx),
+            InputEvent::Changed => cx.notify(),
             _ => {}
         }
     }

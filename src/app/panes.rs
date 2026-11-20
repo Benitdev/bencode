@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use gpui::Context;
 
 use super::tab_scope::{TabClosePlan, deck_tabs, is_blank_session, plan_tab_close};
-use super::{BenCodeApp, NEW_SESSION_TITLE, Surface, now_ms};
+use super::{BenCodeApp, NEW_SESSION_TITLE, now_ms};
 use crate::db::SessionRow;
 use crate::harness::{HarnessKind, catalog, session_purge};
 use crate::ui::drag_drop::PaneDropTarget;
@@ -131,6 +131,9 @@ impl BenCodeApp {
 
     /// MonoCode's Back (⌘[): the previously visited tab.
     pub fn go_back(&mut self, cx: &mut Context<Self>) {
+        if self.close_settings(cx) {
+            return;
+        }
         // MonoCode `onRailBack`: Back leaves an open view first.
         if self.surface.is_some() {
             self.close_surface(cx);
@@ -146,9 +149,9 @@ impl BenCodeApp {
 
     /// MonoCode's Forward (⌘]).
     pub fn go_forward(&mut self, cx: &mut Context<Self>) {
-        // MonoCode `onRailForward` closes every view; Settings closes onto
-        // the view it was opened from, hence the loop.
-        while self.surface.is_some() {
+        // MonoCode `onRailForward` closes every view.
+        self.close_settings(cx);
+        if self.surface.is_some() {
             self.close_surface(cx);
         }
         if let Some(id) = self.tab_history.forward() {
@@ -558,13 +561,9 @@ impl BenCodeApp {
     /// open, else shows it in place of an empty pane of the active tab, else
     /// in a new tab. MonoCode `onSelectHistorySession`. A thread picked
     /// while Inbox, Notes or Automations is in view replaces it, so the
-    /// click shows what it opened; Settings stays, its sections holding
-    /// the navigator.
+    /// click shows what it opened.
     pub fn open_session(&mut self, id: String, cx: &mut Context<Self>) {
-        if self
-            .surface
-            .is_some_and(|surface| surface != Surface::Settings)
-        {
+        if self.surface.is_some() {
             self.close_surface(cx);
         }
         // A Bot's conversation opens as the Bot, never as a tab.

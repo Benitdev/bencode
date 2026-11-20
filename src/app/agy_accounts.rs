@@ -280,8 +280,9 @@ impl BenCodeApp {
 
     /// Shows the workspace with a new terminal running `agy`.
     fn open_agy_sign_in_terminal(&mut self, cx: &mut Context<Self>) {
-        // A view covers the dock.
-        while self.surface.is_some() {
+        // Settings and views cover the dock.
+        self.close_settings(cx);
+        if self.surface.is_some() {
             self.close_surface(cx);
         }
         let program = self
