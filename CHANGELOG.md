@@ -4,6 +4,31 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.1.59] - 2026-11-21
+
+- Expanded the built-in Backlog MCP server (`bencode --backlog-mcp`) to 33
+  tools across all 7 Backlog toolsets (`space`, `project`, `issue`, `wiki`,
+  `document`, `git`, `notifications`), with optional `--toolsets` filtering:
+  rich issue search and counting (statuses, assignees, creators, types,
+  categories, versions, milestones, parent/child, date ranges, custom fields),
+  full issue editing (`summary`, `description`, `issueType`, categories,
+  versions, parent issue, comments, custom fields), issue deletion, comment
+  editing, attachment downloads with inline raster images, related issues,
+  space info and activities, full project metadata, categories and milestones,
+  wikis, document trees/search/paginated reading with comments, Git
+  repositories and pull requests, notifications, and watching lists.
+- Expanded the in-app Browser MCP server (`bencode --browser-mcp`) to 21 tools:
+  multi-tab management (`browser_tabs`), `fetch`/`XHR` and static resource
+  capture (`browser_network`), DOM and computed CSS inspection
+  (`browser_inspect`), `browser_hover`, `browser_select`, batch
+  `browser_fill_form`, `browser_scroll`, `browser_drag`, `browser_storage`,
+  `browser_zoom`, and `browser_dialog`, plus upgraded `browser_snapshot`
+  (label resolution, open Shadow DOM, richer ARIA/form states, viewport/scroll
+  metadata, subtree scoping), element-cropped `browser_screenshot`,
+  double/right/modifier clicks, key modifier combos, filtered
+  `browser_console`, and richer `browser_wait` (`textGone`, `selector`,
+  `selectorGone`, `url`, `networkIdle`).
+
 ## [0.1.58] - 2026-11-20
 
 - Settings now opens as a floating frosted-glass dialog over the window
