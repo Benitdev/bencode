@@ -1,6 +1,6 @@
 //! An MCP server over stdio (newline-delimited JSON-RPC), as BenCode
 //! offers agents its own: `bencode --browser-mcp` (`browser/mcp.rs`) and
-//! `bencode --backlog-mcp` (`backlog/mcp.rs`). A server names its tools
+//! `bencode --backlog-mcp` (`backlog/mcp/`). A server names its tools
 //! and answers their calls; this answers the protocol around them. Its
 //! stdout is the protocol, so nothing else may write there.
 
@@ -14,8 +14,10 @@ const PROTOCOL_VERSION: &str = "2025-06-18";
 pub struct Reply {
     pub ok: bool,
     pub text: String,
-    /// A PNG, base64.
+    /// An image, base64.
     pub image: Option<String>,
+    /// MIME type of `image`; defaults to `image/png`.
+    pub image_mime: Option<&'static str>,
 }
 
 impl Reply {
@@ -24,6 +26,20 @@ impl Reply {
             ok: true,
             text: text.into(),
             image: None,
+            image_mime: None,
+        }
+    }
+
+    pub fn text_with_image(
+        text: impl Into<String>,
+        image: String,
+        mime: &'static str,
+    ) -> Self {
+        Self {
+            ok: true,
+            text: text.into(),
+            image: Some(image),
+            image_mime: Some(mime),
         }
     }
 
@@ -32,6 +48,7 @@ impl Reply {
             ok: false,
             text: text.into(),
             image: None,
+            image_mime: None,
         }
     }
 }
@@ -119,7 +136,8 @@ fn call_tool(server: &impl Server, params: &Value) -> Value {
     let reply = server.call(tool, &args);
     let mut content = vec![json!({ "type": "text", "text": reply.text })];
     if let Some(image) = reply.image {
-        content.push(json!({ "type": "image", "data": image, "mimeType": "image/png" }));
+        let mime = reply.image_mime.unwrap_or("image/png");
+        content.push(json!({ "type": "image", "data": image, "mimeType": mime }));
     }
     json!({ "content": content, "isError": !reply.ok })
 }
@@ -183,5 +201,34 @@ mod tests {
         let reply = ask(r#"{"jsonrpc":"2.0","id":4,"method":"resources/list"}"#).unwrap();
         assert_eq!(reply["error"]["code"], -32601);
         assert_eq!(ask("{").unwrap()["error"]["code"], -32700);
+    }
+
+    #[test]
+    fn image_replies_preserve_their_mime_type() {
+        struct Img;
+        impl Server for Img {
+            fn name(&self) -> &'static str {
+                "img"
+            }
+            fn instructions(&self) -> &'static str {
+                ""
+            }
+            fn tools(&self) -> Value {
+                json!([])
+            }
+            fn call(&self, _: &str, _: &Value) -> Reply {
+                Reply::text_with_image("saved", "AAAA".into(), "image/webp")
+            }
+        }
+        let reply = handle(
+            &Img,
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"shot"}}"#,
+        )
+        .unwrap();
+        let content = reply["result"]["content"].as_array().unwrap();
+        assert_eq!(content.len(), 2);
+        assert_eq!(content[1]["type"], "image");
+        assert_eq!(content[1]["mimeType"], "image/webp");
+        assert_eq!(content[1]["data"], "AAAA");
     }
 }

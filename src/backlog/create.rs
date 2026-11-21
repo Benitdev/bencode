@@ -21,18 +21,18 @@ pub struct NewIssue {
 
 impl NewIssue {
     /// The form `POST /issues` takes; a field set to nothing is left out.
-    fn form(&self) -> Result<Vec<(&'static str, String)>, String> {
+    fn form(&self) -> Result<Vec<(String, String)>, String> {
         let summary = self.summary.trim();
         if summary.is_empty() {
             return Err("A new issue needs a subject".into());
         }
         let mut form = vec![
-            ("projectId", self.project_id.clone()),
-            ("summary", summary.to_string()),
-            ("issueTypeId", self.issue_type.to_string()),
+            ("projectId".to_string(), self.project_id.clone()),
+            ("summary".to_string(), summary.to_string()),
+            ("issueTypeId".to_string(), self.issue_type.to_string()),
         ];
         if let Some(description) = (self.description.as_deref()).filter(|d| !d.trim().is_empty()) {
-            form.push(("description", description.to_string()));
+            form.push(("description".to_string(), description.to_string()));
         }
         for change in &self.fields {
             if matches!(change, Change::Status(_) | Change::Resolution(_)) {
@@ -49,8 +49,8 @@ impl NewIssue {
                     .filter(|(_, value)| !value.is_empty()),
             );
         }
-        if !form.iter().any(|(name, _)| *name == "priorityId") {
-            form.push(("priorityId", NORMAL_PRIORITY.to_string()));
+        if !form.iter().any(|(name, _)| name == "priorityId") {
+            form.push(("priorityId".to_string(), NORMAL_PRIORITY.to_string()));
         }
         Ok(form)
     }
@@ -73,7 +73,10 @@ pub fn issue_types(project_id: &str) -> Result<Vec<Named>, String> {
 pub fn create(issue: &NewIssue) -> Result<(WorkItem, IssueFields), String> {
     let config = require_config()?;
     let form = issue.form()?;
-    let form: Vec<(&str, &str)> = form.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let form: Vec<(&str, &str)> = form
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
     let data = call(&config, None, "/issues", &[], &form)?;
     let row: IssueRow =
         serde_json::from_value(data).map_err(|_| "Backlog sent an unreadable issue".to_string())?;
@@ -96,6 +99,7 @@ mod tests {
 
     #[test]
     fn the_form_names_what_backlog_requires_and_defaults_to_normal() {
+        let pair = |k: &str, v: &str| (k.to_string(), v.to_string());
         let form = issue(vec![
             Change::Assignee(None),
             Change::DueDate(Some("2026-11-20".into())),
@@ -105,12 +109,12 @@ mod tests {
         assert_eq!(
             form,
             [
-                ("projectId", "12".to_string()),
-                ("summary", "Fix the login".into()),
-                ("issueTypeId", "5".into()),
-                ("description", "It fails.".into()),
-                ("dueDate", "2026-11-20".into()),
-                ("priorityId", NORMAL_PRIORITY.to_string()),
+                pair("projectId", "12"),
+                pair("summary", "Fix the login"),
+                pair("issueTypeId", "5"),
+                pair("description", "It fails."),
+                pair("dueDate", "2026-11-20"),
+                pair("priorityId", &NORMAL_PRIORITY.to_string()),
             ]
         );
         let high = issue(vec![Change::Priority(2), Change::Milestones(vec![8, 9])])
@@ -119,9 +123,9 @@ mod tests {
         assert_eq!(
             &high[4..],
             [
-                ("priorityId", "2".to_string()),
-                ("milestoneId[]", "8".into()),
-                ("milestoneId[]", "9".into()),
+                pair("priorityId", "2"),
+                pair("milestoneId[]", "8"),
+                pair("milestoneId[]", "9"),
             ]
         );
     }

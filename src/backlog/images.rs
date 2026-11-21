@@ -201,6 +201,97 @@ fn attachments(data: &Value) -> Vec<(i64, String)> {
         .collect()
 }
 
+/// An attachment downloaded to BenCode's cache folder (`backlog_get_attachment`).
+#[derive(Clone, Debug)]
+pub(super) struct DownloadedAttachment {
+    pub id: i64,
+    pub name: String,
+    pub path: PathBuf,
+    pub size: u64,
+    /// Detected raster image MIME type (`image/png`, `image/jpeg`, `image/gif`, `image/webp`).
+    pub image_mime: Option<&'static str>,
+}
+
+/// Downloads one attachment of `key` to `backlog-attachments/<key>/`, reusing
+/// any cached copy.
+pub(super) fn download_attachment(
+    key: &str,
+    attachment_id: i64,
+) -> Result<DownloadedAttachment, String> {
+    let config = super::require_config()?;
+    let key = super::require_issue_key(key)?;
+    let list = call(
+        &config,
+        None,
+        &format!("/issues/{key}/attachments"),
+        &[],
+        &[],
+    )?;
+    let name = attachments(&list)
+        .into_iter()
+        .find_map(|(id, name)| (id == attachment_id).then_some(name))
+        .ok_or_else(|| format!("Issue {key} has no attachment #{attachment_id}"))?;
+    let folder = crate::storage::data_dir()
+        .ok_or_else(|| "BenCode has no data folder".to_string())?
+        .join("backlog-attachments")
+        .join(key);
+    let safe = safe_name(&name);
+    let file_name = if safe.is_empty() {
+        format!("{attachment_id}-attachment")
+    } else {
+        format!("{attachment_id}-{safe}")
+    };
+    let path = folder.join(file_name);
+    if !path.is_file() {
+        std::fs::create_dir_all(&folder).map_err(|err| err.to_string())?;
+        let url = api_url(
+            &config,
+            &format!("/issues/{key}/attachments/{attachment_id}"),
+            &[],
+        );
+        let status = http::download(&url, &[], &path, DOWNLOAD_TIMEOUT)
+            .map_err(|err| format!("Could not fetch attachment from Backlog: {err}"))?;
+        if !(200..300).contains(&status) {
+            return Err(format!("Backlog answered HTTP {status} for attachment #{attachment_id}"));
+        }
+    }
+    let meta = std::fs::metadata(&path).map_err(|err| err.to_string())?;
+    let head = read_head(&path);
+    Ok(DownloadedAttachment {
+        id: attachment_id,
+        name,
+        path,
+        size: meta.len(),
+        image_mime: sniff_image_mime(&head),
+    })
+}
+
+fn read_head(path: &Path) -> Vec<u8> {
+    use std::io::Read;
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return Vec::new();
+    };
+    let mut buf = vec![0u8; 16];
+    let n = file.read(&mut buf).unwrap_or(0);
+    buf.truncate(n);
+    buf
+}
+
+/// Sniffs PNG, JPEG, GIF or WebP from leading magic bytes.
+pub(super) fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,5 +330,17 @@ mod tests {
             {"id": "bad"},
         ]);
         assert_eq!(attachments(&data), [(8, "a.png".to_string())]);
+    }
+
+    #[test]
+    fn raster_image_mimes_are_sniffed_from_magic_bytes() {
+        assert_eq!(
+            sniff_image_mime(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]),
+            Some("image/png")
+        );
+        assert_eq!(sniff_image_mime(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("image/jpeg"));
+        assert_eq!(sniff_image_mime(b"GIF89a..."), Some("image/gif"));
+        assert_eq!(sniff_image_mime(b"RIFF\x00\x00\x00\x00WEBP"), Some("image/webp"));
+        assert_eq!(sniff_image_mime(b"%PDF-1.7"), None);
     }
 }

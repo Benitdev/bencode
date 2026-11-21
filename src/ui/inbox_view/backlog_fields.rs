@@ -94,6 +94,7 @@ impl BenCodeApp {
             due_date,
             estimated_hours,
             actual_hours,
+            ..
         } = fields;
         let me = options.me;
         let mine = assignee.as_ref().is_some_and(|a| a.id == me);

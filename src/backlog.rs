@@ -248,6 +248,14 @@ fn encode(value: &str) -> String {
 
 /// The request's URL. `name[]` parameters keep their brackets encoded.
 fn api_url(config: &Config, path: &str, query: &[(&str, String)]) -> String {
+    api_url_raw(config, path, query)
+}
+
+fn api_url_raw<K: AsRef<str>, V: AsRef<str>>(
+    config: &Config,
+    path: &str,
+    query: &[(K, V)],
+) -> String {
     let mut url = format!(
         "https://{}/api/v2{path}?apiKey={}",
         config.space,
@@ -255,9 +263,9 @@ fn api_url(config: &Config, path: &str, query: &[(&str, String)]) -> String {
     );
     for (name, value) in query {
         url.push('&');
-        url.push_str(&encode(name));
+        url.push_str(&encode(name.as_ref()));
         url.push('=');
-        url.push_str(&encode(value));
+        url.push_str(&encode(value.as_ref()));
     }
     url
 }
@@ -269,7 +277,31 @@ fn call(
     query: &[(&str, String)],
     form: &[(&str, &str)],
 ) -> Result<Value, String> {
-    let url = api_url(config, path, query);
+    call_raw(config, method, path, query, form)
+}
+
+fn call_owned(
+    config: &Config,
+    method: Option<&str>,
+    path: &str,
+    query: &[(String, String)],
+    form: &[(String, String)],
+) -> Result<Value, String> {
+    let form_refs: Vec<(&str, &str)> = form
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    call_raw(config, method, path, query, &form_refs)
+}
+
+fn call_raw<K: AsRef<str>, V: AsRef<str>>(
+    config: &Config,
+    method: Option<&str>,
+    path: &str,
+    query: &[(K, V)],
+    form: &[(&str, &str)],
+) -> Result<Value, String> {
+    let url = api_url_raw(config, path, query);
     let response = http::send(
         &url,
         &[],
@@ -323,6 +355,24 @@ fn text(value: &Value, key: &str) -> String {
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string()
+}
+
+/// A path segment safe to place in a Backlog API URL (project key, repo name,
+/// document ID): rejects path separators, traversal and control characters.
+fn require_segment<'a>(raw: &'a str, what: &str) -> Result<&'a str, String> {
+    let value = raw.trim();
+    let valid = !value.is_empty()
+        && value != "."
+        && value != ".."
+        && !value.contains("..")
+        && !value
+            .chars()
+            .any(|c| matches!(c, '/' | '\\' | '?' | '#') || c.is_control());
+    if valid {
+        Ok(value)
+    } else {
+        Err(format!("Invalid Backlog {what}: {value}"))
+    }
 }
 
 /// An issue key as Backlog writes it (`PROJ_1-42`), safe in a URL path.
@@ -446,9 +496,21 @@ struct Named {
     color: Option<String>,
 }
 
+#[derive(Deserialize, Default)]
+struct AttachmentRow {
+    #[serde(default)]
+    id: i64,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    size: u64,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IssueRow {
+    #[serde(default)]
+    id: i64,
     #[serde(default)]
     project_id: i64,
     issue_key: String,
@@ -469,9 +531,13 @@ struct IssueRow {
     #[serde(default)]
     category: Vec<Named>,
     #[serde(default)]
+    versions: Vec<Named>,
+    #[serde(default)]
     milestone: Vec<Named>,
     #[serde(default)]
     resolution: Option<Named>,
+    #[serde(default)]
+    parent_issue_id: Option<i64>,
     #[serde(default)]
     start_date: Option<String>,
     #[serde(default)]
@@ -486,6 +552,10 @@ struct IssueRow {
     created: Option<String>,
     #[serde(default)]
     updated: Option<String>,
+    #[serde(default)]
+    attachments: Vec<AttachmentRow>,
+    #[serde(default)]
+    custom_fields: Vec<Value>,
 }
 
 fn work_item(row: &IssueRow, space: &str) -> WorkItem {
@@ -675,54 +745,7 @@ pub fn read_issue(key: &str) -> Result<(WorkItem, Details), String> {
     Ok((work_item(&row, &config.space), details))
 }
 
-/// What an agent looks for (`mcp.rs`).
-#[derive(Clone, Debug, Default)]
-pub struct Search {
-    /// A project's key; every active project when `None`.
-    pub project: Option<String>,
-    pub keyword: Option<String>,
-    pub assigned_to_me: bool,
-    pub include_closed: bool,
-    /// At most Backlog's page.
-    pub count: usize,
-}
-
-/// The issues `search` names, most recently updated first.
-pub fn search(search: &Search) -> Result<Vec<WorkItem>, String> {
-    let config = require_config()?;
-    let catalog = catalog(&config)?;
-    let hidden: Vec<String> = match &search.project {
-        Some(key) => {
-            let project = project_by_key(&catalog.projects, key)?;
-            (catalog.projects.iter())
-                .filter(|other| other.id != project.id)
-                .map(|other| other.id.clone())
-                .collect()
-        }
-        None => Vec::new(),
-    };
-    let me = search.assigned_to_me.then_some(config.user_id);
-    let Some(mut query) = issue_query(&catalog, &hidden, me) else {
-        return Ok(Vec::new());
-    };
-    if search.include_closed {
-        query.retain(|(name, _)| *name != "statusId[]");
-    }
-    if let Some(keyword) = search.keyword.as_deref().map(str::trim)
-        && !keyword.is_empty()
-    {
-        query.push(("keyword", keyword.to_string()));
-    }
-    let count = search.count.clamp(1, PAGE).to_string();
-    for (name, value) in &mut query {
-        if *name == "count" {
-            *value = count.clone();
-        }
-    }
-    parse_issues(call(&config, None, "/issues", &query, &[])?, &config.space)
-}
-
-/// An active project by its key, whatever its case (`mcp.rs`).
+/// An active project by its key, whatever its case (`mcp`).
 pub fn project(key: &str) -> Result<Project, String> {
     let catalog = catalog(&require_config()?)?;
     project_by_key(&catalog.projects, key).cloned()
@@ -880,16 +903,43 @@ fn parse_thread(data: &Value, space: &str, key: &str) -> Thread {
 
 /// The issue's latest comments and changes, their pictures saved.
 pub fn thread(key: &str) -> Result<Thread, String> {
+    thread_with_options(key, PAGE, "desc", None, None)
+}
+
+/// Comments of `key` with optional pagination (`min_id`, `max_id`, `order`, `count`).
+pub(super) fn thread_with_options(
+    key: &str,
+    count: usize,
+    order: &str,
+    min_id: Option<i64>,
+    max_id: Option<i64>,
+) -> Result<Thread, String> {
     let config = require_config()?;
     let key = require_issue_key(key)?;
+    let count = count.clamp(1, PAGE);
+    let mut query = vec![
+        ("count", count.to_string()),
+        ("order", order.to_string()),
+    ];
+    if let Some(min) = min_id {
+        query.push(("minId", min.to_string()));
+    }
+    if let Some(max) = max_id {
+        query.push(("maxId", max.to_string()));
+    }
     let data = call(
         &config,
         None,
         &format!("/issues/{key}/comments"),
-        &[("count", PAGE.to_string()), ("order", "desc".to_string())],
+        &query,
         &[],
     )?;
     let mut thread = parse_thread(&data, &config.space, key);
+    if order == "asc" {
+        // `parse_thread` reverses Backlog's newest-first order; undo for explicit asc.
+        thread.comments.reverse();
+    }
+    thread.truncated = data.as_array().is_some_and(|rows| rows.len() >= count);
     let mut pictures = images::Pictures::new(&config, key);
     for comment in &mut thread.comments {
         comment.body = pictures.inline(&comment.body);
@@ -899,24 +949,66 @@ pub fn thread(key: &str) -> Result<Thread, String> {
 
 /// Adds a comment; returns its URL.
 pub fn post_comment(key: &str, body: &str) -> Result<String, String> {
+    post_comment_with_notifications(key, body, &[])
+}
+
+/// Adds a comment, optionally notifying specific user IDs; returns its URL.
+pub(super) fn post_comment_with_notifications(
+    key: &str,
+    body: &str,
+    notified_users: &[i64],
+) -> Result<String, String> {
     let config = require_config()?;
     let key = require_issue_key(key)?;
     let body = body.trim();
     if body.is_empty() {
         return Err("Comment cannot be empty".into());
     }
-    let data = call(
+    let mut form = vec![("content".to_string(), body.to_string())];
+    for id in notified_users {
+        form.push(("notifiedUserId[]".to_string(), id.to_string()));
+    }
+    let data = call_owned(
         &config,
-        None,
+        Some("POST"),
         &format!("/issues/{key}/comments"),
         &[],
-        &[("content", body)],
+        &form,
     )?;
     let id = data
         .get("id")
         .and_then(Value::as_i64)
         .ok_or_else(|| "Could not post the Backlog comment".to_string())?;
     Ok(format!("https://{}/view/{key}#comment-{id}", config.space))
+}
+
+/// Updates an existing comment on `key`; returns its URL.
+pub(super) fn update_comment(key: &str, comment_id: i64, body: &str) -> Result<String, String> {
+    let config = require_config()?;
+    let key = require_issue_key(key)?;
+    let body = body.trim();
+    if body.is_empty() {
+        return Err("Comment cannot be empty".into());
+    }
+    let _ = call(
+        &config,
+        Some("PATCH"),
+        &format!("/issues/{key}/comments/{comment_id}"),
+        &[],
+        &[("content", body)],
+    )?;
+    Ok(format!(
+        "https://{}/view/{key}#comment-{comment_id}",
+        config.space
+    ))
+}
+
+/// Deletes an issue; returns the deleted issue's summary.
+pub(super) fn delete_issue(key: &str) -> Result<String, String> {
+    let config = require_config()?;
+    let key = require_issue_key(key)?;
+    let data = call(&config, Some("DELETE"), &format!("/issues/{key}"), &[], &[])?;
+    Ok(text(&data, "summary"))
 }
 
 #[cfg(test)]
