@@ -24,6 +24,7 @@ pub mod bot_sessions;
 pub mod bots;
 pub mod browser;
 pub mod browser_sign_in;
+mod browser_tools;
 pub mod chat_background;
 pub mod cli_import;
 pub mod command_catalog;

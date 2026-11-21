@@ -16,6 +16,7 @@ mod container;
 pub mod mcp;
 pub mod page;
 pub mod scripts;
+pub mod scripts_ext;
 #[cfg(target_os = "macos")]
 mod snapshot;
 

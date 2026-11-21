@@ -9,28 +9,25 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
-use base64::Engine as _;
 use bencode_ui::forms::{InputEvent, TextInput};
-use gpui::{
-    AsyncApp, Context, Entity, Focusable as _, FutureExt as _, Subscription, WeakEntity, Window,
-};
+use gpui::{Context, Entity, Focusable as _, Subscription, Window};
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 
 use super::BenCodeApp;
 use super::file_pane::PaneTab;
-use crate::browser::bridge::{self, ToolCall, ToolReply, ToolRequest};
-use crate::browser::page::{NO_RESULT, Page, PageEvent, PageEvents};
-use crate::browser::{McpLaunch, agent_may_open, is_web_url, mcp_launch, normalize_url, scripts};
+use crate::browser::bridge::{self, ToolCall, ToolReply};
+use crate::browser::page::{Page, PageEvent, PageEvents};
+use crate::browser::{McpLaunch, is_web_url, mcp_launch, normalize_url, scripts};
 
 /// How long the agent's `browser_navigate` waits for the page to load.
-const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
+pub(super) const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
 /// How long a script may take before its tool gives up.
-const SCRIPT_TIMEOUT: Duration = Duration::from_secs(15);
+pub(super) const SCRIPT_TIMEOUT: Duration = Duration::from_secs(15);
 /// How long `browser_evaluate` waits for a promise.
-const PROMISE_TIMEOUT: Duration = Duration::from_secs(30);
+pub(super) const PROMISE_TIMEOUT: Duration = Duration::from_secs(30);
 /// What a click or a key gets to settle before its tool answers.
-const SETTLE: Duration = Duration::from_millis(350);
+pub(super) const SETTLE: Duration = Duration::from_millis(350);
 /// The page zooms, in percent (Chrome's steps).
 const ZOOM_STEPS: [u16; 17] = [
     25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300, 400, 500,
@@ -41,7 +38,7 @@ const KEYS_POLL: Duration = Duration::from_millis(250);
 /// How often a load is asked whether it gave up (`watch_load`).
 const LOAD_POLL: Duration = Duration::from_millis(250);
 /// The widest screenshot an agent gets; wider ones are scaled down.
-const AGENT_SCREENSHOT_WIDTH: u32 = 1280;
+pub(super) const AGENT_SCREENSHOT_WIDTH: u32 = 1280;
 
 /// What started a load `watch_load` follows.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -144,7 +141,7 @@ pub struct BrowserState {
     pub obscured: Rc<Cell<bool>>,
     /// The tab the file pane draws this frame; the others hide.
     pub drawn: Cell<Option<u64>>,
-    next_eval: u64,
+    pub(super) next_eval: u64,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -294,7 +291,7 @@ pub fn element_context(selector: &str, url: &str, html: &str) -> String {
 }
 
 /// The agent's `browser_snapshot`, as text.
-fn outline_text(outline: &Value) -> String {
+pub(super) fn outline_text(outline: &Value) -> String {
     let field = |key: &str| outline.get(key).and_then(Value::as_str).unwrap_or("");
     let elements: Vec<&str> = outline
         .get("elements")
@@ -306,8 +303,23 @@ fn outline_text(outline: &Value) -> String {
     } else {
         elements.join("\n")
     };
+    let meta = match (outline.get("viewport"), outline.get("scroll")) {
+        (Some(vp), Some(sc)) => {
+            let n = |o: &Value, k: &str| o.get(k).and_then(Value::as_i64).unwrap_or(0);
+            format!(
+                "\nViewport: {}x{} · Scroll: ({}/{}, {}/{})",
+                n(vp, "width"),
+                n(vp, "height"),
+                n(sc, "x"),
+                n(sc, "maxX"),
+                n(sc, "y"),
+                n(sc, "maxY"),
+            )
+        }
+        _ => String::new(),
+    };
     format!(
-        "Title: {}\nURL: {}\n\nInteractive elements:\n{elements}\n\nText:\n{}",
+        "Title: {}\nURL: {}{meta}\n\nInteractive elements:\n{elements}\n\nText:\n{}",
         field("title"),
         field("url"),
         field("text")
@@ -315,7 +327,10 @@ fn outline_text(outline: &Value) -> String {
 }
 
 /// A script tool's `{ ok, error, … }` as a reply.
-fn script_reply(result: Result<Value, String>, done: impl FnOnce(&Value) -> String) -> ToolReply {
+pub(super) fn script_reply(
+    result: Result<Value, String>,
+    done: impl FnOnce(&Value) -> String,
+) -> ToolReply {
     match result {
         Ok(value) if value.get("ok").and_then(Value::as_bool) == Some(true) => {
             ToolReply::text(done(&value))
@@ -333,7 +348,7 @@ fn script_reply(result: Result<Value, String>, done: impl FnOnce(&Value) -> Stri
 
 /// Scales a PNG down to `max_width` (the agent's copy). The header says
 /// whether there is anything to do.
-fn scaled_png(png: Vec<u8>, max_width: u32) -> anyhow::Result<Vec<u8>> {
+pub(super) fn scaled_png(png: Vec<u8>, max_width: u32) -> anyhow::Result<Vec<u8>> {
     let format = image::ImageFormat::Png;
     let (width, _) =
         image::ImageReader::with_format(std::io::Cursor::new(&png), format).into_dimensions()?;
@@ -349,9 +364,9 @@ fn scaled_png(png: Vec<u8>, max_width: u32) -> anyhow::Result<Vec<u8>> {
     Ok(out.into_inner())
 }
 
-/// A snapshot cut down to a picked element (the `picked` message's `rect`
-/// and `viewport`), or as it is when the element's box cannot be read.
-fn cropped_to_pick(png: Vec<u8>, picked: &Value) -> Vec<u8> {
+/// A snapshot cut down to an element (`rect` + `viewport`), with `pad` CSS
+/// pixels around it, or as it is when the element's box cannot be read.
+pub(super) fn cropped_to_rect(png: Vec<u8>, picked: &Value, pad: f64) -> Vec<u8> {
     let cropped = || {
         let number = |v: &Value, key: &str| v.get(key).and_then(Value::as_f64);
         let rect = picked.get("rect")?;
@@ -367,14 +382,19 @@ fn cropped_to_pick(png: Vec<u8>, picked: &Value) -> Vec<u8> {
                 number(rect, "width")?,
                 number(rect, "height")?,
             ),
-            8.0,
+            pad,
         )?;
         let mut out = std::io::Cursor::new(Vec::new());
         image.crop_imm(x, y, w, h).write_to(&mut out, format).ok()?;
         Some(out.into_inner())
     };
-    let cropped = cropped();
-    cropped.unwrap_or(png)
+    cropped().unwrap_or(png)
+}
+
+/// A snapshot cut down to a picked element (the `picked` message's `rect`
+/// and `viewport`), or as it is when the element's box cannot be read.
+fn cropped_to_pick(png: Vec<u8>, picked: &Value) -> Vec<u8> {
+    cropped_to_rect(png, picked, 8.0)
 }
 
 impl BenCodeApp {
@@ -985,7 +1005,7 @@ impl BenCodeApp {
     /// A waiter for the next load of tab `id`: whether it finished. Page
     /// events come through a channel, so one made right after a load starts
     /// sees it.
-    fn wait_for_load(&mut self, id: u64) -> oneshot::Receiver<bool> {
+    pub(super) fn wait_for_load(&mut self, id: u64) -> oneshot::Receiver<bool> {
         let (done, rx) = oneshot::channel();
         if let Some(tab) = self.browser.tabs.get_mut(&id) {
             tab.load_waiters.push(LoadWaiter {
@@ -999,7 +1019,7 @@ impl BenCodeApp {
     /// The tab a tool call acts on, shown to the user. `address`: the call
     /// is `browser_navigate`, which opens a tab there when none is open
     /// (`true` with the tab: it is loading the address already).
-    fn tool_tab(
+    pub(super) fn tool_tab(
         &mut self,
         address: Option<&str>,
         window: &mut Window,
@@ -1024,409 +1044,11 @@ impl BenCodeApp {
         }
         Ok((id, opened))
     }
-
-    fn handle_tool_call(
-        &mut self,
-        mut call: ToolCall,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.runs.is_empty() {
-            return call.answer(ToolReply::error(
-                "Browser tools are only active while an agent turn is running.",
-            ));
-        }
-        let ToolRequest { tool, args, .. } = std::mem::take(&mut call.request);
-        let text = |key: &str| args.get(key).and_then(Value::as_str).map(str::to_string);
-        let flag = |key: &str| args.get(key).and_then(Value::as_bool).unwrap_or(false);
-        let address = match (tool == "browser_navigate").then(|| text("url")) {
-            None => None,
-            Some(None) => return call.answer(ToolReply::error("browser_navigate needs a url.")),
-            Some(Some(url)) => {
-                let url = normalize_url(&url);
-                if !agent_may_open(&url) {
-                    return call.answer(ToolReply::error(format!(
-                        "browser_navigate opens http, https and file addresses, not {url}."
-                    )));
-                }
-                Some(url)
-            }
-        };
-        let (id, opened) = match self.tool_tab(address.as_deref(), window, cx) {
-            Ok(tab) => tab,
-            Err(why) => return call.answer(ToolReply::error(why)),
-        };
-        let this = cx.entity().downgrade();
-        match tool.as_str() {
-            "browser_navigate" => {
-                let loaded = self.wait_for_load(id);
-                // A tab opened above is already loading it.
-                if let Some(url) = address.filter(|_| !opened) {
-                    self.browser_go(id, &url, cx);
-                }
-                cx.spawn(async move |_, cx| {
-                    let reply = await_load(loaded, &this, id, cx).await;
-                    call.answer(reply);
-                })
-                .detach();
-            }
-            "browser_history" => {
-                let action = text("action");
-                if !matches!(
-                    action.as_deref(),
-                    Some("back" | "forward" | "reload" | "hard_reload")
-                ) {
-                    return call.answer(ToolReply::error(
-                        "action must be back, forward, reload or hard_reload.",
-                    ));
-                }
-                let loaded = self.wait_for_load(id);
-                match action.as_deref() {
-                    Some("back") => self.browser_back(id, cx),
-                    Some("forward") => self.browser_forward(id, cx),
-                    Some("hard_reload") => self.browser_reload(id, true, cx),
-                    _ => self.browser_reload(id, false, cx),
-                }
-                cx.spawn(async move |_, cx| {
-                    // A step inside the page (a hash, `pushState`) loads
-                    // nothing to wait for.
-                    cx.background_executor().timer(SETTLE).await;
-                    let loading = this
-                        .update(cx, |this, _| {
-                            this.browser_page(id).is_some_and(|p| p.is_loading())
-                        })
-                        .unwrap_or(false);
-                    let reply = if loading {
-                        await_load(loaded, &this, id, cx).await
-                    } else {
-                        where_now(&this, id, "Now at", cx)
-                    };
-                    call.answer(reply);
-                })
-                .detach();
-            }
-            "browser_snapshot" => {
-                cx.spawn(async move |_, cx| {
-                    let reply = match eval(&this, id, scripts::outline(), cx).await {
-                        Ok(outline) => ToolReply::text(outline_text(&outline)),
-                        Err(err) => ToolReply::error(err),
-                    };
-                    call.answer(reply);
-                })
-                .detach();
-            }
-            "browser_screenshot" => {
-                cx.notify();
-                cx.spawn(async move |_, cx| {
-                    let reply = screenshot(&this, id, cx).await;
-                    call.answer(reply);
-                })
-                .detach();
-            }
-            "browser_click" | "browser_type" => {
-                let reference = args.get("ref").and_then(Value::as_u64);
-                let selector = text("selector");
-                let js = if tool == "browser_click" {
-                    scripts::click(reference, selector.as_deref())
-                } else {
-                    let typed = text("text").unwrap_or_default();
-                    scripts::type_text(reference, selector.as_deref(), &typed, flag("submit"))
-                };
-                cx.spawn(async move |_, cx| {
-                    let result = eval(&this, id, js, cx).await;
-                    if result.is_ok() {
-                        cx.background_executor().timer(SETTLE).await;
-                    }
-                    let reply = script_reply(result, |value| {
-                        let what = |key| value.get(key).and_then(Value::as_str);
-                        match (what("clicked"), what("typed")) {
-                            (Some(el), _) => format!("Clicked {el}."),
-                            (_, Some(el)) => format!("Typed into {el}."),
-                            _ => "Done.".into(),
-                        }
-                    });
-                    call.answer(reply);
-                })
-                .detach();
-            }
-            "browser_press_key" => {
-                let Some(key) = text("key") else {
-                    return call.answer(ToolReply::error("browser_press_key needs a key."));
-                };
-                cx.spawn(async move |_, cx| {
-                    let result = eval(&this, id, scripts::press_key(&key), cx).await;
-                    if result.is_ok() {
-                        cx.background_executor().timer(SETTLE).await;
-                    }
-                    call.answer(script_reply(result, |value| {
-                        let effect = value.get("effect").and_then(Value::as_str).unwrap_or("");
-                        format!("Pressed {key}{effect}.")
-                    }));
-                })
-                .detach();
-            }
-            "browser_evaluate" => {
-                let Some(expression) = text("expression") else {
-                    return call.answer(ToolReply::error("browser_evaluate needs an expression."));
-                };
-                let eval_id = self.browser.next_eval;
-                self.browser.next_eval += 1;
-                cx.spawn(async move |_, cx| {
-                    let reply = evaluate(&this, id, &expression, eval_id, cx).await;
-                    call.answer(reply);
-                })
-                .detach();
-            }
-            "browser_console" => {
-                let clear = flag("clear");
-                cx.spawn(async move |_, cx| {
-                    let result = eval(&this, id, scripts::console(clear), cx).await;
-                    call.answer(script_reply(result, |value| {
-                        let lines: Vec<&str> = value
-                            .get("lines")
-                            .and_then(Value::as_array)
-                            .map(|l| l.iter().filter_map(Value::as_str).collect())
-                            .unwrap_or_default();
-                        if lines.is_empty() {
-                            "(no console messages)".into()
-                        } else {
-                            lines.join("\n")
-                        }
-                    }));
-                })
-                .detach();
-            }
-            "browser_wait" => {
-                let ms = args
-                    .get("ms")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(10_000)
-                    .min(60_000);
-                let wanted = text("text");
-                cx.spawn(async move |_, cx| {
-                    let reply = wait(&this, id, wanted, Duration::from_millis(ms), cx).await;
-                    call.answer(reply);
-                })
-                .detach();
-            }
-            other => call.answer(ToolReply::error(format!("Unknown browser tool {other}."))),
-        }
-    }
-}
-
-/// Runs a script in tab `id` and decodes what it evaluated to.
-async fn eval(
-    this: &WeakEntity<BenCodeApp>,
-    id: u64,
-    js: String,
-    cx: &mut AsyncApp,
-) -> Result<Value, String> {
-    let (tx, rx) = oneshot::channel();
-    let started = this.update(cx, |this, _| {
-        let page = this.browser_page(id)?;
-        page.eval(&js, move |result| {
-            if tx.send(result).is_err() {
-                log::debug!("browser script answered after its caller left");
-            }
-        });
-        Some(())
-    });
-    if !matches!(started, Ok(Some(()))) {
-        return Err("The browser tab closed.".into());
-    }
-    match rx
-        .with_timeout(SCRIPT_TIMEOUT, cx.background_executor())
-        .await
-    {
-        Ok(Ok(result)) => result.map_err(|err| format!("{err:#}")),
-        Ok(Err(_)) => Err("The browser tab closed.".into()),
-        Err(_) => Err("The page did not answer in time (is it still loading?).".into()),
-    }
 }
 
 /// What a tab did not load says, to the agent and in the pane.
 pub fn load_failure(url: &str) -> String {
     format!("{url} did not load. Is its server running?")
-}
-
-/// Where tab `id` is, as a tool's answer (`verb`: "Loaded", "Now at").
-fn where_now(this: &WeakEntity<BenCodeApp>, id: u64, verb: &str, cx: &mut AsyncApp) -> ToolReply {
-    let state = this
-        .update(cx, |this, _| {
-            this.browser
-                .tabs
-                .get(&id)
-                .map(|tab| (tab.title.clone(), tab.url.clone(), tab.load_failed))
-        })
-        .ok()
-        .flatten();
-    match state {
-        None => ToolReply::error("The browser tab closed."),
-        Some((_, url, true)) => ToolReply::error(load_failure(&url)),
-        // The title can come after the load finishes.
-        Some((title, url, false)) if title.trim().is_empty() => {
-            ToolReply::text(format!("{verb} {url}"))
-        }
-        Some((title, url, false)) => ToolReply::text(format!("{verb}: {title}\nURL: {url}")),
-    }
-}
-
-/// Waits for a load started by a tool, then says where the tab is.
-async fn await_load(
-    loaded: oneshot::Receiver<bool>,
-    this: &WeakEntity<BenCodeApp>,
-    id: u64,
-    cx: &mut AsyncApp,
-) -> ToolReply {
-    match loaded
-        .with_timeout(LOAD_TIMEOUT, cx.background_executor())
-        .await
-    {
-        // `where_now` tells a load that failed from the tab's state.
-        Ok(Ok(_)) => where_now(this, id, "Loaded", cx),
-        Ok(Err(_)) => ToolReply::error("The browser tab closed."),
-        Err(_) => {
-            let url = this
-                .update(cx, |this, _| {
-                    this.browser.tabs.get(&id).map(|tab| tab.url.clone())
-                })
-                .ok()
-                .flatten()
-                .unwrap_or_default();
-            ToolReply::error(format!(
-                "{url} did not finish loading in {}s. \
-                 browser_snapshot shows what the tab has now.",
-                LOAD_TIMEOUT.as_secs()
-            ))
-        }
-    }
-}
-
-async fn screenshot(this: &WeakEntity<BenCodeApp>, id: u64, cx: &mut AsyncApp) -> ToolReply {
-    // A tab shown just now needs a frame to be placed before WebKit draws it.
-    let shown = this
-        .update(cx, |this, _| {
-            this.browser_page(id).is_some_and(|p| p.is_shown())
-        })
-        .unwrap_or(false);
-    if !shown {
-        cx.background_executor()
-            .timer(Duration::from_millis(300))
-            .await;
-    }
-    let (tx, rx) = oneshot::channel();
-    let started = this.update(cx, |this, _| {
-        let page = this.browser_page(id)?;
-        page.snapshot(Some(AGENT_SCREENSHOT_WIDTH), move |png| {
-            if tx.send(png).is_err() {
-                log::debug!("browser snapshot after its caller left");
-            }
-        });
-        Some(())
-    });
-    if !matches!(started, Ok(Some(()))) {
-        return ToolReply::error("The browser tab closed.");
-    }
-    let png = match rx
-        .with_timeout(SCRIPT_TIMEOUT, cx.background_executor())
-        .await
-    {
-        Ok(Ok(Ok(png))) => png,
-        Ok(Ok(Err(err))) => return ToolReply::error(format!("{err:#}")),
-        Ok(Err(_)) => return ToolReply::error("The browser tab closed."),
-        Err(_) => return ToolReply::error("WebKit took no snapshot in time."),
-    };
-    let encoded = cx
-        .background_executor()
-        .spawn(async move {
-            scaled_png(png, AGENT_SCREENSHOT_WIDTH)
-                .map(|png| base64::engine::general_purpose::STANDARD.encode(png))
-        })
-        .await;
-    match encoded {
-        Ok(image) => ToolReply {
-            ok: true,
-            text: "Screenshot of the browser tab.".into(),
-            image: Some(image),
-        },
-        Err(err) => ToolReply::error(format!("The screenshot could not be read: {err:#}")),
-    }
-}
-
-async fn evaluate(
-    this: &WeakEntity<BenCodeApp>,
-    id: u64,
-    expression: &str,
-    eval_id: u64,
-    cx: &mut AsyncApp,
-) -> ToolReply {
-    let shown = |value: &Value| {
-        value
-            .get("value")
-            .and_then(Value::as_str)
-            .unwrap_or("undefined")
-            .to_string()
-    };
-    // In the script itself first, which a strict page allows; `eval` when
-    // that does not parse (statements, a mistake `eval` can name).
-    let mut first = eval(this, id, scripts::evaluate(expression, eval_id, true), cx).await;
-    if first.as_ref().is_err_and(|err| err == NO_RESULT) {
-        first = eval(this, id, scripts::evaluate(expression, eval_id, false), cx).await;
-    }
-    let pending =
-        matches!(&first, Ok(v) if v.get("pending").and_then(Value::as_bool) == Some(true));
-    if !pending {
-        return script_reply(first, shown);
-    }
-    let deadline = std::time::Instant::now() + PROMISE_TIMEOUT;
-    while std::time::Instant::now() < deadline {
-        cx.background_executor()
-            .timer(Duration::from_millis(100))
-            .await;
-        let result = eval(this, id, scripts::eval_result(eval_id), cx).await;
-        let still =
-            matches!(&result, Ok(v) if v.get("pending").and_then(Value::as_bool) == Some(true));
-        if !still {
-            return script_reply(result, shown);
-        }
-    }
-    ToolReply::error(format!(
-        "The promise did not settle in {}s.",
-        PROMISE_TIMEOUT.as_secs()
-    ))
-}
-
-async fn wait(
-    this: &WeakEntity<BenCodeApp>,
-    id: u64,
-    wanted: Option<String>,
-    limit: Duration,
-    cx: &mut AsyncApp,
-) -> ToolReply {
-    let Some(wanted) = wanted else {
-        cx.background_executor().timer(limit).await;
-        return ToolReply::text(format!("Waited {}ms.", limit.as_millis()));
-    };
-    let deadline = std::time::Instant::now() + limit;
-    loop {
-        let found = eval(this, id, scripts::has_text(&wanted), cx)
-            .await
-            .ok()
-            .and_then(|v| v.get("found").and_then(Value::as_bool))
-            .unwrap_or(false);
-        if found {
-            return ToolReply::text(format!("\"{wanted}\" is on the page."));
-        }
-        if std::time::Instant::now() >= deadline {
-            return ToolReply::error(format!(
-                "\"{wanted}\" did not show in {}ms.",
-                limit.as_millis()
-            ));
-        }
-        cx.background_executor()
-            .timer(Duration::from_millis(250))
-            .await;
-    }
 }
 
 #[cfg(test)]

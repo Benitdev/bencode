@@ -1,10 +1,11 @@
 //! The scripts BenCode runs in a browser page. `PRELUDE` installs
-//! `window.__bencode` (console capture, address changes, selectors); every
-//! other script starts with it, since a page loaded before it (an error
-//! page, `about:blank`) has none. Each script evaluates to a JSON string.
+//! `window.__bencode` (console capture, network capture, dialog hooks,
+//! address changes, selectors, Shadow DOM query); every other script starts
+//! with it, since a page loaded before it (an error page, `about:blank`) has
+//! none. Each script evaluates to a JSON string.
 
-/// Console capture, history hooks and the helpers the other scripts use.
-/// Idempotent.
+/// Console capture, network (`fetch`/`XHR`) capture, history hooks, dialog
+/// hooks and helpers the other scripts use. Idempotent.
 pub const PRELUDE: &str = r#"(() => {
   if (window.__bencode) return;
   const post = (m) => { try { window.ipc.postMessage(JSON.stringify(m)); } catch (_) {} };
@@ -72,6 +73,186 @@ pub const PRELUDE: &str = r#"(() => {
   }
   window.addEventListener('popstate', moved);
   window.addEventListener('hashchange', moved);
+
+  // Network capture (fetch + XMLHttpRequest): bounded ring buffer, never
+  // buffers binary bodies and redacts password-like keys in text previews.
+  const net = [];
+  let nextNetId = 1;
+  const redactBody = (raw) => {
+    if (raw == null) return null;
+    let s;
+    if (typeof raw === 'string') s = raw;
+    else if (raw instanceof URLSearchParams) s = raw.toString();
+    else if (raw instanceof FormData) {
+      const parts = [];
+      for (const [k, v] of raw.entries()) {
+        parts.push(`${k}=${/pass|secret|token/i.test(k) ? '(redacted)' : (typeof v === 'string' ? v.slice(0, 200) : '[File]')}`);
+      }
+      s = parts.join('&');
+    } else return `[${Object.prototype.toString.call(raw)}]`;
+    s = s.replace(/("(?:password|passwd|secret|access_token|refresh_token|apiKey|api_key)"\s*:\s*)"[^"]*"/gi, '$1"(redacted)"');
+    return s.length > 4096 ? s.slice(0, 4096) + '…' : s;
+  };
+  const isTextType = (ct) => /json|text|xml|javascript|svg|form-urlencoded/i.test(ct || '');
+  const pushNet = (entry) => {
+    net.push(entry);
+    if (net.length > 200) net.shift();
+    return entry;
+  };
+  const state = {
+    logs,
+    net,
+    inFlight: 0,
+    post,
+    refs: new Map(),
+    picker: null,
+    dialogs: [],
+    dialogArmed: null,
+  };
+
+  if (typeof window.fetch === 'function') {
+    const origFetch = window.fetch;
+    window.fetch = function (input, init) {
+      const url = typeof input === 'string' ? input : (input && input.url ? input.url : String(input));
+      const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+      const t0 = Date.now();
+      const entry = pushNet({
+        id: nextNetId++,
+        kind: 'fetch',
+        method,
+        url,
+        status: null,
+        ok: null,
+        durationMs: null,
+        error: null,
+        reqBody: init && init.body !== undefined ? redactBody(init.body) : null,
+        resType: null,
+        resBody: null,
+        t: t0,
+      });
+      state.inFlight += 1;
+      const done = () => { state.inFlight = Math.max(0, state.inFlight - 1); };
+      return origFetch.apply(this, arguments).then((res) => {
+        entry.status = res.status;
+        entry.ok = res.ok;
+        entry.durationMs = Date.now() - t0;
+        const ct = (res.headers && res.headers.get('content-type')) || '';
+        entry.resType = ct.split(';')[0].trim() || null;
+        if (isTextType(ct)) {
+          try {
+            res.clone().text().then((txt) => { entry.resBody = redactBody(txt); }).catch(() => {});
+          } catch (_) {}
+        }
+        done();
+        return res;
+      }, (err) => {
+        entry.durationMs = Date.now() - t0;
+        entry.error = err && err.message ? err.message : String(err);
+        done();
+        throw err;
+      });
+    };
+  }
+
+  if (typeof XMLHttpRequest !== 'undefined') {
+    const origOpen = XMLHttpRequest.prototype.open;
+    const origSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function (method, url) {
+      this.__bc = { method: String(method || 'GET').toUpperCase(), url: String(url || '') };
+      return origOpen.apply(this, arguments);
+    };
+    XMLHttpRequest.prototype.send = function (body) {
+      const info = this.__bc || { method: 'GET', url: '' };
+      const t0 = Date.now();
+      const entry = pushNet({
+        id: nextNetId++,
+        kind: 'xhr',
+        method: info.method,
+        url: info.url,
+        status: null,
+        ok: null,
+        durationMs: null,
+        error: null,
+        reqBody: body !== undefined ? redactBody(body) : null,
+        resType: null,
+        resBody: null,
+        t: t0,
+      });
+      state.inFlight += 1;
+      let settled = false;
+      const finish = (errMsg) => {
+        if (settled) return;
+        settled = true;
+        state.inFlight = Math.max(0, state.inFlight - 1);
+        entry.durationMs = Date.now() - t0;
+        if (errMsg) {
+          entry.error = errMsg;
+        } else {
+          entry.status = this.status;
+          entry.ok = this.status >= 200 && this.status < 300;
+          try {
+            const ct = this.getResponseHeader('content-type') || '';
+            entry.resType = ct.split(';')[0].trim() || null;
+            if ((!this.responseType || this.responseType === 'text') && isTextType(ct)) {
+              entry.resBody = redactBody(this.responseText);
+            }
+          } catch (_) {}
+        }
+      };
+      this.addEventListener('load', () => finish(null));
+      this.addEventListener('error', () => finish('network error'));
+      this.addEventListener('abort', () => finish('aborted'));
+      this.addEventListener('timeout', () => finish('timeout'));
+      return origSend.apply(this, arguments);
+    };
+  }
+
+  // Native dialogs kept untouched unless explicitly armed via `browser_dialog`.
+  const nativeDialogs = { alert: window.alert, confirm: window.confirm, prompt: window.prompt };
+  state.armDialog = (accept, promptText) => {
+    state.dialogArmed = { accept, promptText };
+    const record = (type, message, response) => {
+      state.dialogs.push({ type, message: String(message ?? ''), response, t: Date.now() });
+      if (state.dialogs.length > 50) state.dialogs.shift();
+    };
+    window.alert = (msg) => { record('alert', msg, null); };
+    window.confirm = (msg) => { record('confirm', msg, accept); return accept; };
+    window.prompt = (msg, def) => {
+      const out = accept ? (promptText !== null ? promptText : String(def ?? '')) : null;
+      record('prompt', msg, out);
+      return out;
+    };
+  };
+  state.resetDialog = () => {
+    state.dialogArmed = null;
+    window.alert = nativeDialogs.alert;
+    window.confirm = nativeDialogs.confirm;
+    window.prompt = nativeDialogs.prompt;
+  };
+
+  // Query selector searching open Shadow DOM roots when not found in document.
+  const queryDeep = (sel, root = document) => {
+    if (!sel) return null;
+    let found = null;
+    try { found = root.querySelector(sel); } catch (_) { return null; }
+    if (found) return found;
+    const stack = [root];
+    while (stack.length) {
+      const cur = stack.pop();
+      const children = cur.querySelectorAll ? cur.querySelectorAll('*') : [];
+      for (const el of children) {
+        if (el.shadowRoot) {
+          try { found = el.shadowRoot.querySelector(sel); } catch (_) {}
+          if (found) return found;
+          stack.push(el.shadowRoot);
+        }
+      }
+    }
+    return null;
+  };
+  state.queryDeep = queryDeep;
+  state.resolve = (ref, sel) => (ref !== null && ref !== undefined ? state.refs.get(ref) : queryDeep(sel));
+
   const selector = (el) => {
     const parts = [];
     while (el && el.nodeType === 1 && parts.length < 7) {
@@ -91,7 +272,9 @@ pub const PRELUDE: &str = r#"(() => {
   };
   const describe = (el) => el.localName + (el.id ? '#' + el.id : '') +
     (el.classList.length ? '.' + [...el.classList].slice(0, 2).join('.') : '');
-  window.__bencode = { logs, post, selector, describe, refs: new Map(), picker: null };
+  state.selector = selector;
+  state.describe = describe;
+  window.__bencode = state;
 })();"#;
 
 /// Tells the app the page took the keyboard (`focused`), in every frame:
@@ -173,28 +356,77 @@ pub fn picker() -> String {
     )
 }
 
-/// The page as an agent reads it: title, address, visible text, and the
-/// interactive elements numbered for `click` / `type` (`refs`).
-pub fn outline() -> String {
+/// The page as an agent reads it: title, address, viewport/scroll position,
+/// visible text, and interactive elements (including open Shadow DOM and
+/// `<label>` associations) numbered for `click` / `type` / `select` / `hover`.
+/// Password values never leave the page.
+pub fn outline(selector: Option<&str>, max_text: usize) -> String {
+    let sel_js = serde_json::to_string(&selector.unwrap_or_default()).unwrap_or_default();
     format!(
-        "{PRELUDE}\n{}",
-        r#"(() => {
-  const b = window.__bencode;
+        "{PRELUDE}\n(() => {{\n  const scopeSel = {sel_js};\n  const maxText = {max_text};\n{}\n}})()",
+        r#"  const b = window.__bencode;
   b.refs = new Map();
+  const root = scopeSel ? b.queryDeep(scopeSel) : document;
+  if (!root) {
+    return JSON.stringify({ ok: false, error: `No element matches selector "${scopeSel}".` });
+  }
   const shown = (el) => {
     const r = el.getBoundingClientRect();
     if (r.width === 0 && r.height === 0) return false;
     const s = getComputedStyle(el);
     return s.visibility !== 'hidden' && s.display !== 'none';
   };
-  const name = (el) => (el.getAttribute('aria-label') || el.innerText ||
-    (el.type === 'password' ? '' : el.value) || el.getAttribute('placeholder') || el.getAttribute('title') || el.getAttribute('alt') || '')
-    .trim().replace(/\s+/g, ' ').slice(0, 80);
-  const query = 'a[href],button,input,textarea,select,summary,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[role=switch],[contenteditable=""],[contenteditable=true],[onclick],[tabindex]:not([tabindex="-1"])';
+  const labelFor = (el) => {
+    const labelledBy = el.getAttribute('aria-labelledby');
+    if (labelledBy) {
+      const t = labelledBy.split(/\s+/).map((id) => document.getElementById(id)?.innerText || '').join(' ').trim();
+      if (t) return t;
+    }
+    if (el.labels && el.labels.length) {
+      const t = [...el.labels].map((l) => l.innerText || '').join(' ').trim();
+      if (t) return t;
+    }
+    if (el.id) {
+      const lbl = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (lbl && lbl.innerText) return lbl.innerText.trim();
+    }
+    const parentLabel = el.closest && el.closest('label');
+    if (parentLabel && parentLabel !== el) return (parentLabel.innerText || '').trim();
+    return '';
+  };
+  const name = (el) => (
+    el.getAttribute('aria-label')
+    || labelFor(el)
+    || (el.localName === 'select' ? '' : el.innerText)
+    || (el.type === 'password' ? '' : el.getAttribute('placeholder'))
+    || el.getAttribute('title')
+    || el.getAttribute('alt')
+    || el.getAttribute('name')
+    || ''
+  ).trim().replace(/\s+/g, ' ').slice(0, 80);
+
+  const query = 'a[href],button,input,textarea,select,summary,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[role=radio],[role=switch],[role=combobox],[role=option],[contenteditable=""],[contenteditable=true],[onclick],[tabindex]:not([tabindex="-1"])';
+  const collected = [];
+  const walk = (node) => {
+    if (!node || collected.length >= 300) return;
+    if (node.nodeType === 1 && node.matches && node.matches(query)) {
+      collected.push(node);
+    }
+    const list = node.querySelectorAll ? node.querySelectorAll('*') : [];
+    for (const el of list) {
+      if (collected.length >= 300) break;
+      if (el.matches && el.matches(query)) collected.push(el);
+      if (el.shadowRoot) walk(el.shadowRoot);
+    }
+  };
+  walk(root);
+
+  const seen = new Set();
   const lines = [];
   let n = 0;
-  for (const el of document.querySelectorAll(query)) {
-    if (n >= 300) break;
+  for (const el of collected) {
+    if (seen.has(el)) continue;
+    seen.add(el);
     if (!shown(el)) continue;
     n += 1;
     b.refs.set(n, el);
@@ -204,34 +436,57 @@ pub fn outline() -> String {
     const label = name(el);
     if (label) line += ` "${label}"`;
     if (el.localName === 'a') line += ` -> ${el.getAttribute('href')}`;
-    // A password never leaves the page.
-    if (el.type === 'password') { if (el.value) line += ' (filled)'; }
-    else if ('value' in el && el.localName !== 'button' && el.value) line += ` value="${String(el.value).slice(0, 80)}"`;
-    if (el.disabled) line += ' (disabled)';
-    if (el.checked) line += ' (checked)';
+    if (el.localName === 'select') {
+      const selOpt = el.selectedOptions && el.selectedOptions[0];
+      if (selOpt) line += ` value="${(selOpt.textContent || selOpt.value).trim().slice(0, 60)}"`;
+      const opts = [...el.options].slice(0, 8).map((o) => (o.textContent || o.value).trim());
+      if (opts.length) line += ` options=[${opts.join(', ')}${el.options.length > 8 ? ', …' : ''}]`;
+    } else if (el.type === 'password') {
+      // A password never leaves the page.
+      if (el.value) line += ' (filled)';
+    } else if ('value' in el && el.localName !== 'button' && el.type !== 'checkbox' && el.type !== 'radio' && el.value) {
+      line += ` value="${String(el.value).slice(0, 80)}"`;
+    }
+    if (el.disabled || el.getAttribute('aria-disabled') === 'true') line += ' (disabled)';
+    if (el.required || el.getAttribute('aria-required') === 'true') line += ' (required)';
+    if (el.getAttribute('aria-invalid') === 'true') line += ' (invalid)';
+    if (el.type === 'checkbox' || el.type === 'radio' || role === 'checkbox' || role === 'switch' || role === 'radio') {
+      const checked = el.checked === true || el.getAttribute('aria-checked') === 'true';
+      line += checked ? ' (checked)' : ' (unchecked)';
+    }
+    const exp = el.getAttribute('aria-expanded');
+    if (exp === 'true') line += ' (expanded)';
+    else if (exp === 'false') line += ' (collapsed)';
+    if (el.getAttribute('aria-selected') === 'true') line += ' (selected)';
+    if (el.getAttribute('aria-pressed') === 'true') line += ' (pressed)';
     lines.push(line);
   }
-  const text = (document.body ? document.body.innerText : '').replace(/\n{3,}/g, '\n\n').trim();
+  const textNode = scopeSel ? root : document.body;
+  const text = (textNode ? (textNode.innerText || '') : '').replace(/\n{3,}/g, '\n\n').trim();
+  const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+  const maxX = Math.max(0, document.documentElement.scrollWidth - window.innerWidth);
   return JSON.stringify({
+    ok: true,
     title: document.title,
     url: location.href,
-    text: text.length > 12000 ? text.slice(0, 12000) + '\n…(truncated)' : text,
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    scroll: { x: Math.round(window.scrollX), y: Math.round(window.scrollY), maxX: Math.round(maxX), maxY: Math.round(maxY) },
+    text: text.length > maxText ? text.slice(0, maxText) + '\n…(truncated)' : text,
     elements: lines,
-  });
-})()"#
+  });"#
     )
 }
 
 /// The element a tool names: a number from `outline`, else a CSS selector.
 /// Defines `el`, or returns an error object.
-fn target(reference: Option<u64>, selector: Option<&str>) -> String {
+pub(super) fn target(reference: Option<u64>, selector: Option<&str>) -> String {
     let selector = serde_json::to_string(&selector.unwrap_or_default()).unwrap_or_default();
     let reference = reference.map_or("null".to_string(), |n| n.to_string());
     format!(
         r#"const b = window.__bencode;
   const ref = {reference};
   const sel = {selector};
-  const el = ref !== null ? b.refs.get(ref) : (sel ? document.querySelector(sel) : null);
+  const el = b.resolve(ref, sel);
   if (!el) return JSON.stringify({{ ok: false, error: ref !== null
     ? `No element [${{ref}}]; take a new browser_snapshot first.`
     : `No element matches ${{sel || '(no selector)'}}.` }});
@@ -239,20 +494,55 @@ fn target(reference: Option<u64>, selector: Option<&str>) -> String {
     )
 }
 
-pub fn click(reference: Option<u64>, selector: Option<&str>) -> String {
+/// Clicks an element: supports double-click, right-click (`contextmenu`), and modifier keys.
+pub fn click(
+    reference: Option<u64>,
+    selector: Option<&str>,
+    double_click: bool,
+    right_button: bool,
+    modifiers: &[String],
+) -> String {
+    let mods_json = serde_json::to_string(modifiers).unwrap_or_else(|_| "[]".into());
     format!(
-        "{PRELUDE}\n(() => {{ try {{\n  {}\n{}\n}} catch (e) {{ return JSON.stringify({{ ok: false, error: String(e) }}); }} }})()",
+        "{PRELUDE}\n(() => {{ try {{\n  {}\n  const dbl = {double_click};\n  const right = {right_button};\n  const mods = new Set({mods_json}.map((m) => String(m).toLowerCase()));\n{}\n}} catch (e) {{ return JSON.stringify({{ ok: false, error: String(e) }}); }} }})()",
         target(reference, selector),
         r#"  el.scrollIntoView({ block: 'center', inline: 'center' });
   const r = el.getBoundingClientRect();
-  const at = { bubbles: true, cancelable: true, view: window, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
-  el.dispatchEvent(new PointerEvent('pointerdown', at));
-  el.dispatchEvent(new MouseEvent('mousedown', at));
-  if (typeof el.focus === 'function') el.focus();
-  el.dispatchEvent(new PointerEvent('pointerup', at));
-  el.dispatchEvent(new MouseEvent('mouseup', at));
-  el.click();
-  return JSON.stringify({ ok: true, clicked: b.describe(el) });"#
+  const at = {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+    clientX: r.left + r.width / 2,
+    clientY: r.top + r.height / 2,
+    button: right ? 2 : 0,
+    buttons: right ? 2 : 1,
+    shiftKey: mods.has('shift'),
+    ctrlKey: mods.has('control') || mods.has('ctrl'),
+    altKey: mods.has('alt') || mods.has('option'),
+    metaKey: mods.has('meta') || mods.has('command') || mods.has('cmd'),
+  };
+  const fireOnce = (detail) => {
+    const ev = { ...at, detail };
+    el.dispatchEvent(new PointerEvent('pointerdown', ev));
+    el.dispatchEvent(new MouseEvent('mousedown', ev));
+    if (typeof el.focus === 'function') el.focus();
+    el.dispatchEvent(new PointerEvent('pointerup', ev));
+    el.dispatchEvent(new MouseEvent('mouseup', ev));
+    if (right) {
+      el.dispatchEvent(new MouseEvent('contextmenu', ev));
+    } else if (mods.size > 0) {
+      el.dispatchEvent(new MouseEvent('click', ev));
+    } else {
+      el.click();
+    }
+  };
+  fireOnce(1);
+  if (dbl && !right) {
+    fireOnce(2);
+    el.dispatchEvent(new MouseEvent('dblclick', { ...at, detail: 2 }));
+  }
+  const verb = right ? 'Right-clicked' : (dbl ? 'Double-clicked' : 'Clicked');
+  return JSON.stringify({ ok: true, clicked: `${verb} ${b.describe(el)}` });"#
     )
 }
 
@@ -261,21 +551,24 @@ pub fn type_text(
     selector: Option<&str>,
     text: &str,
     submit: bool,
+    append: bool,
 ) -> String {
     let text = serde_json::to_string(text).unwrap_or_default();
     format!(
-        "{PRELUDE}\n(() => {{ try {{\n  {}\n  const text = {text};\n  const submit = {submit};\n{}\n}} catch (e) {{ return JSON.stringify({{ ok: false, error: String(e) }}); }} }})()",
+        "{PRELUDE}\n(() => {{ try {{\n  {}\n  const text = {text};\n  const submit = {submit};\n  const append = {append};\n{}\n}} catch (e) {{ return JSON.stringify({{ ok: false, error: String(e) }}); }} }})()",
         target(reference, selector),
         r#"  el.scrollIntoView({ block: 'center' });
   el.focus();
   if (el.isContentEditable) {
-    el.textContent = text;
+    const next = append ? (el.textContent || '') + text : text;
+    el.textContent = next;
     el.dispatchEvent(new InputEvent('input', { bubbles: true, data: text }));
   } else if ('value' in el) {
     // The prototype's setter, so React and friends see the change.
+    const next = append ? String(el.value || '') + text : text;
     const proto = Object.getPrototypeOf(el);
     const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-    if (setter) setter.call(el, text); else el.value = text;
+    if (setter) setter.call(el, next); else el.value = next;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
   } else {
@@ -293,25 +586,51 @@ pub fn type_text(
     )
 }
 
-/// A key pressed on the focused element (`Enter`, `Escape`, `Tab`, …). A
-/// scripted key is not trusted, so the browser does nothing of its own with
-/// it: what Enter and Tab would do is done here, and told in `effect`.
-pub fn press_key(key: &str) -> String {
+/// A key (or modifier combo like `Control+Enter`, `Shift+Tab`, `Meta+k`)
+/// pressed on the focused element, or on `reference`/`selector` when given.
+pub fn press_key(key: &str, reference: Option<u64>, selector: Option<&str>) -> String {
     let key = serde_json::to_string(key).unwrap_or_default();
+    let ref_js = reference.map_or("null".to_string(), |n| n.to_string());
+    let sel_js = serde_json::to_string(&selector.unwrap_or_default()).unwrap_or_default();
     format!(
         r#"{PRELUDE}
 (() => {{
   const b = window.__bencode;
-  const key = {key};
+  const raw = {key};
+  const ref = {ref_js};
+  const sel = {sel_js};
+  if (ref !== null || sel) {{
+    const target = b.resolve(ref, sel);
+    if (!target || !target.isConnected) {{
+      return JSON.stringify({{ ok: false, error: 'Target element not found; take a new browser_snapshot.' }});
+    }}
+    if (typeof target.focus === 'function') target.focus();
+  }}
+  const parts = raw.split('+');
+  const mainKey = parts.pop() || raw;
+  const mods = new Set(parts.map((p) => p.trim().toLowerCase()));
+  const keyName = mainKey === 'Space' ? ' ' : mainKey;
   const el = document.activeElement || document.body;
   const codes = {{ Enter: 13, Escape: 27, Tab: 9, Backspace: 8, Delete: 46, ' ': 32, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40 }};
-  const code = codes[key] || 0;
-  const init = {{ key, code: key === ' ' ? 'Space' : key, keyCode: code, which: code, bubbles: true, cancelable: true }};
+  const code = codes[keyName] || (keyName.length === 1 ? keyName.toUpperCase().charCodeAt(0) : 0);
+  const init = {{
+    key: keyName,
+    code: keyName === ' ' ? 'Space' : (keyName.length === 1 && /[a-z]/i.test(keyName) ? 'Key' + keyName.toUpperCase() : keyName),
+    keyCode: code,
+    which: code,
+    bubbles: true,
+    cancelable: true,
+    shiftKey: mods.has('shift'),
+    ctrlKey: mods.has('control') || mods.has('ctrl'),
+    altKey: mods.has('alt') || mods.has('option'),
+    metaKey: mods.has('meta') || mods.has('command') || mods.has('cmd'),
+  }};
   const go = el.dispatchEvent(new KeyboardEvent('keydown', init));
   el.dispatchEvent(new KeyboardEvent('keypress', init));
   el.dispatchEvent(new KeyboardEvent('keyup', init));
   let effect = '';
-  if (go && key === 'Enter') {{
+  const noMods = !init.ctrlKey && !init.altKey && !init.metaKey;
+  if (go && noMods && !init.shiftKey && keyName === 'Enter') {{
     if (el.matches('button,a[href],summary,[role=button],[role=link],input[type=submit],input[type=button]')) {{
       el.click();
       effect = '; clicked ' + b.describe(el);
@@ -319,10 +638,18 @@ pub fn press_key(key: &str) -> String {
       if (typeof el.form.requestSubmit === 'function') el.form.requestSubmit(); else el.form.submit();
       effect = '; submitted the form';
     }}
-  }} else if (go && key === 'Tab') {{
+  }} else if (go && noMods && !init.shiftKey && keyName === ' ') {{
+    if (el.matches('button,summary,[role=button],[role=checkbox],[role=switch],input[type=checkbox],input[type=radio]')) {{
+      el.click();
+      effect = '; toggled ' + b.describe(el);
+    }}
+  }} else if (go && noMods && keyName === 'Tab') {{
     const stops = [...document.querySelectorAll('a[href],button,input,select,textarea,[tabindex]')]
       .filter((e) => e.tabIndex >= 0 && !e.disabled && e.getClientRects().length);
-    const next = stops[stops.indexOf(el) + 1] || stops[0];
+    const idx = stops.indexOf(el);
+    const next = init.shiftKey
+      ? (idx > 0 ? stops[idx - 1] : stops[stops.length - 1])
+      : (stops[idx + 1] || stops[0]);
     if (next) {{ next.focus(); effect = '; focus moved to ' + b.describe(next); }}
   }}
   return JSON.stringify({{ ok: true, target: b.describe(el), effect }});
@@ -332,16 +659,8 @@ pub fn press_key(key: &str) -> String {
 
 /// Runs an expression. A promise is settled into `__bencode.evals[id]`,
 /// which `eval_result` reads back.
-///
-/// `inline` writes the expression into the script itself, which a page's
-/// Content-Security-Policy does not stop as it stops `eval`; a syntax error
-/// (statements are one) then fails the whole script with nothing to read,
-/// and the caller runs it again through `eval`, which says what is wrong.
 pub fn evaluate(expression: &str, id: u64, inline: bool) -> String {
-    // Passed in from outside the function below, so the expression sees the
-    // page's names and none of this script's.
     let run = if inline {
-        // The line break ends a trailing `//` comment.
         format!("() => ({expression}\n)")
     } else {
         let quoted = serde_json::to_string(expression).unwrap_or_default();
@@ -352,7 +671,6 @@ pub fn evaluate(expression: &str, id: u64, inline: bool) -> String {
 ((run) => {{
   const b = window.__bencode;
   b.evals = b.evals || {{}};
-  // WebKit's `stack` leaves the message out.
   const why = (e) => (e && e.message ? `${{e.name}}: ${{e.message}}` : String(e));
   const show = (v) => {{
     if (v === undefined) return 'undefined';
@@ -389,23 +707,32 @@ pub fn eval_result(id: u64) -> String {
     )
 }
 
-/// The console messages kept since the page loaded; `clear` empties them.
-pub fn console(clear: bool) -> String {
+/// The console messages kept since the page loaded, optionally filtered by
+/// level, substring search, and limit; `clear` empties the buffer after reading.
+pub fn console(
+    clear: bool,
+    level: Option<&str>,
+    search: Option<&str>,
+    limit: Option<usize>,
+) -> String {
+    let level_js = serde_json::to_string(&level.unwrap_or_default()).unwrap_or_default();
+    let search_js = serde_json::to_string(&search.unwrap_or_default()).unwrap_or_default();
+    let limit_js = limit.map_or("0".to_string(), |n| n.to_string());
     format!(
         r#"{PRELUDE}
 (() => {{
   const logs = window.__bencode.logs;
-  const out = logs.map((l) => `[${{l.level}}] ${{l.text}}`);
+  const level = {level_js}.toLowerCase();
+  const search = {search_js}.toLowerCase();
+  const limit = {limit_js};
+  let filtered = logs.slice();
+  if (level === 'errors') filtered = filtered.filter((l) => l.level === 'error' || l.level === 'warn');
+  else if (level) filtered = filtered.filter((l) => l.level === level);
+  if (search) filtered = filtered.filter((l) => String(l.text).toLowerCase().includes(search));
+  if (limit > 0) filtered = filtered.slice(-limit);
+  const out = filtered.map((l) => `[${{l.level}}] ${{l.text}}`);
   if ({clear}) logs.length = 0;
   return JSON.stringify({{ ok: true, lines: out }});
 }})()"#
-    )
-}
-
-/// Whether `text` shows on the page.
-pub fn has_text(text: &str) -> String {
-    let text = serde_json::to_string(text).unwrap_or_default();
-    format!(
-        "JSON.stringify({{ found: !!(document.body && document.body.innerText.includes({text})) }})"
     )
 }
