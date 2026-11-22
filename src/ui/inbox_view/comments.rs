@@ -111,6 +111,7 @@ impl BenCodeApp {
             .map(|r| r.thread_id.clone());
         self.inbox_state.as_mut(cx).comment_posting = true;
         self.inbox_state.as_mut(cx).comment_error = None;
+        let (posted, posted_on) = (body.clone(), item.key());
         let task = cx.background_executor().spawn(async move {
             match item.provider {
                 Provider::GitHub => github::post_comment(
@@ -129,18 +130,28 @@ impl BenCodeApp {
             let result = task.await;
             let updated = this.update(cx, |app, cx| {
                 app.inbox_state.as_mut(cx).comment_posting = false;
+                // The box is shared: an item opened since keeps its own
+                // reply, draft and status.
+                let here = app.inbox(cx).selected.as_deref() == Some(posted_on.as_str());
                 match result {
                     Ok(key) => {
                         // The user's own comment is not news to them.
                         app.mark_inbox_key_seen(&key, cx);
-                        app.inbox_state.as_mut(cx).reply_to = None;
-                        app.inbox_comment_input
-                            .update(cx, |input, cx| input.set_text("", cx));
+                        if here {
+                            app.inbox_state.as_mut(cx).reply_to = None;
+                        }
+                        app.inbox_comment_input.update(cx, |input, cx| {
+                            if input.text().trim() == posted {
+                                input.set_text("", cx);
+                            }
+                        });
                         app.load_inbox_thread(&key, true, cx);
                     }
                     Err(err) => {
                         log::warn!("could not post comment: {err}");
-                        app.inbox_state.as_mut(cx).comment_error = Some(err);
+                        if here {
+                            app.inbox_state.as_mut(cx).comment_error = Some(err);
+                        }
                     }
                 }
                 cx.notify();
