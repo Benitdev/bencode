@@ -914,23 +914,6 @@ fn parse_thread(json: &str, kind: Kind) -> Result<Thread, String> {
     Ok(thread)
 }
 
-/// MonoCode `with_temp_markdown`: a body goes to `gh` as a file.
-fn with_temp_body(
-    body: &str,
-    run: impl FnOnce(&str) -> Result<String, String>,
-) -> Result<String, String> {
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
-    let path = std::env::temp_dir().join(format!("bencode-comment-{stamp}.md"));
-    std::fs::write(&path, body).map_err(|err| err.to_string())?;
-    let result = run(&path.to_string_lossy());
-    if let Err(err) = std::fs::remove_file(&path) {
-        log::warn!("could not remove {}: {err}", path.display());
-    }
-    result
-}
-
 /// MonoCode `valid_github_node_id`.
 fn valid_node_id(id: &str) -> bool {
     let id = id.trim();
@@ -952,8 +935,21 @@ pub fn post_comment(
     body: &str,
     reply_thread: Option<&str>,
 ) -> Result<String, String> {
-    let body = body.trim();
-    if body.is_empty() {
+    let args = comment_args(repo, kind, number, body, reply_thread)?;
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    gh_with_stdin(cwd, &refs, body.trim().as_bytes())
+}
+
+/// `gh`'s arguments for a comment whose body comes on stdin: a file here
+/// would not exist where a machine's `gh` runs.
+fn comment_args(
+    repo: &str,
+    kind: Kind,
+    number: i64,
+    body: &str,
+    reply_thread: Option<&str>,
+) -> Result<Vec<String>, String> {
+    if body.trim().is_empty() {
         return Err("Comment cannot be empty".into());
     }
     split_repo(repo)?;
@@ -961,37 +957,26 @@ pub fn post_comment(
         if !valid_node_id(thread) {
             return Err("Invalid review thread".into());
         }
-        return with_temp_body(body, |path| {
-            gh(
-                cwd,
-                &[
-                    "api",
-                    "graphql",
-                    "-f",
-                    &format!("query={REVIEW_REPLY_MUTATION}"),
-                    "-f",
-                    &format!("threadId={thread}"),
-                    "-F",
-                    &format!("body=@{path}"),
-                ],
-            )
-        });
+        return Ok(vec![
+            "api".into(),
+            "graphql".into(),
+            "-f".into(),
+            format!("query={REVIEW_REPLY_MUTATION}"),
+            "-f".into(),
+            format!("threadId={thread}"),
+            "-F".into(),
+            "body=@-".into(),
+        ]);
     }
-    let number = number.to_string();
-    with_temp_body(body, |path| {
-        gh(
-            cwd,
-            &[
-                kind.arg(),
-                "comment",
-                &number,
-                "--repo",
-                repo,
-                "--body-file",
-                path,
-            ],
-        )
-    })
+    Ok(vec![
+        kind.arg().into(),
+        "comment".into(),
+        number.to_string(),
+        "--repo".into(),
+        repo.into(),
+        "--body-file".into(),
+        "-".into(),
+    ])
 }
 
 // ---------------------------------------------------------------------------
@@ -1918,6 +1903,16 @@ mod tests {
         );
         assert!(review_args("o/r", 9, ReviewAction::RequestChanges, "   ").is_err());
         assert!(review_args("o/r", 9, ReviewAction::Comment, "").is_err());
+
+        let comment = comment_args("o/r", Kind::Issue, 7, "hi", None).unwrap();
+        assert_eq!(
+            comment,
+            ["issue", "comment", "7", "--repo", "o/r", "--body-file", "-"]
+        );
+        let reply = comment_args("o/r", Kind::Pr, 7, "hi", Some("PRRT_1")).unwrap();
+        assert_eq!(reply[reply.len() - 2..], ["-F", "body=@-"]);
+        assert!(comment_args("o/r", Kind::Pr, 7, "  ", None).is_err());
+        assert!(comment_args("o/r", Kind::Pr, 7, "hi", Some("bad id")).is_err());
     }
 
     #[test]
