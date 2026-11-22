@@ -27,6 +27,9 @@ pub struct PrActionUi {
     pub merge_method: PrAction,
     /// The action waiting for confirmation, with the item it is for.
     pub confirm: Option<(String, PrAction)>,
+    /// The item `busy`, `error` and `notice` are about: an action outlives
+    /// a switch to another item, and its outcome stays with its own.
+    pub on: Option<String>,
     pub busy: Option<PrAction>,
     pub error: Option<String>,
     pub notice: Option<String>,
@@ -37,6 +40,7 @@ impl Default for PrActionUi {
         Self {
             merge_method: PrAction::Merge,
             confirm: None,
+            on: None,
             busy: None,
             error: None,
             notice: None,
@@ -132,7 +136,10 @@ impl BenCodeApp {
         let Some(item) = self.inbox(cx).item(&key).cloned() else {
             return;
         };
-        self.inbox_state.as_mut(cx).pr.busy = Some(action);
+        self.inbox_mut(cx, |inbox| {
+            let pr = &mut inbox.pr;
+            (pr.on, pr.busy, pr.error, pr.notice) = (Some(key.clone()), Some(action), None, None);
+        });
         let task = cx.background_executor().spawn(async move {
             github::pr_action(
                 std::path::Path::new(&item.project),
@@ -148,23 +155,35 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let updated = this.update(cx, |app, cx| {
-                app.inbox_state.as_mut(cx).pr.busy = None;
+                // Another item's action since owns the status line.
+                let own = app.inbox(cx).pr.on.as_deref() == Some(key.as_str());
+                if own {
+                    app.inbox_state.as_mut(cx).pr.busy = None;
+                }
                 match result {
                     Ok(next) => {
                         // MonoCode: a merge that did not land was queued.
-                        app.inbox_state.as_mut(cx).pr.notice = (action.is_merge()
+                        let notice = (action.is_merge()
                             && !next.state.eq_ignore_ascii_case("merged"))
                         .then(|| "Merge queued or auto-merge enabled.".to_string());
+                        if own {
+                            app.inbox_state.as_mut(cx).pr.notice = notice;
+                        }
                         if let Some(slot) = app.inbox_state.as_mut(cx).item_mut(&key) {
                             *slot = next;
                         }
+                        // The change is the user's own: it does not mark
+                        // the item unread.
+                        app.mark_inbox_key_seen(&key, cx);
                         app.inbox_state.as_mut(cx).details.value.remove(&key);
                         app.inbox_state.as_mut(cx).checks.value.remove(&key);
                         app.load_inbox_item(&key, cx);
                     }
                     Err(err) => {
                         log::warn!("pull request action failed: {err}");
-                        app.inbox_state.as_mut(cx).pr.error = Some(err);
+                        if own {
+                            app.inbox_state.as_mut(cx).pr.error = Some(err);
+                        }
                     }
                 }
                 cx.notify();
@@ -187,8 +206,9 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> Vec<AnyElement> {
         let state = item.state.to_lowercase();
-        let busy = self.inbox(cx).pr.busy.is_some();
         let key = item.key();
+        let pr = &self.inbox(cx).pr;
+        let busy = pr.busy.is_some() && pr.on.as_deref() == Some(key.as_str());
         let button = |id: &'static str, label: &'static str, icon: IconName, action: PrAction| {
             let key = key.clone();
             Button::new(id, label)
@@ -286,9 +306,16 @@ impl BenCodeApp {
     }
 
     /// "Merging…", the failure, or MonoCode's merge-queued notice.
-    pub(super) fn render_pr_action_status(&self, cx: &Context<Self>) -> Option<AnyElement> {
+    pub(super) fn render_pr_action_status(
+        &self,
+        item: &WorkItem,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
         let colors = &cx.theme().colors;
         let pr = &self.inbox(cx).pr;
+        if pr.on.as_deref() != Some(item.key().as_str()) {
+            return None;
+        }
         let (text, color) = if let Some(action) = pr.busy {
             (
                 action_copy(action, "", "").3.to_string(),

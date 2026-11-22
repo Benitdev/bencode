@@ -573,7 +573,7 @@ impl BenCodeApp {
                     .flatten()
                     .map(|threads| div().max_w(px(PROPERTIES_WIDTH * 2.0)).child(threads)),
             )
-            .children(self.render_pr_action_status(cx))
+            .children(self.render_pr_action_status(item, cx))
             .children((self.inbox(cx).translations.error(&key)).map(|err| {
                 div()
                     .text_size(Text::Base.px())

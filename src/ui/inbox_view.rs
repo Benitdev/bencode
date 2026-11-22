@@ -1010,7 +1010,11 @@ impl BenCodeApp {
         if self.inbox(cx).selected.as_deref() != Some(key.as_str()) {
             self.inbox_state.as_mut(cx).reply_to = None;
             self.inbox_state.as_mut(cx).comment_error = None;
-            self.inbox_state.as_mut(cx).pr = PrActionUi::default();
+            // An action in flight keeps its item, to report on (`pr.on`).
+            self.inbox_mut(cx, |inbox| match inbox.pr.busy {
+                Some(_) => inbox.pr.confirm = None,
+                None => inbox.pr = PrActionUi::default(),
+            });
             self.inbox_state.as_mut(cx).pr_review = None;
             self.inbox_state.as_mut(cx).github_edit_error = None;
             self.inbox_state.as_mut(cx).repair = None;
