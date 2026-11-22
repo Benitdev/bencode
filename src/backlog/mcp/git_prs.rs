@@ -359,6 +359,13 @@ pub(super) fn update_pull_request(args: &Value) -> Result<String, String> {
     let raw = string_arg(args, "project").ok_or("Name the project: its key or id")?;
     let repo = repo_arg(args)?;
     let number = i64_arg(args, "number").ok_or("Give the pull request number")?;
+    // Backlog's Update Pull Request takes no status: one sent would be
+    // ignored and the PR reported updated all the same.
+    if args.get("status").is_some_and(|v| !v.is_null()) {
+        return Err("Backlog's API cannot change a pull request's status; \
+            merge or close it in Backlog or with git"
+            .into());
+    }
     let config = require_config()?;
     let project = resolve_project(&raw)?;
     let mut form: Vec<(String, String)> = Vec::new();
@@ -393,9 +400,6 @@ pub(super) fn update_pull_request(args: &Value) -> Result<String, String> {
                 form.push(("notifiedUserId[]".into(), uid.to_string()));
             }
         }
-    }
-    if let Some(status) = args.get("status").filter(|v| !v.is_null()) {
-        form.push(("statusId".into(), parse_pr_status(status)?.to_string()));
     }
     if let Some(comment) = string_arg(args, "comment") {
         form.push(("comment".into(), comment));
@@ -449,4 +453,20 @@ pub(super) fn comment_pull_request(args: &Value) -> Result<String, String> {
         "Commented (#{cid}) on PR #{number} in {}/{repo}.",
         project.key
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn a_status_change_is_refused_before_anything_is_sent() {
+        let err = update_pull_request(&json!({
+            "project": "PROJ", "repo": "app", "number": 3, "status": "merged"
+        }))
+        .unwrap_err();
+        assert!(err.contains("cannot change a pull request's status"), "{err}");
+    }
 }

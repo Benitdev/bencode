@@ -641,7 +641,7 @@ pub(super) fn all_tools() -> Vec<(Toolset, Value)> {
             Toolset::Git,
             json!({
                 "name": "backlog_update_pull_request",
-                "description": "Update a pull request's title, description, linked issue, assignee or add a comment. Only when the user asked for it.",
+                "description": "Update a pull request's title, description, linked issue, assignee or add a comment. Backlog's API cannot merge, close or reopen a pull request. Only when the user asked for it.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -651,7 +651,6 @@ pub(super) fn all_tools() -> Vec<(Toolset, Value)> {
                         "summary": { "type": "string" },
                         "description": { "type": "string" },
                         "issue": { "type": ["string", "integer", "null"], "description": "Linked issue key, URL or numeric id; null clears it." },
-                        "status": { "type": ["string", "integer"], "description": "Pull request status: \"open\" (1), \"closed\" (2), \"merged\" (3)." },
                         "assignee": assignee,
                         "notifiedUsers": user_list("Users to notify"),
                         "comment": { "type": "string", "description": "Comment to post with the update." },
