@@ -153,6 +153,10 @@ impl BenCodeApp {
         if let Some(batch) = &mut self.inbox_state.as_mut(cx).batch {
             batch.starting = true;
         }
+        let confirmed = BatchSend {
+            starting: true,
+            ..batch.clone()
+        };
         cx.notify();
         let task = cx.background_executor().spawn(async move {
             (unread.into_iter())
@@ -162,8 +166,9 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             let read = task.await;
             let updated = this.update(cx, |app, cx| {
-                // Cancelled while reading: nothing starts.
-                if app.inbox(cx).batch.is_none() {
+                // Cancelled while reading, maybe for another batch since:
+                // only the one confirmed starts, and only once.
+                if app.inbox(cx).batch.as_ref() != Some(&confirmed) {
                     return;
                 }
                 app.inbox_state.update(cx, |inbox, cx| {
