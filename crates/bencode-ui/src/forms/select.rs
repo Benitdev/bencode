@@ -29,6 +29,8 @@ pub(crate) struct Picker {
     pub revealed: Option<usize>,
     /// What a long list is filtered by, typed while it is open.
     pub query: String,
+    /// Staged multi-select values while the list is open (`commit_on_close`).
+    pub draft: Option<Vec<SharedString>>,
 }
 
 /// Lists longer than this are filtered by typing while open (MonoCode
@@ -178,11 +180,18 @@ pub(crate) fn field_text(
         .child(Ellipsis::new(text.unwrap_or(placeholder)))
 }
 
-/// The rows of `rows` whose label holds `query`, ignoring case, by index.
+/// The rows of `rows` whose label or note holds `query`, ignoring case, by index.
 pub(crate) fn matching(rows: &[Choice], query: &str) -> Vec<usize> {
     let query = query.trim().to_lowercase();
     (0..rows.len())
-        .filter(|&ix| query.is_empty() || rows[ix].label.to_lowercase().contains(&query))
+        .filter(|&ix| {
+            query.is_empty()
+                || rows[ix].label.to_lowercase().contains(&query)
+                || rows[ix]
+                    .note
+                    .as_ref()
+                    .is_some_and(|note| note.to_lowercase().contains(&query))
+        })
         .collect()
 }
 
@@ -192,10 +201,16 @@ pub(crate) struct Filter {
     pub input: Entity<TextInput>,
 }
 
+/// Whether `filter` holds the keyboard. Its keys reach the trigger too, and
+/// stay its own: a space typed there is text, not a pick.
+pub(crate) fn typing_in(filter: Option<&Entity<TextInput>>, window: &Window, cx: &App) -> bool {
+    filter.is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window))
+}
+
 /// The filter row atop a long list: the search icon and the field, which
 /// has the keyboard while the list is open. Up and Down walk the list,
 /// Enter picks, Escape closes; the field keeps the rest.
-fn filter_row(
+pub(crate) fn filter_row(
     filter: &Entity<TextInput>,
     walk: impl Fn(isize, &mut Window, &mut App) + 'static,
     enter: impl Fn(&mut Window, &mut App) + 'static,
@@ -282,9 +297,7 @@ pub(crate) fn listing(
             .input
             .clone()
     });
-    let filter_focused = filter
-        .as_ref()
-        .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+    let filter_focused = typing_in(filter.as_ref(), window, cx);
     if picker.read(cx).open && !focus.is_focused(window) && !filter_focused {
         log::info!("list {id:?}: closed on blur");
         picker.update(cx, |picker, _| {
@@ -373,7 +386,8 @@ pub(crate) fn listing(
             }
         })
     };
-    let (keys, keyed_rows, enter) = (picker.clone(), rows.clone(), pick.clone());
+    let (keys, keyed_rows, enter, filtering) =
+        (picker.clone(), rows.clone(), pick.clone(), filter.clone());
     let (toggle_open, toggle_close, key_open, key_close) = (
         open_list.clone(),
         close_list.clone(),
@@ -411,6 +425,9 @@ pub(crate) fn listing(
             }
         })
         .on_key_down(move |event, window, cx| {
+            if typing_in(filtering.as_ref(), window, cx) {
+                return;
+            }
             let at = keys.read(cx).highlighted;
             let key = event.keystroke.key.as_str();
             if !open {

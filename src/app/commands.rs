@@ -90,6 +90,7 @@ actions!(
         InboxRefresh,
         InboxToggleRead,
         InboxAssignToMe,
+        InboxReview,
         InboxFocusComment,
         InboxToggleTranslation,
         InboxCopyTicket,
@@ -748,6 +749,9 @@ impl BenCodeApp {
         .on_action(
             cx.listener(|this, _: &InboxAssignToMe, _, cx| this.assign_selected_inbox_item(cx)),
         )
+        .on_action(cx.listener(|this, _: &InboxReview, window, cx| {
+            this.review_selected_inbox_item(window, cx)
+        }))
         .on_action(cx.listener(|this, _: &InboxFocusComment, window, cx| {
             this.focus_inbox_comment(window, cx)
         }))

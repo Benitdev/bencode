@@ -339,7 +339,7 @@ fn parse_work_items(
 /// MonoCode `git_github_work_item_details`.
 pub fn details(cwd: &Path, repo: &str, kind: Kind, number: i64) -> Result<Details, String> {
     let fields = match kind {
-        Kind::Pr => "body,author,baseRefName,headRefName,reviewDecision",
+        Kind::Pr => "body,author,baseRefName,headRefName,reviewDecision,reviewRequests",
         Kind::Issue => "body,author",
     };
     let number = number.to_string();
@@ -355,10 +355,17 @@ pub fn details(cwd: &Path, repo: &str, kind: Kind, number: i64) -> Result<Detail
             fields,
         ],
     )?;
-    parse_details(&json)
+    parse_details(&json, repo)
 }
 
-fn parse_details(json: &str) -> Result<Details, String> {
+fn parse_details(json: &str, repo: &str) -> Result<Details, String> {
+    #[derive(Deserialize, Default)]
+    #[serde(default)]
+    struct ReviewRequest {
+        login: String,
+        slug: String,
+        name: String,
+    }
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct Row {
@@ -372,14 +379,42 @@ fn parse_details(json: &str) -> Result<Details, String> {
         head_ref_name: String,
         #[serde(default)]
         review_decision: Option<String>,
+        #[serde(default)]
+        review_requests: Option<Vec<ReviewRequest>>,
     }
     let row: Row = serde_json::from_str(json).map_err(|err| err.to_string())?;
+    let owner = split_repo(repo).ok().map(|(owner, _)| owner);
+    let mut reviewers = Vec::new();
+    for req in row.review_requests.unwrap_or_default() {
+        let login = req.login.trim();
+        let slug = req.slug.trim();
+        let name = req.name.trim();
+        let handle = if !login.is_empty() {
+            login.to_string()
+        } else if !slug.is_empty() {
+            match owner {
+                Some(owner) if !slug.contains('/') => format!("{owner}/{slug}"),
+                _ => slug.to_string(),
+            }
+        } else if !name.is_empty() {
+            name.to_string()
+        } else {
+            continue;
+        };
+        if !reviewers
+            .iter()
+            .any(|existing: &String| existing.eq_ignore_ascii_case(&handle))
+        {
+            reviewers.push(handle);
+        }
+    }
     Ok(Details {
         body: row.body,
         author: row.author.map(|a| a.login).unwrap_or_default(),
         base_ref: row.base_ref_name,
         head_ref: row.head_ref_name,
         review_decision: row.review_decision.unwrap_or_default(),
+        reviewers,
         backlog: None,
     })
 }
@@ -1332,6 +1367,353 @@ pub fn pr_action(
     work_item(cwd, repo, Kind::Pr, number)
 }
 
+// ---------------------------------------------------------------------------
+// Repository field options, metadata edits and pull request reviews.
+// ---------------------------------------------------------------------------
+
+const REPO_OPTIONS_QUERY: &str = r#"
+query InboxRepoOptions($owner: String!, $name: String!) {
+  viewer { login }
+  repository(owner: $owner, name: $name) {
+    assignableUsers(first: 100) {
+      nodes { login name }
+    }
+    labels(first: 100) {
+      nodes { name color }
+    }
+  }
+}
+"#;
+
+/// A collaborator who can be assigned to issues or requested to review PRs.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RepoUser {
+    pub login: String,
+    pub name: String,
+}
+
+/// What a repository's issues and pull requests can be set to: the signed-in
+/// viewer, assignable collaborators, and repository labels.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RepoOptions {
+    pub me: String,
+    pub users: Vec<RepoUser>,
+    pub labels: Vec<Label>,
+}
+
+/// Lists assignable users, labels and the viewer for `repo` in one GraphQL call.
+pub fn repo_options(cwd: &Path, repo: &str) -> Result<RepoOptions, String> {
+    let (owner, name) = split_repo(repo)?;
+    let query = format!("query={REPO_OPTIONS_QUERY}");
+    let owner_arg = format!("owner={owner}");
+    let name_arg = format!("name={name}");
+    let json = gh(
+        cwd,
+        &[
+            "api", "graphql", "-f", &query, "-f", &owner_arg, "-f", &name_arg,
+        ],
+    )?;
+    parse_repo_options(&json)
+}
+
+fn parse_repo_options(json: &str) -> Result<RepoOptions, String> {
+    #[derive(Deserialize, Default)]
+    #[serde(default)]
+    struct GqlUser {
+        login: String,
+        name: Option<String>,
+    }
+    #[derive(Deserialize, Default)]
+    #[serde(default)]
+    struct UserNodes {
+        nodes: Vec<Option<GqlUser>>,
+    }
+    #[derive(Deserialize, Default)]
+    #[serde(default)]
+    struct LabelNodes {
+        nodes: Vec<Option<Label>>,
+    }
+    #[derive(Deserialize, Default)]
+    #[serde(default, rename_all = "camelCase")]
+    struct Repo {
+        assignable_users: UserNodes,
+        labels: LabelNodes,
+    }
+    #[derive(Deserialize, Default)]
+    #[serde(default)]
+    struct Data {
+        viewer: Option<Login>,
+        repository: Option<Repo>,
+    }
+    #[derive(Deserialize, Default)]
+    #[serde(default)]
+    struct Envelope {
+        data: Option<Data>,
+        errors: Vec<GqlError>,
+    }
+    let envelope: Envelope = serde_json::from_str(json).map_err(|err| err.to_string())?;
+    let error = envelope
+        .errors
+        .iter()
+        .map(|e| e.message.trim())
+        .find(|m| !m.is_empty())
+        .map(str::to_string);
+    let data = envelope.data.ok_or_else(|| {
+        error
+            .clone()
+            .unwrap_or_else(|| "GitHub returned no data".into())
+    })?;
+    let repo = data
+        .repository
+        .ok_or_else(|| error.unwrap_or_else(|| "GitHub repository not found".into()))?;
+    let me = login(data.viewer);
+    let mut users: Vec<RepoUser> = Vec::new();
+    for user in repo.assignable_users.nodes.into_iter().flatten() {
+        let login = user.login.trim().to_string();
+        if login.is_empty()
+            || users
+                .iter()
+                .any(|existing| existing.login.eq_ignore_ascii_case(&login))
+        {
+            continue;
+        }
+        let name = user.name.unwrap_or_default().trim().to_string();
+        users.push(RepoUser { login, name });
+    }
+    users.sort_by_key(|u| u.login.to_lowercase());
+
+    let mut labels: Vec<Label> = Vec::new();
+    for mut label in repo.labels.nodes.into_iter().flatten() {
+        label.name = label.name.trim().to_string();
+        label.color = label.color.trim().to_string();
+        if label.name.is_empty()
+            || labels
+                .iter()
+                .any(|existing| existing.name.eq_ignore_ascii_case(&label.name))
+        {
+            continue;
+        }
+        labels.push(label);
+    }
+    labels.sort_by_key(|l| l.name.to_lowercase());
+
+    Ok(RepoOptions { me, users, labels })
+}
+
+/// An edit to a GitHub issue or pull request's metadata fields.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ItemChange {
+    Assignees {
+        add: Vec<String>,
+        remove: Vec<String>,
+    },
+    Labels {
+        add: Vec<String>,
+        remove: Vec<String>,
+    },
+    Reviewers {
+        add: Vec<String>,
+        remove: Vec<String>,
+    },
+}
+
+impl ItemChange {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Assignees { add, remove }
+            | Self::Labels { add, remove }
+            | Self::Reviewers { add, remove } => add.is_empty() && remove.is_empty(),
+        }
+    }
+}
+
+/// Computes `(add, remove)` from `current` to `next`, matching case-insensitively.
+pub fn diff_values(current: &[String], next: &[String]) -> (Vec<String>, Vec<String>) {
+    let add = next
+        .iter()
+        .filter(|val| !val.trim().is_empty())
+        .filter(|val| !current.iter().any(|cur| cur.eq_ignore_ascii_case(val)))
+        .cloned()
+        .collect();
+    let remove = current
+        .iter()
+        .filter(|val| !val.trim().is_empty())
+        .filter(|val| !next.iter().any(|nxt| nxt.eq_ignore_ascii_case(val)))
+        .cloned()
+        .collect();
+    (add, remove)
+}
+
+fn edit_item_args(
+    kind: Kind,
+    repo: &str,
+    number: i64,
+    change: &ItemChange,
+) -> Result<Vec<String>, String> {
+    split_repo(repo)?;
+    let (add_flag, remove_flag, add, remove) = match change {
+        ItemChange::Assignees { add, remove } => {
+            ("--add-assignee", "--remove-assignee", add, remove)
+        }
+        ItemChange::Labels { add, remove } => ("--add-label", "--remove-label", add, remove),
+        ItemChange::Reviewers { add, remove } => {
+            if kind != Kind::Pr {
+                return Err("Only pull requests have reviewers.".into());
+            }
+            ("--add-reviewer", "--remove-reviewer", add, remove)
+        }
+    };
+    let mut args = vec![
+        kind.arg().to_string(),
+        "edit".to_string(),
+        number.to_string(),
+        "--repo".to_string(),
+        repo.to_string(),
+    ];
+    for val in add {
+        let val = val.trim();
+        if !val.is_empty() {
+            args.push(format!("{add_flag}={val}"));
+        }
+    }
+    for val in remove {
+        let val = val.trim();
+        if !val.is_empty() {
+            args.push(format!("{remove_flag}={val}"));
+        }
+    }
+    Ok(args)
+}
+
+/// What a change that went through reads back: the list item and its
+/// details, or why they could not be read. Either way the change stands.
+pub type ReadBack = Result<(WorkItem, Details), String>;
+
+/// Item `number` and its details, read again so every view stays fresh.
+fn read_back(cwd: &Path, repo: &str, kind: Kind, number: i64) -> ReadBack {
+    let item = work_item(cwd, repo, kind, number)?;
+    let detail = details(cwd, repo, kind, number)?;
+    Ok((item, detail))
+}
+
+/// Applies `change` to issue or pull request `number`, then reads it back.
+/// `Err` only when the change itself failed: one that went through stays
+/// made though it cannot be read back, so it is neither undone nor retried.
+pub fn edit_item(
+    cwd: &Path,
+    repo: &str,
+    kind: Kind,
+    number: i64,
+    change: &ItemChange,
+) -> Result<ReadBack, String> {
+    if !change.is_empty() {
+        let args = edit_item_args(kind, repo, number, change)?;
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        gh(cwd, &refs)?;
+    }
+    Ok(read_back(cwd, repo, kind, number))
+}
+
+/// A pull request review verdict (`gh pr review`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReviewAction {
+    Approve,
+    RequestChanges,
+    Comment,
+}
+
+impl ReviewAction {
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Approve => "approve",
+            Self::RequestChanges => "request-changes",
+            Self::Comment => "comment",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "approve" => Some(Self::Approve),
+            "request-changes" => Some(Self::RequestChanges),
+            "comment" => Some(Self::Comment),
+            _ => None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Approve => "Approve",
+            Self::RequestChanges => "Request changes",
+            Self::Comment => "Comment",
+        }
+    }
+
+    pub fn needs_body(self) -> bool {
+        matches!(self, Self::RequestChanges | Self::Comment)
+    }
+
+    fn flag(self) -> &'static str {
+        match self {
+            Self::Approve => "--approve",
+            Self::RequestChanges => "--request-changes",
+            Self::Comment => "--comment",
+        }
+    }
+}
+
+fn review_args(
+    repo: &str,
+    number: i64,
+    action: ReviewAction,
+    body: &str,
+) -> Result<Vec<String>, String> {
+    split_repo(repo)?;
+    let trimmed = body.trim();
+    if action.needs_body() && trimmed.is_empty() {
+        return Err(match action {
+            ReviewAction::RequestChanges => {
+                "Explain the requested changes before submitting.".into()
+            }
+            ReviewAction::Comment => "Review comment cannot be empty.".into(),
+            ReviewAction::Approve => unreachable!(),
+        });
+    }
+    let mut args = vec![
+        "pr".to_string(),
+        "review".to_string(),
+        number.to_string(),
+        "--repo".to_string(),
+        repo.to_string(),
+        action.flag().to_string(),
+    ];
+    if !trimmed.is_empty() {
+        args.push("--body-file".to_string());
+        args.push("-".to_string());
+    }
+    Ok(args)
+}
+
+/// Submits a review on pull request `number`, then reads it back. `Err`
+/// only when the review was not submitted: sending one that was would post
+/// it twice.
+pub fn submit_review(
+    cwd: &Path,
+    repo: &str,
+    number: i64,
+    action: ReviewAction,
+    body: &str,
+) -> Result<ReadBack, String> {
+    let args = review_args(repo, number, action, body)?;
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        gh(cwd, &refs)?;
+    } else {
+        gh_with_stdin(cwd, &refs, trimmed.as_bytes())?;
+    }
+    Ok(read_back(cwd, repo, Kind::Pr, number))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1398,12 +1780,144 @@ mod tests {
 
     #[test]
     fn details_tolerate_missing_fields() {
-        let details = parse_details(r#"{"body":"Steps","author":{"login":"ann"}}"#).unwrap();
+        let details = parse_details(r#"{"body":"Steps","author":{"login":"ann"}}"#, "o/r").unwrap();
         assert_eq!(
             (details.body.as_str(), details.author.as_str()),
             ("Steps", "ann")
         );
         assert_eq!(details.review_decision, "");
+        assert!(details.reviewers.is_empty());
+    }
+
+    #[test]
+    fn details_parse_user_and_team_review_requests() {
+        let json = r#"{
+            "body": "Fix",
+            "author": {"login": "ann"},
+            "reviewDecision": "REVIEW_REQUIRED",
+            "reviewRequests": [
+                {"__typename": "User", "login": "bob"},
+                {"__typename": "User", "login": "BOB"},
+                {"__typename": "Team", "slug": "frontend", "name": "Frontend"},
+                {"__typename": "Team", "slug": "other/sec", "name": "Security"}
+            ]
+        }"#;
+        let details = parse_details(json, "acme/app").unwrap();
+        assert_eq!(details.review_decision, "REVIEW_REQUIRED");
+        assert_eq!(details.reviewers, ["bob", "acme/frontend", "other/sec"]);
+    }
+
+    #[test]
+    fn repo_options_parse_and_sort_users_and_labels() {
+        let json = r#"{"data":{
+            "viewer":{"login":"ben"},
+            "repository":{
+                "assignableUsers":{"nodes":[
+                    {"login":"zoe","name":"Zoe"},
+                    null,
+                    {"login":"Ann","name":null},
+                    {"login":"ann","name":"Duplicate"}
+                ]},
+                "labels":{"nodes":[
+                    {"name":"enhancement","color":"a2eeef"},
+                    {"name":"Bug","color":"d73a4a"},
+                    {"name":"bug","color":"000000"}
+                ]}
+            }
+        }}"#;
+        let options = parse_repo_options(json).unwrap();
+        assert_eq!(options.me, "ben");
+        assert_eq!(
+            options.users,
+            vec![
+                RepoUser {
+                    login: "Ann".into(),
+                    name: String::new()
+                },
+                RepoUser {
+                    login: "zoe".into(),
+                    name: "Zoe".into()
+                },
+            ]
+        );
+        assert_eq!(
+            options.labels,
+            vec![
+                Label {
+                    name: "Bug".into(),
+                    color: "d73a4a".into()
+                },
+                Label {
+                    name: "enhancement".into(),
+                    color: "a2eeef".into()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn edit_and_review_args_validate_and_escape() {
+        let (add, remove) = diff_values(
+            &["Alice".into(), "bob".into()],
+            &["alice".into(), "cat".into()],
+        );
+        assert_eq!(add, vec!["cat"]);
+        assert_eq!(remove, vec!["bob"]);
+
+        let args = edit_item_args(
+            Kind::Pr,
+            "o/r",
+            42,
+            &ItemChange::Labels {
+                add: vec!["-weird".into()],
+                remove: vec!["old".into()],
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            [
+                "pr",
+                "edit",
+                "42",
+                "--repo",
+                "o/r",
+                "--add-label=-weird",
+                "--remove-label=old"
+            ]
+        );
+        assert!(
+            edit_item_args(
+                Kind::Issue,
+                "o/r",
+                1,
+                &ItemChange::Reviewers {
+                    add: vec!["bob".into()],
+                    remove: vec![]
+                }
+            )
+            .is_err()
+        );
+
+        assert_eq!(
+            review_args("o/r", 9, ReviewAction::Approve, "").unwrap(),
+            ["pr", "review", "9", "--repo", "o/r", "--approve"]
+        );
+        assert_eq!(
+            review_args("o/r", 9, ReviewAction::RequestChanges, "Please fix").unwrap(),
+            [
+                "pr",
+                "review",
+                "9",
+                "--repo",
+                "o/r",
+                "--request-changes",
+                "--body-file",
+                "-"
+            ]
+        );
+        assert!(review_args("o/r", 9, ReviewAction::RequestChanges, "   ").is_err());
+        assert!(review_args("o/r", 9, ReviewAction::Comment, "").is_err());
     }
 
     #[test]

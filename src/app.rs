@@ -252,6 +252,7 @@ pub struct BenCodeApp {
     pub inbox_state: Entity<crate::ui::inbox_view::InboxState>,
     pub inbox_search_input: Entity<TextInput>,
     pub inbox_comment_input: Entity<TextInput>,
+    pub pr_review_input: Entity<TextInput>,
     /// A Backlog issue's estimated and actual hours, as typed.
     pub backlog_estimate_input: Entity<TextInput>,
     pub backlog_actual_input: Entity<TextInput>,
@@ -677,6 +678,7 @@ impl BenCodeApp {
         let branch_create_input = text_input(window, cx, "feature/my-branch");
         let inbox_search_input = text_input(window, cx, "Filter inbox");
         let inbox_comment_input = multiline_input(window, cx, "Leave a comment (⌘↩)", (2, 8));
+        let pr_review_input = multiline_input(window, cx, "Leave a review comment (⌘↩)", (3, 8));
         let hours_input = |window: &mut Window, cx: &mut Context<Self>| {
             cx.new(|cx| {
                 TextInput::new(window, cx)
@@ -873,6 +875,14 @@ impl BenCodeApp {
                 |this: &mut Self, _, event: &InputEvent, cx| match event {
                     InputEvent::Submit => this.post_inbox_comment(cx),
                     InputEvent::Changed => this.redraw_regions(&[Region::Surface], cx),
+                    _ => {}
+                },
+            ),
+            cx.subscribe(
+                &pr_review_input,
+                |this: &mut Self, _, event: &InputEvent, cx| match event {
+                    InputEvent::Submit => this.submit_pr_review(cx),
+                    InputEvent::Changed => cx.notify(),
                     _ => {}
                 },
             ),
@@ -1442,6 +1452,7 @@ impl BenCodeApp {
             inbox_state,
             inbox_search_input,
             inbox_comment_input,
+            pr_review_input,
             backlog_estimate_input,
             backlog_actual_input,
             backlog: Default::default(),
@@ -1860,6 +1871,7 @@ impl Render for BenCodeApp {
             any_elements(self.render_branch_switch_confirm(cx)),
             any_elements(self.render_branch_create_dialog(cx)),
             any_elements(self.render_pr_action_confirm(cx)),
+            any_elements(self.render_pr_review_dialog(cx)),
             any_elements(self.render_inbox_batch(cx)),
             any_elements(self.render_file_tree_dialog(cx)),
             any_elements(self.render_terminal_close_confirm(cx)),

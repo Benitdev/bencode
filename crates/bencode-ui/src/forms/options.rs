@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use gpui::{
-    Anchor, Animation, AnimationExt, AnyElement, App, Bounds, Div, ElementId, Entity,
+    Anchor, Animation, AnimationExt, AnyElement, App, Bounds, Div, ElementId, Entity, Hsla,
     InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, ScrollHandle,
     SharedString, Stateful, StatefulInteractiveElement, Styled, Window, anchored, canvas, div,
     prelude::*, px,
@@ -15,13 +15,14 @@ use crate::{
     typography::Ellipsis,
 };
 
-/// One option: a value, the label shown for it, and an optional icon and note.
+/// One option: a value, the label shown for it, and an optional icon, avatar, color dot and note.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Choice {
     pub value: SharedString,
     pub label: SharedString,
     pub icon: Option<IconName>,
     pub avatar: Option<SharedString>,
+    pub color: Option<Hsla>,
     pub note: Option<SharedString>,
     pub disabled: bool,
     pub depth: usize,
@@ -34,6 +35,7 @@ impl Choice {
             label: label.into(),
             icon: None,
             avatar: None,
+            color: None,
             note: None,
             disabled: false,
             depth: 0,
@@ -48,6 +50,12 @@ impl Choice {
     /// Leads with the initials of `name` on its tone, as a person's row does.
     pub fn avatar(mut self, name: impl Into<SharedString>) -> Self {
         self.avatar = Some(name.into());
+        self
+    }
+
+    /// Leads with a color dot, as a repository label does.
+    pub fn color(mut self, color: Hsla) -> Self {
+        self.color = Some(color);
         self
     }
 
@@ -86,7 +94,15 @@ pub(crate) fn option_row(
     checked: Option<bool>,
     cx: &App,
 ) -> Stateful<Div> {
-    marked_row(id, choice, None, highlighted, checked, cx)
+    let dot = choice.color.map(|color| {
+        div()
+            .flex_none()
+            .size(cx.theme().status_dot())
+            .rounded_full()
+            .bg(color)
+            .into_any_element()
+    });
+    marked_row(id, choice, dot, highlighted, checked, cx)
 }
 
 /// An option row with `mark`, such as a label's color, before the label.

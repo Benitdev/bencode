@@ -40,7 +40,7 @@ pub(crate) fn initials(name: &str) -> String {
 }
 
 /// The chart color a name keeps, so the same person reads the same way everywhere.
-fn tint(name: &str, colors: &Palette) -> Hsla {
+pub(crate) fn tint(name: &str, colors: &Palette) -> Hsla {
     let hash = name.bytes().fold(0u32, |hash, byte| {
         hash.wrapping_mul(31).wrapping_add(u32::from(byte))
     });

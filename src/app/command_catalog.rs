@@ -226,9 +226,7 @@ pub(crate) fn groups() -> Vec<Group<Entry>> {
                 entry("Refresh", I::RefreshCw, cmd::InboxRefresh).within("InboxList"),
                 entry("Mark Read or Unread", I::CheckCheck, cmd::InboxToggleRead)
                     .within("InboxList"),
-                entry("Assign to Me", I::User, cmd::InboxAssignToMe)
-                    .within("InboxList")
-                    .note("Backlog issues."),
+                entry("Assign to Me", I::User, cmd::InboxAssignToMe).within("InboxList"),
                 entry("Comment", I::MessageSquare, cmd::InboxFocusComment).within("InboxList"),
                 entry("Translate", I::Languages, cmd::InboxToggleTranslation)
                     .within("InboxList")
@@ -294,6 +292,8 @@ fn unbound() -> Vec<Entry> {
             cmd::CommitAndPushSessionChanges,
         ),
         entry("Push Session Commits", I::Upload, cmd::PushSessionCommits),
+        // The selected open pull request's review form ("Inbox: …").
+        entry("Review Pull Request", I::Eye, cmd::InboxReview).within("InboxList"),
         entry("Check for Updates", I::Download, cmd::CheckForUpdates),
         entry("Show Logs", I::FileText, cmd::ShowLogs),
         entry("Reload BenCode", I::RefreshCw, cmd::ReloadApp),
@@ -390,5 +390,16 @@ mod tests {
                 entry.label
             );
         }
+    }
+
+    #[test]
+    fn reviewing_a_pull_request_is_offered_in_the_inbox() {
+        let commands = palette();
+        let review = commands
+            .iter()
+            .find(|c| c.label == "Inbox: Review Pull Request")
+            .expect("the palette lists it");
+        assert_eq!(review.scope, Some(Scope::Inbox));
+        assert_eq!(review.keys, None);
     }
 }

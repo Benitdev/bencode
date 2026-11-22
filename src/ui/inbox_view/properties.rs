@@ -14,7 +14,6 @@ use gpui::{
     StatefulInteractiveElement, Styled, div,
 };
 
-use super::comments::review_tint;
 use super::{DetailView, InboxState, short_key, status_mark, status_name};
 use crate::app::BenCodeApp;
 use crate::backlog::FieldChoice;
@@ -28,10 +27,10 @@ use crate::work_items::{PrStatus, Provider, Review};
 
 /// The properties column's width beside the main one.
 pub(super) const PROPERTIES_WIDTH: f32 = 296.0;
-/// The names' column: "Resolution" and "Milestone" fit.
-const NAME_WIDTH: f32 = 72.0;
+/// The names' column: "Resolution", "Milestone" and "Assignees" + icon fit.
+const NAME_WIDTH: f32 = 80.0;
 /// A row's least height: a control's, so plain values line up with them.
-const ROW_HEIGHT: f32 = 28.0;
+pub(super) const ROW_HEIGHT: f32 = 28.0;
 
 /// A property: its name, then its value.
 pub(super) fn property(name: &'static str, value: impl IntoElement, cx: &gpui::App) -> AnyElement {
@@ -112,36 +111,18 @@ impl BenCodeApp {
         }
     }
 
-    /// Assignees, labels and, for a pull request, its review and branches;
-    /// a priority or due date where the item has one.
+    /// Editable assignees, labels and (for a pull request) reviewers and
+    /// review (`github_fields.rs`), followed by branches and linked tickets.
     fn github_properties(
         &self,
         item: &WorkItem,
         view: DetailView,
         cx: &Context<Self>,
     ) -> Vec<AnyElement> {
-        let colors = &cx.theme().colors;
         let loaded = (self.inbox(cx).details.get(&item.key()))
             .and_then(|d| d.as_ref().ok())
             .map(|d| &d.details);
-        let mut rows = vec![property(
-            "Assignees",
-            if item.assignees.is_empty() {
-                none(cx)
-            } else {
-                plain(cx).child(item.assignees.join(", "))
-            },
-            cx,
-        )];
-        rows.push(property(
-            "Labels",
-            if item.labels.is_empty() {
-                none(cx)
-            } else {
-                plain(cx).children(item.labels.iter().map(|l| property_label(l, cx)))
-            },
-            cx,
-        ));
+        let mut rows = self.render_github_fields(item, view, cx);
         if !item.priority.is_empty() {
             rows.push(property(
                 "Priority",
@@ -157,23 +138,6 @@ impl BenCodeApp {
             ));
         }
         if item.kind == Kind::Pr {
-            let decision = loaded.map_or("", |d| d.review_decision.as_str());
-            let review = match decision {
-                "APPROVED" => "Approved",
-                "CHANGES_REQUESTED" => "Changes requested",
-                "REVIEW_REQUIRED" => "Review required",
-                _ => "",
-            };
-            rows.push(property(
-                "Review",
-                if review.is_empty() {
-                    none(cx)
-                } else {
-                    let tint = review_tint(decision, colors).unwrap_or(colors.fg.ink(Ink::Body));
-                    plain(cx).text_color(tint).child(review)
-                },
-                cx,
-            ));
             let (base, head) = loaded.map_or(("", ""), |d| (&d.base_ref, &d.head_ref));
             if !base.is_empty() && !head.is_empty() {
                 rows.push(property("Branches", branches(head, base, cx), cx));

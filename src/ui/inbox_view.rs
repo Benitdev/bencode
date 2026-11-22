@@ -16,6 +16,7 @@ mod checks;
 pub mod ci_repair;
 mod comments;
 mod detail;
+mod github_fields;
 mod grouping;
 mod keyboard;
 mod list;
@@ -56,6 +57,7 @@ use blocks::Described;
 pub use checks::{Repair, RepairForm};
 pub use comments::ReplyTarget;
 pub(crate) use detail::{DetailList, DetailView};
+pub use github_fields::{PendingGithubEdit, PrReviewDialog};
 #[cfg(any(test, feature = "snapshot"))]
 pub use grouping::GroupBy;
 pub use grouping::ListPrefs;
@@ -240,6 +242,14 @@ pub struct InboxState {
     pub checks: Loaded<github::Checks>,
     /// Actions job steps and annotations, by job id.
     pub jobs: Loaded<github::CheckDetails>,
+    /// GitHub collaborators, labels and viewer per repository (`owner/name`).
+    pub github_options: Loaded<github::RepoOptions>,
+    /// The GitHub item and field currently being edited.
+    pub github_edit_busy: Option<PendingGithubEdit>,
+    /// The last GitHub edit `gh` refused: the item's key and what it said.
+    pub github_edit_error: Option<(String, String)>,
+    /// The pull request review dialog, while open (`github_fields.rs`).
+    pub pr_review: Option<PrReviewDialog>,
     /// Checks opened to show their steps (`item key` + `\0` + name).
     pub expanded_checks: HashSet<String>,
     pub repair: Option<RepairForm>,
@@ -309,6 +319,10 @@ impl Default for InboxState {
             threads: Loaded::default(),
             checks: Loaded::default(),
             jobs: Loaded::default(),
+            github_options: Loaded::default(),
+            github_edit_busy: None,
+            github_edit_error: None,
+            pr_review: None,
             expanded_checks: HashSet::new(),
             repair: None,
             repairs: Vec::new(),
@@ -525,6 +539,7 @@ impl InboxState {
         self.threads.clear();
         self.checks.clear();
         self.jobs.clear();
+        self.github_options.clear();
     }
 
     /// MonoCode `seedInboxSeenIfNeeded`: the first list counts as read.
@@ -996,6 +1011,8 @@ impl BenCodeApp {
             self.inbox_state.as_mut(cx).reply_to = None;
             self.inbox_state.as_mut(cx).comment_error = None;
             self.inbox_state.as_mut(cx).pr = PrActionUi::default();
+            self.inbox_state.as_mut(cx).pr_review = None;
+            self.inbox_state.as_mut(cx).github_edit_error = None;
             self.inbox_state.as_mut(cx).repair = None;
             self.backlog.issue_error = None;
             // Read, it would leave "Needs you" while it is being read.
@@ -1089,6 +1106,8 @@ impl BenCodeApp {
         self.load_inbox_thread(key, false, cx);
         if item.provider == Provider::Backlog {
             self.load_backlog_field_options(&item.container_id, cx);
+        } else if item.provider == Provider::GitHub {
+            self.load_github_repo_options(&item.project, &item.repo, cx);
         }
         if item.kind == Kind::Pr {
             self.load_pr_checks(key, false, cx);

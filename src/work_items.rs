@@ -195,6 +195,8 @@ pub struct Details {
     pub base_ref: String,
     pub head_ref: String,
     pub review_decision: String,
+    /// Requested reviewers on a pull request (logins or team slugs).
+    pub reviewers: Vec<String>,
     /// A Backlog issue's editable fields.
     pub backlog: Option<crate::backlog::IssueFields>,
 }

@@ -4,7 +4,7 @@ use gpui::{
 };
 
 use super::setup;
-use crate::forms::{Checkbox, Choice, Select, Slider};
+use crate::forms::{Checkbox, Choice, MultiSelect, Select, Slider};
 
 fn release(key: &'static str, cx: &mut VisualTestContext) {
     cx.simulate_event(KeyUpEvent {
@@ -194,5 +194,191 @@ fn escape_leaves_the_filter_and_reopening_starts_it_empty(cx: &mut TestAppContex
     assert_eq!(
         view.read_with(cx, |view, _| view.0.clone()),
         Some("Banana".into())
+    );
+}
+
+/// A multi-select long enough to filter, keeping prior selections across filters.
+struct Basket {
+    selected: Vec<String>,
+    disabled: bool,
+    commit_on_close: bool,
+    commits: usize,
+}
+
+impl Render for Basket {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        let mut picker = MultiSelect::new("basket", FRUITS.map(|name| Choice::new(name, name)))
+            .selected(self.selected.iter().cloned())
+            .disabled(self.disabled)
+            .on_change(move |values, _, cx| {
+                view.update(cx, |view, cx| {
+                    view.selected = values.iter().map(|v| v.to_string()).collect();
+                    view.commits += 1;
+                    cx.notify();
+                })
+            });
+        if self.commit_on_close {
+            picker = picker.commit_on_close();
+        }
+        picker
+    }
+}
+
+#[gpui::test]
+fn filtered_multi_select_toggles_match_and_keeps_other_selections(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| Basket {
+        selected: vec!["Banana".into()],
+        disabled: false,
+        commit_on_close: false,
+        commits: 0,
+    });
+    cx.update(|window, cx| window.focus_next(cx));
+    // Open, filter to "ap" (Grape, Apricot, Apple), step to Apple and toggle it.
+    cx.simulate_keystrokes("down a p down down enter");
+    assert_eq!(
+        view.read_with(cx, |view, _| view.selected.clone()),
+        vec!["Banana".to_string(), "Apple".to_string()]
+    );
+}
+
+#[gpui::test]
+fn commit_on_close_batches_toggles_into_one_change(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| Basket {
+        selected: vec!["Banana".into()],
+        disabled: false,
+        commit_on_close: true,
+        commits: 0,
+    });
+    cx.update(|window, cx| window.focus_next(cx));
+    // Open, filter to "ap", toggle Grape and Apple — nothing committed yet.
+    cx.simulate_keystrokes("down a p enter down down enter");
+    assert_eq!(view.read_with(cx, |view, _| view.commits), 0);
+    // Closing commits both toggles in a single callback.
+    cx.simulate_keystrokes("escape");
+    assert_eq!(view.read_with(cx, |view, _| view.commits), 1);
+    assert_eq!(
+        view.read_with(cx, |view, _| view.selected.clone()),
+        vec![
+            "Banana".to_string(),
+            "Grape".to_string(),
+            "Apple".to_string()
+        ]
+    );
+}
+
+#[gpui::test]
+fn disabled_multi_select_is_not_focusable(cx: &mut TestAppContext) {
+    setup(cx);
+    let (_, cx) = cx.add_window_view(|_, _| Basket {
+        selected: vec!["Banana".into()],
+        disabled: true,
+        commit_on_close: false,
+        commits: 0,
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.focus_next(cx));
+    assert!(cx.update(|window, cx| window.focused(cx).is_none()));
+}
+
+/// GitHub's default labels: enough for a filter, two of them with a space.
+const LABELS: [&str; 9] = [
+    "bug",
+    "documentation",
+    "duplicate",
+    "enhancement",
+    "good first issue",
+    "help wanted",
+    "invalid",
+    "question",
+    "wontfix",
+];
+
+/// A select of `LABELS`, recording what was picked.
+struct Label(Option<String>);
+
+impl Render for Label {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        Select::new("label", LABELS.map(|name| Choice::new(name, name))).on_change(
+            move |value, _, cx| {
+                view.update(cx, |view, cx| {
+                    view.0 = Some(value.to_string());
+                    cx.notify();
+                })
+            },
+        )
+    }
+}
+
+/// A multi-select of `names`, recording what is chosen.
+struct Tags {
+    names: &'static [&'static str],
+    chosen: Vec<String>,
+}
+
+impl Render for Tags {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        let choices = self.names.iter().map(|name| Choice::new(*name, *name));
+        MultiSelect::new("tags", choices)
+            .selected(self.chosen.iter().cloned())
+            .on_change(move |values, _, cx| {
+                view.update(cx, |view, cx| {
+                    view.chosen = values.iter().map(|v| v.to_string()).collect();
+                    cx.notify();
+                })
+            })
+    }
+}
+
+// "help w" matches "help wanted" alone: had the space picked the lit row
+// instead, the filter would read "helpw" and match nothing.
+
+#[gpui::test]
+fn a_space_in_the_filter_is_typed_not_picked(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| Label(None));
+    cx.update(|window, cx| window.focus_next(cx));
+    cx.simulate_keystrokes("down h e l p space w");
+    assert_eq!(view.read_with(cx, |view, _| view.0.clone()), None);
+    cx.simulate_keystrokes("enter");
+    assert_eq!(
+        view.read_with(cx, |view, _| view.0.clone()),
+        Some("help wanted".into())
+    );
+}
+
+#[gpui::test]
+fn a_space_in_a_multi_select_filter_is_typed_not_toggled(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| Tags {
+        names: &LABELS,
+        chosen: Vec::new(),
+    });
+    cx.update(|window, cx| window.focus_next(cx));
+    cx.simulate_keystrokes("down h e l p space w");
+    assert!(view.read_with(cx, |view, _| view.chosen.is_empty()));
+    cx.simulate_keystrokes("enter");
+    assert_eq!(
+        view.read_with(cx, |view, _| view.chosen.clone()),
+        vec!["help wanted".to_string()]
+    );
+}
+
+#[gpui::test]
+fn space_toggles_the_lit_row_of_a_short_multi_select(cx: &mut TestAppContext) {
+    setup(cx);
+    let (view, cx) = cx.add_window_view(|_, _| Tags {
+        names: &["bug", "documentation", "question"],
+        chosen: Vec::new(),
+    });
+    cx.update(|window, cx| window.focus_next(cx));
+    cx.simulate_keystrokes("down down space");
+    assert_eq!(
+        view.read_with(cx, |view, _| view.chosen.clone()),
+        vec!["documentation".to_string()]
     );
 }

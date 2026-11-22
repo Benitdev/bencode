@@ -35,7 +35,7 @@ use gpui::{
 
 use crate::ui::scale::px;
 
-use super::comments::{author_name, byline, byline_dot, card_fill, review_tint};
+use super::comments::{author_name, byline, byline_dot, card_fill};
 use super::properties::PROPERTIES_WIDTH;
 use super::{
     InboxState, PrTab, StartWith, kind_label, project_name, relative_time, source_label,
@@ -46,9 +46,8 @@ use crate::app::item_threads::{PrimaryAction, primary_action};
 use crate::github::{Kind, Thread, WorkItem};
 use crate::ui::app_callback::{app_callback, on_value};
 use crate::ui::composer::inbox_card::CardTask;
-use crate::ui::composer::inbox_card::label_chip;
 use crate::ui::diff_viewer::pr_doc_key;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Ink, Text, Tone as _};
 use crate::ui::transcript::markdown::AgentMarkdown;
 use crate::work_items::Provider;
 use crate::work_items::Review;
@@ -464,7 +463,6 @@ impl BenCodeApp {
             .unwrap_or_default();
         // Backlog's clipboard button (also `y` in the list).
         let ticket = super::keyboard::ticket_line(item);
-        let github = item.provider == Provider::GitHub;
 
         // The Inbox's item opens beside the chat; the tab's in the Inbox,
         // where its comment box is.
@@ -519,61 +517,9 @@ impl BenCodeApp {
             meta = meta.child(format!("opened {created}")).child(dot());
         }
         meta = meta.child(format!("updated {}", relative_time(&item.updated_at, now)));
-        // Wide, these are properties; a Backlog issue's always are.
-        let in_byline = github && !wide;
-        if in_byline && !item.assignees.is_empty() {
-            meta = meta
-                .child(dot())
-                .child(format!("assigned to {}", item.assignees.join(", ")));
-        }
-        if in_byline && !item.priority.is_empty() {
-            meta = meta
-                .child(dot())
-                .child(format!("priority {}", item.priority.to_lowercase()));
-        }
-        if in_byline && !item.due_date.is_empty() {
-            meta = meta.child(dot()).child(format!("due {}", item.due_date));
-        }
-        let decision = loaded.map_or("", |d| d.review_decision.as_str());
-        let review = match decision {
-            "APPROVED" => "Approved",
-            "CHANGES_REQUESTED" => "Changes requested",
-            "REVIEW_REQUIRED" => "Review required",
-            _ => "",
-        };
-        if in_byline && !review.is_empty() {
-            let color = review_tint(decision, colors).unwrap_or(fg.ink(Ink::Secondary));
-            meta = meta
-                .child(dot())
-                .child(div().text_color(color).child(review));
-        }
-
-        let branches = (in_byline && !base.is_empty() && !head.is_empty()).then(|| {
-            div()
-                .flex()
-                .min_w_0()
-                .items_center()
-                .gap_1p5()
-                .child(branch_chip(&head, cx))
-                .child(
-                    Icon::new(IconName::ArrowRight)
-                        .size(IconSize::Xs)
-                        .color(fg.ink(Ink::Muted)),
-                )
-                .child(branch_chip(&base, cx))
-        });
-        let labels: Vec<_> = if in_byline {
-            item.labels.iter().collect()
-        } else {
-            Vec::new()
-        };
-        // Narrow, a Backlog issue's properties wrap under the actions; a
-        // pull request's ticket goes with them.
+        // Narrow, the item's editable properties wrap under the actions.
         let properties = (!wide)
-            .then(|| match github {
-                true => self.ticket_property(item, view, cx).into_iter().collect(),
-                false => self.render_inbox_properties(item, view, cx),
-            })
+            .then(|| self.render_inbox_properties(item, view, cx))
             .filter(|rows| !rows.is_empty())
             .map(|rows| {
                 div().flex().flex_wrap().gap_x_6().children(
@@ -611,17 +557,7 @@ impl BenCodeApp {
                             .line_clamp(3)
                             .child(self.inbox_title_shown(item, cx)),
                     )
-                    .child(meta)
-                    .children(branches)
-                    .when(!labels.is_empty(), |el| {
-                        el.child(
-                            div()
-                                .flex()
-                                .flex_wrap()
-                                .gap_1()
-                                .children(labels.into_iter().map(|l| label_chip(l, cx))),
-                        )
-                    }),
+                    .child(meta),
             )
             .child(actions)
             .children(properties)
@@ -1051,23 +987,6 @@ fn state_pill(item: &WorkItem, label: Option<&str>, cx: &gpui::App) -> gpui::Div
             }
             (None, Provider::Backlog) => status.to_string(),
         })
-}
-
-/// A branch name in code type, cut short when the row is narrow.
-fn branch_chip(name: &str, cx: &gpui::App) -> impl IntoElement {
-    let fg = cx.theme().colors.fg;
-    div()
-        .min_w_0()
-        .max_w(px(360.0))
-        .truncate()
-        .px_1p5()
-        .py_0p5()
-        .rounded(px(4.0))
-        .bg(fg.fill(Fill::Line))
-        .font_family(cx.theme().mono_family.clone())
-        .text_size(Text::Sm.px())
-        .text_color(fg.ink(Ink::Body))
-        .child(SharedString::from(name.to_string()))
 }
 
 #[cfg(test)]

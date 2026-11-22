@@ -1315,6 +1315,7 @@ fn stage_inbox(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
                     due_date: Some(day(5)),
                     estimated_hours: Some(6.0),
                     actual_hours: None,
+                    ..Default::default()
                 }),
                 ..Default::default()
             },
@@ -1363,6 +1364,7 @@ fn stage_inbox(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
                     due_date: None,
                     estimated_hours: Some(3.0),
                     actual_hours: Some(1.5),
+                    ..Default::default()
                 }),
                 ..Default::default()
             },
@@ -1393,12 +1395,54 @@ fn stage_inbox(app: &mut BenCodeApp, cx: &mut Context<BenCodeApp>) {
                 base_ref: "develop".into(),
                 head_ref: "renovate/vulnerable-packages".into(),
                 review_decision: "REVIEW_REQUIRED".into(),
+                reviewers: vec!["minhtran".into()],
                 backlog: None,
             },
             Thread {
-                comments: vec![comment("3", "minhtran", 2, "Lockfile regenerated; the e2e suite passes locally.")],
+                comments: vec![
+                    Comment {
+                        id: "rev-1".into(),
+                        kind: "review".into(),
+                        author: "aikotanaka".into(),
+                        body: "Looks good once e2e finishes.".into(),
+                        created_at: ago(8),
+                        state: "APPROVED".into(),
+                        ..Default::default()
+                    },
+                    comment("3", "minhtran", 2, "Lockfile regenerated; the e2e suite passes locally."),
+                ],
                 ..Default::default()
             },
+        );
+        inbox.github_options.value.insert(
+            "acme/shop-backend".into(),
+            Ok(crate::github::RepoOptions {
+                me: "minhtran".into(),
+                users: vec![
+                    crate::github::RepoUser {
+                        login: "aikotanaka".into(),
+                        name: "Aiko Tanaka".into(),
+                    },
+                    crate::github::RepoUser {
+                        login: "minhtran".into(),
+                        name: "Minh Tran".into(),
+                    },
+                ],
+                labels: vec![
+                    crate::github::Label {
+                        name: "bug".into(),
+                        color: "d73a4a".into(),
+                    },
+                    crate::github::Label {
+                        name: "dependencies".into(),
+                        color: "0366d6".into(),
+                    },
+                    crate::github::Label {
+                        name: "security".into(),
+                        color: "e4e669".into(),
+                    },
+                ],
+            }),
         );
         let check = |name: &str, state| Check {
             name: name.into(),

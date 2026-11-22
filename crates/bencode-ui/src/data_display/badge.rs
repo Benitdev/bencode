@@ -2,9 +2,10 @@ use std::rc::Rc;
 
 use gpui::{
     App, ElementId, FontWeight, Hsla, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*,
+    RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*, rems,
 };
 
+use super::avatar::{initials, tint};
 use crate::{
     primitives::{Icon, IconName, Severity},
     theme::{ActiveTheme, ControlSize, IconSize, Palette, Radius, TextSize},
@@ -122,6 +123,8 @@ pub struct Tag {
     id: ElementId,
     label: SharedString,
     icon: Option<IconName>,
+    avatar: Option<SharedString>,
+    dot_color: Option<Hsla>,
     tone: Tone,
     on_remove: Option<Handler>,
     on_click: Option<Handler>,
@@ -134,11 +137,25 @@ impl Tag {
             id: id.into(),
             label: label.into(),
             icon: None,
+            avatar: None,
+            dot_color: None,
             tone: Tone::Neutral,
             on_remove: None,
             on_click: None,
             selected: false,
         }
+    }
+
+    /// Leads with a compact initials badge tinted for `name` (a person chip).
+    pub fn avatar(mut self, name: impl Into<SharedString>) -> Self {
+        self.avatar = Some(name.into());
+        self
+    }
+
+    /// Leads with a color dot before the label (a GitHub label chip).
+    pub fn dot_color(mut self, color: Hsla) -> Self {
+        self.dot_color = Some(color);
+        self
     }
 
     /// Makes the tag a toggle that runs `handler` when pressed.
@@ -182,7 +199,8 @@ impl RenderOnce for Tag {
             .max_w_full()
             .items_center()
             .gap_1()
-            .pl_2()
+            .when(self.avatar.is_some(), |tag| tag.pl_1())
+            .when(self.avatar.is_none(), |tag| tag.pl_2())
             .when(self.on_remove.is_none(), |tag| tag.pr_2())
             .when(self.on_remove.is_some(), |tag| tag.pr_1())
             .h(theme.control_height(ControlSize::Sm))
@@ -205,6 +223,33 @@ impl RenderOnce for Tag {
                     div()
                         .flex_none()
                         .child(Icon::new(icon).size(IconSize::Xs).color(text)),
+                )
+            })
+            .when_some(self.avatar, |tag, name| {
+                let tone = tint(&name, colors);
+                let letters = initials(&name);
+                tag.child(
+                    div()
+                        .flex_none()
+                        .size(rems(1.0))
+                        .rounded_full()
+                        .bg(tone.opacity(0.16))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(rems(0.5625))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(tone)
+                        .child(letters),
+                )
+            })
+            .when_some(self.dot_color, |tag, color| {
+                tag.child(
+                    div()
+                        .flex_none()
+                        .size(theme.status_dot())
+                        .rounded_full()
+                        .bg(color),
                 )
             })
             .child(div().flex_1().min_w_0().child(Ellipsis::new(self.label)))

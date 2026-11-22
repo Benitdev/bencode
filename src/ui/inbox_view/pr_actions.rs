@@ -3,7 +3,7 @@
 //! through `gh`, then the item is read back into the list.
 
 use bencode_ui::buttons::{Button, ButtonVariant};
-use bencode_ui::menus::{Menu, MenuItem, SplitButton};
+use bencode_ui::menus::{DropdownMenu, Menu, MenuItem, SplitButton};
 use bencode_ui::overlays::ConfirmDialog;
 use bencode_ui::primitives::IconName;
 use bencode_ui::theme::ActiveTheme;
@@ -231,6 +231,16 @@ impl BenCodeApp {
                     }))
                     .into_any_element(),
             );
+            out.push(
+                DropdownMenu::new(
+                    "inbox-pr-review-action",
+                    "Review",
+                    self.pr_review_menu(item, cx),
+                )
+                .icon(IconName::Eye)
+                .variant(ButtonVariant::Ghost)
+                .into_any_element(),
+            );
             out.push(button(
                 "inbox-pr-draft",
                 "Convert to draft",
@@ -239,6 +249,16 @@ impl BenCodeApp {
             ));
         }
         if state == "open" && item.draft {
+            out.push(
+                DropdownMenu::new(
+                    "inbox-pr-review-action",
+                    "Review",
+                    self.pr_review_menu(item, cx),
+                )
+                .icon(IconName::Eye)
+                .variant(ButtonVariant::Ghost)
+                .into_any_element(),
+            );
             out.push(button(
                 "inbox-pr-ready",
                 "Ready for review",

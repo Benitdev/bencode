@@ -10,7 +10,7 @@ use super::list;
 use super::{DetailView, PrTab, WorkItem};
 use crate::app::BenCodeApp;
 use crate::backlog::Change;
-use crate::github::Kind;
+use crate::github::{Kind, ReviewAction};
 use crate::ui::composer::focus_later;
 use crate::work_items::Provider;
 
@@ -135,15 +135,17 @@ impl BenCodeApp {
         }
     }
 
-    /// `a`: a Backlog issue assigned to the connected user, as the
-    /// Assignee field's "Assign to me". GitHub items have no such action.
+    /// `a`: the selected item assigned to the connected user, as the
+    /// Assignee field's "Assign to me" (Backlog) or the button by Assignees
+    /// (GitHub, which keeps the others assigned).
     pub(crate) fn assign_selected_inbox_item(&mut self, cx: &mut Context<Self>) {
-        let Some(item) = self
-            .selected_inbox_item(cx)
-            .filter(|item| item.provider == Provider::Backlog)
-        else {
+        let Some(item) = self.selected_inbox_item(cx) else {
             return;
         };
+        if item.provider == Provider::GitHub {
+            self.assign_github_item_to_me(&item.key(), cx);
+            return;
+        }
         let Some(Ok(options)) = self.backlog.field_options.get(&item.container_id) else {
             return;
         };
@@ -157,6 +159,21 @@ impl BenCodeApp {
         if me != 0 && !mine {
             self.update_backlog_issue(&key, Change::Assignee(Some(me)), cx);
         }
+    }
+
+    /// The review form on the selected open pull request, Comment chosen as
+    /// on GitHub; Approve and Request changes are a Tab away.
+    pub(crate) fn review_selected_inbox_item(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(item) = self.selected_inbox_item(cx).filter(|item| {
+            item.provider == Provider::GitHub && item.kind == Kind::Pr && !item.closed
+        }) else {
+            return;
+        };
+        self.open_pr_review_dialog(&item.key(), ReviewAction::Comment, window, cx);
     }
 
     /// `c`: the comment box takes the keyboard, scrolled into view.
