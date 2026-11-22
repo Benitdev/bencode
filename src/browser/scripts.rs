@@ -78,15 +78,25 @@ pub const PRELUDE: &str = r#"(() => {
   // buffers binary bodies and redacts password-like keys in text previews.
   const net = [];
   let nextNetId = 1;
+  const secretKey = (k) => /pass|secret|token|api_?key/i.test(k);
+  // `a=1&password=…`: a form's fields, masked by name like FormData's.
+  const redactForm = (params) => {
+    const parts = [];
+    for (const [k, v] of params.entries()) {
+      parts.push(`${encodeURIComponent(k)}=${secretKey(k) ? '(redacted)' : encodeURIComponent(v)}`);
+    }
+    return parts.join('&');
+  };
   const redactBody = (raw) => {
     if (raw == null) return null;
     let s;
-    if (typeof raw === 'string') s = raw;
-    else if (raw instanceof URLSearchParams) s = raw.toString();
+    if (typeof raw === 'string') {
+      s = /^[^\s{}\[\]=&]+=/.test(raw) ? redactForm(new URLSearchParams(raw)) : raw;
+    } else if (raw instanceof URLSearchParams) s = redactForm(raw);
     else if (raw instanceof FormData) {
       const parts = [];
       for (const [k, v] of raw.entries()) {
-        parts.push(`${k}=${/pass|secret|token/i.test(k) ? '(redacted)' : (typeof v === 'string' ? v.slice(0, 200) : '[File]')}`);
+        parts.push(`${k}=${secretKey(k) ? '(redacted)' : (typeof v === 'string' ? v.slice(0, 200) : '[File]')}`);
       }
       s = parts.join('&');
     } else return `[${Object.prototype.toString.call(raw)}]`;

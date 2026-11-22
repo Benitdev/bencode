@@ -13,8 +13,8 @@ use tokio::sync::oneshot;
 
 use super::BenCodeApp;
 use super::browser::{
-    AGENT_SCREENSHOT_WIDTH, LOAD_TIMEOUT, PROMISE_TIMEOUT, SCRIPT_TIMEOUT, SETTLE, ZOOM_DEFAULT,
-    cropped_to_rect, load_failure, outline_text, scaled_png, script_reply,
+    AGENT_SCREENSHOT_WIDTH, HISTORY_SETTLE, LOAD_TIMEOUT, PROMISE_TIMEOUT, SCRIPT_TIMEOUT, SETTLE,
+    ZOOM_DEFAULT, cropped_to_rect, load_failure, outline_text, scaled_png, script_reply,
 };
 use super::file_pane::PaneTab;
 use crate::browser::bridge::{ToolCall, ToolReply, ToolRequest};
@@ -142,7 +142,7 @@ impl BenCodeApp {
                     _ => self.browser_reload(id, false, cx),
                 }
                 cx.spawn(async move |_, cx| {
-                    cx.background_executor().timer(SETTLE).await;
+                    cx.background_executor().timer(HISTORY_SETTLE).await;
                     let loading = this
                         .update(cx, |this, _| {
                             this.browser_page(id).is_some_and(|p| p.is_loading())

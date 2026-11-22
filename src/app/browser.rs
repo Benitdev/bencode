@@ -37,6 +37,10 @@ pub const ZOOM_DEFAULT: u16 = 100;
 const KEYS_POLL: Duration = Duration::from_millis(250);
 /// How often a load is asked whether it gave up (`watch_load`).
 const LOAD_POLL: Duration = Duration::from_millis(250);
+/// What a back, forward or reload waits before it answers: past the two
+/// idle polls by which `watch_load` calls a load that died early failed.
+pub(super) const HISTORY_SETTLE: Duration =
+    Duration::from_millis(LOAD_POLL.as_millis() as u64 * 2 + 150);
 /// The widest screenshot an agent gets; wider ones are scaled down.
 pub(super) const AGENT_SCREENSHOT_WIDTH: u32 = 1280;
 
