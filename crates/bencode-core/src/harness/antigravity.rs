@@ -795,6 +795,44 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/../../tests/fixtures/antigravity_acp_permission.jsonl"
     ));
+    const SUBAGENTS: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/antigravity_acp_subagents.jsonl"
+    ));
+
+    /// `agy` 1.5.14 starting three subagents (`invoke_subagent`) and
+    /// polling them (`manage_subagents`) before it answers.
+    #[test]
+    fn a_started_subagent_is_a_task_named_for_its_role() {
+        let (mut parser, requests) = opened(&acp_request(PermissionPolicy::AutoApprove));
+        let events = play(&mut parser, &requests.last().unwrap()["id"], SUBAGENTS);
+        let tasks: Vec<&Value> = events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::ToolCallStart { name, input, .. } if name == "Task" => Some(input),
+                _ => None,
+            })
+            .collect();
+        let roles: Vec<&str> = tasks
+            .iter()
+            .filter_map(|input| input["description"].as_str())
+            .collect();
+        assert_eq!(roles, ["Alpha Reader", "Beta Reader", "Gamma Reader"]);
+        assert!(
+            tasks[0]["prompt"]
+                .as_str()
+                .is_some_and(|p| p.contains("a.txt"))
+        );
+        let polls = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::ToolCallStart { name, .. } if name == "manage_subagents"))
+            .count();
+        assert_eq!(polls, 3);
+        assert!(matches!(
+            events.last(),
+            Some(AgentEvent::Done(DoneStatus::Completed))
+        ));
+    }
 
     #[test]
     fn parses_a_recorded_acp_turn() {

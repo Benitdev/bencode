@@ -972,7 +972,8 @@ pub(crate) fn auto_option<'a>(
     }
 }
 
-/// MonoCode `VARIANT_KIND`: Grok's tool names onto ACP kinds.
+/// MonoCode `VARIANT_KIND`: Grok's tool names onto ACP kinds (and
+/// Antigravity's `invoke_subagent`, which it sends as kind `other`).
 pub(crate) fn kind_from_variant(variant: &str) -> Option<&'static str> {
     let key: String = variant
         .to_ascii_lowercase()
@@ -986,7 +987,7 @@ pub(crate) fn kind_from_variant(variant: &str) -> Option<&'static str> {
         "bash" | "execute" | "runterminalcommand" | "runterminalcmd" => "execute",
         "grep" | "search" | "websearch" => "search",
         "webfetch" => "fetch",
-        "agent" | "task" | "subagent" => "agent",
+        "agent" | "task" | "subagent" | "invokesubagent" => "agent",
         "todowrite" => "plan",
         _ => return None,
     })
@@ -1040,6 +1041,18 @@ impl ToolFields {
                 .find_map(|key| text(Some(update), key).or_else(|| text(Some(tool), key))),
             kind: text(meta, "kind")
                 .or_else(|| kind_from_variant(variant).map(String::from))
+                .or_else(|| {
+                    ["kind", "name"].iter().find_map(|key| {
+                        let named = text(Some(update), key).or_else(|| text(Some(tool), key))?;
+                        let known = kind_from_variant(&named).map(String::from);
+                        if *key == "name" {
+                            known
+                        } else {
+                            // `other` says nothing; the call's name may.
+                            (named != "other").then_some(named)
+                        }
+                    })
+                })
                 .or_else(|| text(Some(update), "kind"))
                 .or_else(|| text(Some(tool), "kind")),
             title: text(Some(update), "title")
@@ -1072,7 +1085,7 @@ impl ToolFields {
     /// title when nothing else describes it.
     pub(crate) fn summary_input(&self) -> Value {
         let mut input = self.input.clone().unwrap_or_default();
-        let aliases: [(&str, &[&str]); 6] = [
+        let aliases: [(&str, &[&str]); 7] = [
             ("command", &["CommandLine"]),
             (
                 "path",
@@ -1092,7 +1105,9 @@ impl ToolFields {
             ("pattern", &["Pattern"]),
             ("query", &["search", "Query"]),
             ("url", &["Url", "URL"]),
-            ("description", &["toolSummary", "toolAction"]),
+            // Antigravity names a subagent by its `Role`.
+            ("description", &["toolSummary", "toolAction", "Role"]),
+            ("prompt", &["Prompt"]),
         ];
         for (key, spellings) in aliases {
             if input.contains_key(key) {
