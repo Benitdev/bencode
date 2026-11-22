@@ -110,9 +110,13 @@ impl EntityInputHandler for TextInput {
         self.edits += 1;
         self.text.replace_range(range.clone(), text);
         self.marked = (!text.is_empty()).then(|| range.start..range.start + text.len());
-        if self.marked.is_none() {
-            self.composing = None;
-        }
+        // Composed back to nothing: what it was typed over is gone, an edit
+        // like any other, undone and announced.
+        let cancelled = self
+            .marked
+            .is_none()
+            .then(|| self.composing.take())
+            .flatten();
         self.selection = match selected_utf16 {
             Some(inner) => {
                 let inner = from_utf16(text, inner.start)..from_utf16(text, inner.end);
@@ -121,6 +125,9 @@ impl EntityInputHandler for TextInput {
             None => range.start + text.len()..range.start + text.len(),
         };
         self.reversed = false;
+        if let Some(before) = cancelled {
+            self.commit(before, true, cx);
+        }
         self.restart_blink(cx);
     }
 

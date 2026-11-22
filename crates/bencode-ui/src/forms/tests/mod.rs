@@ -60,4 +60,5 @@ fn a_typed_number_reaches_the_owner_before_any_blur(cx: &mut TestAppContext) {
         "a half-typed number waits"
     );
 }
+mod text_ime;
 mod text_menu;
