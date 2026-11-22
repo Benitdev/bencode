@@ -169,6 +169,8 @@ fn dropped_overlay(window: &Window, cx: &mut App) -> Option<FocusHandle> {
 pub(crate) struct Takeover {
     pub focus: FocusHandle,
     previous: Option<FocusHandle>,
+    /// What held focus inside the overlay when it handed focus back.
+    left: Option<FocusHandle>,
     taken: bool,
     returned: bool,
     _lost: Subscription,
@@ -183,6 +185,7 @@ pub(crate) fn take_focus(
     let state = window.use_keyed_state(key, cx, |window, cx| Takeover {
         focus: cx.focus_handle(),
         previous: None,
+        left: None,
         taken: false,
         returned: false,
         _lost: cx.on_focus_lost(window, |takeover: &mut Takeover, window, cx| {
@@ -192,6 +195,27 @@ pub(crate) fn take_focus(
             }
         }),
     });
+    // Still drawn after handing focus back: its owner refused to close it
+    // (a submit in flight), so it holds focus again where it was.
+    if state.read(cx).returned {
+        log::info!("focus: an overlay stayed open after closing; it takes focus back");
+        let (focus, left, previous) = {
+            let takeover = state.read(cx);
+            (
+                takeover.focus.clone(),
+                takeover.left.clone(),
+                takeover.previous.clone(),
+            )
+        };
+        cx.default_global::<Holders>().0.push(Holder {
+            takeover: state.downgrade(),
+            window: window.window_handle(),
+            focus: focus.clone(),
+            previous,
+        });
+        state.update(cx, |takeover, _| takeover.returned = false);
+        window.focus(left.as_ref().unwrap_or(&focus), cx);
+    }
     if !state.read(cx).taken {
         let previous = window.focused(cx);
         window.focus(&state.read(cx).focus.clone(), cx);
@@ -216,8 +240,10 @@ pub(crate) fn give_back(state: &Entity<Takeover>, window: &mut Window, cx: &mut 
     cx.default_global::<Holders>()
         .0
         .retain(|holder| holder.takeover != closed);
+    let left = window.focused(cx);
     let previous = state.update(cx, |takeover, _| {
         takeover.returned = true;
+        takeover.left = left;
         takeover.previous.clone()
     });
     match previous {
