@@ -1,7 +1,7 @@
 //! The Inbox's items, whichever tracker they come from (MonoCode
 //! `InboxItem`, `GithubWorkItemDetails`, `GitHubWorkItemComment`). Each
-//! source (`github.rs`, `backlog.rs`) fills these; the views read only
-//! them and ask `provider` where a source differs.
+//! source (`github.rs`, `backlog.rs`, `jira.rs`) fills these; the views read
+//! only them and ask `provider` where a source differs.
 
 use serde::Deserialize;
 
@@ -15,6 +15,7 @@ pub enum Provider {
     #[default]
     GitHub,
     Backlog,
+    Jira,
 }
 
 impl Provider {
@@ -22,6 +23,7 @@ impl Provider {
         match self {
             Self::GitHub => "GitHub",
             Self::Backlog => "Backlog",
+            Self::Jira => "Jira",
         }
     }
 }
@@ -183,6 +185,7 @@ impl WorkItem {
                 self.number
             ),
             Provider::Backlog => tickets::ticket_item_key(&self.identifier),
+            Provider::Jira => tickets::jira_item_key(&self.identifier),
         }
     }
 }

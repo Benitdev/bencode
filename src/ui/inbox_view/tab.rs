@@ -150,18 +150,23 @@ impl BenCodeApp {
                 self.fetch_work_item(&key, link, |app, _, cx| app.load_work_item_tab(cx), cx)
             }
             None => self.inbox_state.update(cx, |inbox, cx| {
-                let error = "Connect Backlog in Settings › Integrations to open this issue.";
+                let error = if key.starts_with("jira:") {
+                    "Connect Jira in Settings › Integrations to open this issue."
+                } else {
+                    "Connect Backlog in Settings › Integrations to open this issue."
+                };
                 inbox.known.value.insert(key, Err(error.into()));
                 cx.notify();
             }),
         }
     }
 
-    /// How to fetch item `key`: its link, a Backlog key in the connected
-    /// space.
+    /// How to fetch item `key`: its link, a Backlog/Jira key in the connected
+    /// space/site.
     fn work_item_link(&self, key: &str) -> Option<LinkedWorkItem> {
         let space = (self.backlog.account.as_ref()).map(|account| account.space.as_str());
-        LinkedWorkItem::from_item_key(key, space)
+        let site = (self.jira.account.as_ref()).map(|account| account.site.as_str());
+        LinkedWorkItem::from_item_key(key, space, site)
     }
 
     /// Fetches item `key` off the UI thread into `InboxState::known`, once
@@ -184,12 +189,23 @@ impl BenCodeApp {
             WorkItemKind::Pr => Kind::Pr,
             WorkItemKind::Issue => Kind::Issue,
         };
-        let backlog = (link.host()).map(|host| (link.identifier(), host.to_string()));
+        let tracker = link.host().map(|host| {
+            (
+                if link.is_jira() {
+                    Provider::Jira
+                } else {
+                    Provider::Backlog
+                },
+                link.identifier(),
+                host.to_string(),
+            )
+        });
         let (repo, number) = (link.repo.clone(), link.number);
         let task = cx.background_executor().spawn(async move {
-            let found = match backlog {
-                Some((issue, host)) => crate::backlog::issue(&issue, &host),
-                None => github::work_item(std::path::Path::new(&cwd), &repo, kind, number),
+            let found = match tracker {
+                Some((Provider::Backlog, issue, host)) => crate::backlog::issue(&issue, &host),
+                Some((Provider::Jira, issue, host)) => crate::jira::issue(&issue, &host),
+                _ => github::work_item(std::path::Path::new(&cwd), &repo, kind, number),
             };
             found.map(|mut found| {
                 found.project = cwd;
@@ -228,6 +244,7 @@ impl BenCodeApp {
         };
         let name = match item.provider {
             Provider::Backlog => short_key(&item.identifier, &inbox.key_prefix).to_string(),
+            Provider::Jira => item.identifier.clone(),
             Provider::GitHub => format!("#{}", item.number),
         };
         let icon = match item.kind {

@@ -97,6 +97,10 @@ impl BenCodeApp {
         if self.backlog.account.is_some() {
             self.load_backlog_projects(cx);
         }
+        self.jira.error = None;
+        if self.jira.account.is_some() {
+            self.load_jira_projects(false, cx);
+        }
     }
 
     /// Checks the typed space and key, saves them, and fills the Inbox.

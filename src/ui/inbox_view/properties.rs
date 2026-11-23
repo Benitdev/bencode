@@ -23,7 +23,7 @@ use crate::ui::composer::inbox_card::label_chip_within;
 use crate::ui::rows::ListRow;
 use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
-use crate::work_items::tickets::{ticket_item_key, title_without_key};
+use crate::work_items::tickets::title_without_key;
 use crate::work_items::{PrStatus, Provider, Review};
 
 /// The properties column's width beside the main one.
@@ -109,7 +109,57 @@ impl BenCodeApp {
                 rows
             }
             Provider::GitHub => self.github_properties(item, view, cx),
+            Provider::Jira => self.jira_properties(item, cx),
         }
+    }
+
+    /// A Jira issue's properties: assignees, issue type, priority, labels and due date.
+    fn jira_properties(&self, item: &WorkItem, cx: &Context<Self>) -> Vec<AnyElement> {
+        let mut rows = vec![property(
+            "Assignees",
+            if item.assignees.is_empty() {
+                none(cx)
+            } else {
+                plain(cx).child(item.assignees.join(", "))
+            },
+            cx,
+        )];
+        if let Some(kind) = &item.issue_type {
+            rows.push(property("Type", plain(cx).child(property_label(kind, cx)), cx));
+        }
+        if !item.priority.is_empty() {
+            rows.push(property(
+                "Priority",
+                plain(cx).child(item.priority.clone()),
+                cx,
+            ));
+        }
+        let extra_labels: Vec<_> = item
+            .labels
+            .iter()
+            .filter(|l| {
+                item.issue_type
+                    .as_ref()
+                    .is_none_or(|k| !l.name.eq_ignore_ascii_case(&k.name))
+            })
+            .collect();
+        rows.push(property(
+            "Labels",
+            if extra_labels.is_empty() {
+                none(cx)
+            } else {
+                plain(cx).children(extra_labels.into_iter().map(|l| property_label(l, cx)))
+            },
+            cx,
+        ));
+        if !item.due_date.is_empty() {
+            rows.push(property(
+                "Due",
+                self.due_value(item, &item.due_date, cx),
+                cx,
+            ));
+        }
+        rows
     }
 
     /// Assignees, labels and, for a pull request, its review and branches;
@@ -201,9 +251,13 @@ impl BenCodeApp {
         let fg = cx.theme().colors.fg;
         let hover = fg.fill(Fill::Hover);
         let pad = cx.theme().control_padding(ControlSize::Md);
-        let rows = tickets.iter().map(|identifier| {
-            let key = ticket_item_key(identifier);
-            let short = short_key(identifier, &inbox.key_prefix).to_string();
+        let rows = tickets.iter().map(|ticket_ref| {
+            let identifier = &ticket_ref.identifier;
+            let key = ticket_ref.item_key();
+            let short = match ticket_ref.provider {
+                Provider::Backlog => short_key(identifier, &inbox.key_prefix).to_string(),
+                Provider::Jira | Provider::GitHub => identifier.clone(),
+            };
             let ticket = inbox.item(&key);
             let (mark, status, title, tip) = match ticket {
                 Some(ticket) => {

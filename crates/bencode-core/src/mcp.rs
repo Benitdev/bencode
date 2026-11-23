@@ -7,6 +7,8 @@
 pub const BROWSER_SERVER: &str = "bencode-browser";
 /// The connected Backlog space's server.
 pub const BACKLOG_SERVER: &str = "bencode-backlog";
+/// The connected Jira site's server.
+pub const JIRA_SERVER: &str = "bencode-jira";
 
 /// One server: its name in the CLI's MCP config, and the command and
 /// arguments that start it.

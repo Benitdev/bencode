@@ -139,12 +139,12 @@ impl BenCodeApp {
         if items.is_empty() {
             return;
         }
-        let unread: Vec<(String, String)> = (items.iter())
-            .filter(|item| item.provider == Provider::Backlog)
+        let unread: Vec<(String, Provider, String)> = (items.iter())
+            .filter(|item| matches!(item.provider, Provider::Backlog | Provider::Jira))
             .filter(|item| {
                 (self.inbox(cx).details.get(&item.key())).is_none_or(|loaded| loaded.is_err())
             })
-            .map(|item| (item.key(), item.identifier.clone()))
+            .map(|item| (item.key(), item.provider, item.identifier.clone()))
             .collect();
         if unread.is_empty() {
             self.start_inbox_batch(&items, batch.start, cx);
@@ -156,7 +156,14 @@ impl BenCodeApp {
         cx.notify();
         let task = cx.background_executor().spawn(async move {
             (unread.into_iter())
-                .map(|(key, identifier)| (key, crate::backlog::details(&identifier)))
+                .map(|(key, provider, identifier)| {
+                    let details = match provider {
+                        Provider::Backlog => crate::backlog::details(&identifier),
+                        Provider::Jira => crate::jira::details(&identifier),
+                        Provider::GitHub => Err("unexpected GitHub item".into()),
+                    };
+                    (key, details)
+                })
                 .collect::<Vec<_>>()
         });
         cx.spawn(async move |this, cx| {
@@ -257,7 +264,7 @@ impl BenCodeApp {
             let (icon, tint, _) = status_mark(item, cx);
             let key = match item.provider {
                 Provider::Backlog => short_key(&item.identifier, &inbox.key_prefix).to_string(),
-                Provider::GitHub => item.identifier.clone(),
+                Provider::Jira | Provider::GitHub => item.identifier.clone(),
             };
             div()
                 .h(px(26.0))

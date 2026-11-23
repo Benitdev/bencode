@@ -11,6 +11,7 @@ mod github;
 mod github_accounts;
 mod gpu_trim;
 mod hotkey;
+mod jira;
 mod launch;
 mod logging;
 pub mod mcp;
@@ -51,6 +52,9 @@ fn main() {
         std::process::exit(code);
     }
     if let Some(code) = backlog::mcp::run_from_args() {
+        std::process::exit(code);
+    }
+    if let Some(code) = jira::mcp::run_from_args() {
         std::process::exit(code);
     }
     // And `bencode app`, which a Bot's agent runs to reach the app.

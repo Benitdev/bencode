@@ -122,6 +122,7 @@ impl BenCodeApp {
                     reply.as_deref(),
                 ),
                 Provider::Backlog => crate::backlog::post_comment(&item.identifier, &body),
+                Provider::Jira => crate::jira::post_comment(&item.identifier, &body),
             }
             .map(|_| item.key())
         });

@@ -104,6 +104,8 @@ pub struct ItemThreads {
     generation: u64,
     /// Threads already searched for a Backlog link (`work_item_link.rs`).
     pub(crate) searched: HashSet<String>,
+    /// Threads already searched for a Jira link (`work_item_link.rs`).
+    pub(crate) jira_searched: HashSet<String>,
 }
 
 impl ItemThreads {

@@ -69,18 +69,18 @@ impl BenCodeApp {
                 .into_any_element()
         };
         let inbox = self.inbox(cx);
-        // Backlog alone fills the list too; GitHub's setup hint shows
+        // Backlog or Jira alone fills the list too; GitHub's setup hint shows
         // only while nothing is connected.
         match inbox.status {
             None => return message("Loading…".into()),
-            Some(Status::NotInstalled) if !inbox.backlog_connected => {
+            Some(Status::NotInstalled) if !inbox.any_tracker_connected() => {
                 return message(
-                    "Install the GitHub CLI (`brew install gh`) to fill the Inbox, or connect Backlog in Settings › Integrations.".into(),
+                    "Install the GitHub CLI (`brew install gh`) to fill the Inbox, or connect Backlog or Jira in Settings › Integrations.".into(),
                 );
             }
-            Some(Status::SignedOut) if !inbox.backlog_connected => {
+            Some(Status::SignedOut) if !inbox.any_tracker_connected() => {
                 return message(
-                    "Run `gh auth login` in a terminal to connect GitHub, or connect Backlog in Settings › Integrations.".into(),
+                    "Run `gh auth login` in a terminal to connect GitHub, or connect Backlog or Jira in Settings › Integrations.".into(),
                 );
             }
             Some(_) => {}
@@ -97,7 +97,7 @@ impl BenCodeApp {
                 "Loading…".to_string()
             } else if let Some(error) = inbox.errors.first() {
                 error.clone()
-            } else if self.inbox_projects_shown(cx).is_empty() && !inbox.backlog_connected {
+            } else if self.inbox_projects_shown(cx).is_empty() && !inbox.any_tracker_connected() {
                 "Open a project to fill the inbox".to_string()
             } else if narrowed {
                 "No issues or pull requests match these filters".to_string()

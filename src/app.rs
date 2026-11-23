@@ -42,6 +42,7 @@ pub mod in_flight;
 mod inbox_attention;
 mod integrations;
 pub mod item_threads;
+pub mod jira;
 pub mod live_agents;
 mod model_catalog;
 pub mod note_images;
@@ -257,11 +258,17 @@ pub struct BenCodeApp {
     pub backlog_actual_input: Entity<TextInput>,
     /// Settings › Integrations: the Backlog connection and its form.
     pub backlog: backlog::BacklogState,
+    /// Settings › Integrations: the Jira connection and its form.
+    pub jira: jira::JiraState,
     /// Settings › Integrations: the `gh` accounts and each project's.
     pub github: github_accounts::GithubAccountsState,
     pub backlog_space_input: Entity<TextInput>,
     pub backlog_key_input: Entity<TextInput>,
     pub backlog_disconnect_open: bool,
+    pub jira_site_input: Entity<TextInput>,
+    pub jira_email_input: Entity<TextInput>,
+    pub jira_token_input: Entity<TextInput>,
+    pub jira_disconnect_open: bool,
     /// The Inbox list's focus, for its ↑/↓ keys.
     pub inbox_focus: gpui::FocusHandle,
     /// A branch switch git refused because of local changes, awaiting "Stash & switch".
@@ -689,6 +696,10 @@ impl BenCodeApp {
         let backlog_space_input = text_input(window, cx, "yourspace.backlog.com");
         let backlog_key_input =
             cx.new(|cx| TextInput::new(window, cx).placeholder("API key").masked());
+        let jira_site_input = text_input(window, cx, "yourteam.atlassian.net");
+        let jira_email_input = text_input(window, cx, "you@example.com");
+        let jira_token_input =
+            cx.new(|cx| TextInput::new(window, cx).placeholder("API token").masked());
         let skill_name_input = text_input(window, cx, "skill-name");
         let skill_keys_input = skill_name_input.clone();
         let find_input = text_input(window, cx, "Find in conversation");
@@ -844,6 +855,9 @@ impl BenCodeApp {
             ),
             cx.subscribe(&backlog_space_input, Self::on_backlog_form_input),
             cx.subscribe(&backlog_key_input, Self::on_backlog_form_input),
+            cx.subscribe(&jira_site_input, Self::on_jira_form_input),
+            cx.subscribe(&jira_email_input, Self::on_jira_form_input),
+            cx.subscribe(&jira_token_input, Self::on_jira_form_input),
             cx.subscribe(
                 &inbox_search_input,
                 |this: &mut Self, _, event: &InputEvent, cx| {
@@ -1445,10 +1459,15 @@ impl BenCodeApp {
             backlog_estimate_input,
             backlog_actual_input,
             backlog: Default::default(),
+            jira: Default::default(),
             github: Default::default(),
             backlog_space_input,
             backlog_key_input,
             backlog_disconnect_open: false,
+            jira_site_input,
+            jira_email_input,
+            jira_token_input,
+            jira_disconnect_open: false,
             inbox_focus: cx.focus_handle(),
             blocked_branch_switch: None,
             token_picker: None,
@@ -1653,6 +1672,7 @@ impl BenCodeApp {
         app.listen_for_bot_menu_bar(window.window_handle(), cx);
         app.listen_for_summon(window.window_handle(), cx);
         app.load_backlog_account(cx);
+        app.load_jira_account(cx);
         app.start_inbox_poll(cx);
         app.start_update_probe(cx);
         app.reopen_saved_bot(cx);
@@ -1847,6 +1867,7 @@ impl Render for BenCodeApp {
             any_elements(self.render_claude_reset_confirm(cx)),
             any_elements(self.render_agy_account_removal(cx)),
             any_elements(self.render_backlog_disconnect(cx)),
+            any_elements(self.render_jira_disconnect(cx)),
             any_elements(self.render_machine_removal(cx)),
             any_elements(self.render_remote_folder_dialog(cx)),
             any_elements(self.render_worktree_creation(cx)),

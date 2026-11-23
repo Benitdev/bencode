@@ -289,6 +289,7 @@ impl BenCodeApp {
         }
         if changed {
             self.backfill_backlog_links(cx);
+            self.backfill_jira_links(cx);
             cx.notify();
         }
     }

@@ -352,15 +352,21 @@ impl BenCodeApp {
     /// set.
     fn render_inbox_filter_menu(&self, cx: &Context<Self>) -> gpui::Div {
         let fg = cx.theme().colors.fg;
-        let source = self.inbox(cx).source_filter();
+        let inbox = self.inbox(cx);
+        let source = inbox.source_filter();
         let mut body = div();
-        if self.inbox(cx).backlog_connected {
+        if inbox.any_tracker_connected() {
             body = body.child(menu_section("Source", cx));
-            let choices = [
+            let mut choices = vec![
                 (None, "All sources"),
                 (Some(Provider::GitHub), Provider::GitHub.label()),
-                (Some(Provider::Backlog), Provider::Backlog.label()),
             ];
+            if inbox.backlog_connected {
+                choices.push((Some(Provider::Backlog), Provider::Backlog.label()));
+            }
+            if inbox.jira_connected {
+                choices.push((Some(Provider::Jira), Provider::Jira.label()));
+            }
             for (choice, label) in choices {
                 body = body.child(
                     menu_row(

@@ -186,6 +186,8 @@ impl BenCodeApp {
         let (label, full, tracker) = if item.is_backlog() {
             let short = crate::ui::inbox_view::key_tail(&identifier);
             (short.to_string(), identifier.clone(), "Backlog")
+        } else if item.is_jira() {
+            (identifier.clone(), identifier.clone(), "Jira")
         } else {
             (
                 identifier.clone(),

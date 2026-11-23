@@ -94,6 +94,10 @@ pub struct AppSettings {
     pub backlog_hidden_projects: Vec<String>,
     /// The folder "Send to agent" starts in, by Backlog project key.
     pub backlog_project_folders: std::collections::BTreeMap<String, String>,
+    /// Jira project ids left out of the Inbox.
+    pub jira_hidden_projects: Vec<String>,
+    /// The folder "Send to agent" starts in, by Jira project key.
+    pub jira_project_folders: std::collections::BTreeMap<String, String>,
     /// The `gh` account a project's GitHub commands run as, by project
     /// folder; a project left out is on Automatic.
     pub github_accounts: std::collections::BTreeMap<String, String>,
@@ -316,6 +320,11 @@ mod tests {
             backlog_hidden_projects: vec!["12".to_string()],
             backlog_project_folders: std::collections::BTreeMap::from([(
                 "WEB".to_string(),
+                "/p".to_string(),
+            )]),
+            jira_hidden_projects: vec!["10001".to_string()],
+            jira_project_folders: std::collections::BTreeMap::from([(
+                "ENG".to_string(),
                 "/p".to_string(),
             )]),
             github_accounts: std::collections::BTreeMap::from([(

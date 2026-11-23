@@ -72,7 +72,7 @@ Not done, and why. Reopen one only with a reason from the principles.
 - Pixel parity of the shell: sidebar mode tabs at 24px, the search button as Go to File, project row opacity and sizes, Changes header and empty-state copy, switcher rows, discard wording, the editor's footer instead of its toolbar
 - Settings: the blur radius; per-project chat backgrounds; General / Chat pages as MonoCode lays them out
 - Notes: line numbers in Source
-- Inbox sources Jira, Linear, GitLab, Azure DevOps, and their automation triggers and templates: add one when someone uses it
+- Inbox sources Linear, GitLab, Azure DevOps, and their automation triggers and templates: add one when someone uses it
 - MonoCode's editable side-by-side diff (`@codemirror/merge`): BenCode's review has its own side by side
 - ⇧⌘N New Window: BenCode is one window (and the Bot float)
 - Usage popover: "show remaining" and e-mail masking; the harness chip's "sign in" in the footer
@@ -198,7 +198,8 @@ Notes:
 - [ ] P2 Automation event triggers (GitHub, Linear, Jira, GitLab, Azure DevOps) and their four templates; per-automation model settings — `automations/model/automationEvents.ts`
 - [x] P1 S Inbox honest empty state (no fake data)
 - [x] Inbox source: Nulab Backlog (`backlog.rs`; BenCode's own, MonoCode has none)
-- [ ] P2 Inbox sources MonoCode has: Jira, Linear, GitLab, Azure DevOps (add as `Provider` variants over `work_items.rs`)
+- [x] Inbox source: Jira Cloud (`jira.rs`, `jira/adf.rs`, `jira/mcp.rs`, `app/jira.rs`, Settings › Integrations, workflow transitions, and `bencode-jira` MCP server)
+- [ ] P2 Inbox sources MonoCode has: Linear, GitLab, Azure DevOps (add as `Provider` variants over `work_items.rs`)
 - [ ] P1 L Quick Composer
 
 ## Batch G — composer parity (2026-10-04)

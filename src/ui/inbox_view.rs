@@ -43,6 +43,7 @@ use crate::app::item_threads::{PrimaryAction, primary_action};
 use crate::app::session_list::Selection;
 use crate::app::{BenCodeApp, Surface};
 use crate::backlog;
+use crate::jira;
 use crate::github::{self, Kind, Status, WorkItem};
 use crate::ui::composer::cards::ComposerCard;
 use crate::ui::composer::inbox_card::{CardTask, InboxCard};
@@ -192,6 +193,8 @@ pub struct InboxState {
     pub status: Option<Status>,
     /// The last fetch found a Backlog connection.
     pub backlog_connected: bool,
+    /// The last fetch found a Jira connection.
+    pub jira_connected: bool,
     pub items: Vec<WorkItem>,
     /// Items fetched by key for a tab beside the chat, the list holding
     /// them or not (`work_item_tab.rs`); `item` finds them too.
@@ -199,9 +202,9 @@ pub struct InboxState {
     /// Which listed pull requests are named after which tickets, taken
     /// when the list lands.
     pub tickets: TicketLinks,
-    /// The connected Backlog space's project keys, as the last fetch found
+    /// The connected Backlog/Jira project keys, as the last fetch found
     /// them: tickets of these are looked for in pull requests.
-    ticket_projects: Vec<String>,
+    ticket_projects: Vec<(Provider, String)>,
     /// What the listed Backlog keys share, left out of the rows
     /// (`row::backlog_key_prefix`).
     pub key_prefix: String,
@@ -283,6 +286,7 @@ impl Default for InboxState {
         Self {
             status: None,
             backlog_connected: false,
+            jira_connected: false,
             items: Vec::new(),
             known: Loaded::default(),
             tickets: TicketLinks::default(),
@@ -420,9 +424,18 @@ pub fn updated_ms(item: &WorkItem) -> i64 {
 }
 
 impl InboxState {
-    /// The source filter in force: none while GitHub is the only source.
+    pub(super) fn any_tracker_connected(&self) -> bool {
+        self.backlog_connected || self.jira_connected
+    }
+
+    /// The source filter in force: none while GitHub is the only source, or
+    /// when the picked tracker was disconnected.
     fn source_filter(&self) -> Option<Provider> {
-        self.source.filter(|_| self.backlog_connected)
+        self.source.filter(|source| match source {
+            Provider::GitHub => self.any_tracker_connected(),
+            Provider::Backlog => self.backlog_connected,
+            Provider::Jira => self.jira_connected,
+        })
     }
 
     /// Item `key`'s description as shown: its translation's blocks, or
@@ -548,10 +561,10 @@ pub fn relative_time(iso: &str, now_ms: i64) -> String {
     }
 }
 
-/// The item's state as the list and the status filter name it: Backlog's
+/// The item's state as the list and the status filter name it: Backlog/Jira's
 /// own status, or GitHub's Open / Draft / Merged / Closed.
 pub fn status_name(item: &WorkItem) -> &str {
-    if item.provider == Provider::Backlog {
+    if matches!(item.provider, Provider::Backlog | Provider::Jira) {
         return if item.state.is_empty() {
             "Open"
         } else {
@@ -584,6 +597,18 @@ pub fn status_choices(items: &[&WorkItem], ordered: &[String]) -> Vec<String> {
 /// MonoCode `inboxStatusMark`: the glyph, its tint and the state's name.
 pub fn status_mark(item: &WorkItem, cx: &gpui::App) -> (IconName, gpui::Hsla, SharedString) {
     let colors = &cx.theme().colors;
+    if item.provider == Provider::Jira {
+        let (icon, tint) = match item.state_reason.as_str() {
+            "done" => (IconName::CircleCheck, colors.success),
+            "indeterminate" => (IconName::CircleDot, colors.accent),
+            _ => (IconName::CircleDot, colors.fg.ink(Ink::Secondary)),
+        };
+        return (
+            icon,
+            tint,
+            SharedString::from(status_name(item).to_string()),
+        );
+    }
     if item.provider == Provider::Backlog {
         // Backlog's statuses are the project's own, each with its colour.
         let tint = crate::ui::composer::inbox_card::label_color(&item.state_color).unwrap_or(
@@ -766,10 +791,12 @@ impl BenCodeApp {
             .start_project
             .values()
             .chain(self.backlog.project_folders.values())
+            .chain(self.jira.project_folders.values())
             .cloned()
             .collect();
         let assigned = self.inbox(cx).assigned_to_me;
         let hidden = self.backlog.hidden_projects.clone();
+        let jira_hidden = self.jira.hidden_projects.clone();
         let list_generation = self.inbox_mut(cx, |inbox| {
             inbox.fetching = true;
             inbox.list_generation += 1;
@@ -789,30 +816,59 @@ impl BenCodeApp {
                 _ => github::InboxList::default(),
             };
             let backlog = backlog::inbox(&hidden, assigned);
+            let jira = jira::inbox(&jira_hidden, assigned);
             let statuses = backlog.as_ref().map(|found| found.statuses.clone());
-            let ticket_projects = (backlog.as_ref())
-                .map(|found| found.projects.clone())
-                .unwrap_or_default();
+            let jira_connected = jira.is_some();
+            let jira_me = jira.as_ref().map(|found| found.me.clone());
+            let mut ticket_projects: Vec<(Provider, String)> = Vec::new();
             if let Some(found) = backlog {
+                ticket_projects.extend(
+                    found
+                        .projects
+                        .into_iter()
+                        .map(|key| (Provider::Backlog, key)),
+                );
                 list.items.extend(found.items);
                 list.errors.extend(found.errors);
-                list.items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
             }
+            if let Some(found) = jira {
+                ticket_projects.extend(found.projects.into_iter().map(|key| (Provider::Jira, key)));
+                list.items.extend(found.items);
+                list.errors.extend(found.errors);
+            }
+            list.items.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
             let mut item_projects: Vec<&String> = list.items.iter().map(|i| &i.project).collect();
             item_projects.sort();
             item_projects.dedup();
             missing.extend(item_projects.into_iter().filter(|p| !is_dir(p)).cloned());
-            (status, list, statuses, ticket_projects, missing)
+            (
+                status,
+                list,
+                statuses,
+                jira_connected,
+                jira_me,
+                ticket_projects,
+                missing,
+            )
         });
         cx.spawn(async move |this, cx| {
-            let (status, list, backlog_statuses, ticket_projects, missing) = task.await;
+            let (
+                status,
+                list,
+                backlog_statuses,
+                jira_connected,
+                jira_me,
+                ticket_projects,
+                missing,
+            ) = task.await;
             let updated = this.update(cx, |app, cx| {
                 if app.inbox(cx).list_generation != list_generation {
                     return;
                 }
-                // A fresh Backlog connection: its first list counts as read.
+                // A fresh Backlog/Jira connection: its first list counts as read.
                 let seed_backlog =
                     std::mem::take(&mut app.backlog.seed_seen) && backlog_statuses.is_some();
+                let seed_jira = std::mem::take(&mut app.jira.seed_seen) && jira_connected;
                 app.backlog.statuses = backlog_statuses.clone().unwrap_or_default();
                 let (failed, seeded, first) = app.inbox_state.update(cx, |inbox, cx| {
                     let first = inbox.fetched_at.is_none();
@@ -820,6 +876,8 @@ impl BenCodeApp {
                     let status_same = inbox.status == Some(status);
                     inbox.status = Some(status);
                     inbox.backlog_connected = backlog_statuses.is_some();
+                    inbox.jira_connected = jira_connected;
+                    inbox.attention.set_jira_me(jira_me);
                     // A linked thread's item opened before the list landed
                     // stays, even when the list does not include it.
                     let kept = inbox
@@ -833,7 +891,7 @@ impl BenCodeApp {
                     items.extend(kept);
                     // The poll's usual answer: nothing new, nothing to redraw.
                     let same = status_same && inbox.items == items && inbox.errors == list.errors;
-                    // Kept while Backlog answers with no catalog.
+                    // Kept while a tracker answers with no catalog.
                     if !ticket_projects.is_empty() {
                         inbox.ticket_projects = ticket_projects;
                     }
@@ -849,6 +907,13 @@ impl BenCodeApp {
                     if seed_backlog {
                         for item in inbox.items.clone() {
                             if item.provider == Provider::Backlog {
+                                seeded |= inbox.mark_seen(&item);
+                            }
+                        }
+                    }
+                    if seed_jira {
+                        for item in inbox.items.clone() {
+                            if item.provider == Provider::Jira {
                                 seeded |= inbox.mark_seen(&item);
                             }
                         }
@@ -998,6 +1063,7 @@ impl BenCodeApp {
             self.inbox_state.as_mut(cx).pr = PrActionUi::default();
             self.inbox_state.as_mut(cx).repair = None;
             self.backlog.issue_error = None;
+            self.jira.issue_error = None;
             // Read, it would leave "Needs you" while it is being read.
             let pinned = (self.inbox(cx).item(&key)).is_some_and(|i| self.inbox(cx).needs_you(i));
             self.inbox_state.as_mut(cx).kept_pinned = pinned.then(|| key.clone());
@@ -1080,6 +1146,7 @@ impl BenCodeApp {
                             item.number,
                         ),
                         Provider::Backlog => backlog::details(&item.identifier),
+                        Provider::Jira => jira::details(&item.identifier),
                     }
                     .map(Described::from)
                 }
@@ -1089,6 +1156,8 @@ impl BenCodeApp {
         self.load_inbox_thread(key, false, cx);
         if item.provider == Provider::Backlog {
             self.load_backlog_field_options(&item.container_id, cx);
+        } else if item.provider == Provider::Jira {
+            self.load_jira_transitions(key, &item.identifier, false, cx);
         }
         if item.kind == Kind::Pr {
             self.load_pr_checks(key, false, cx);
@@ -1133,6 +1202,7 @@ impl BenCodeApp {
                     item.number,
                 ),
                 Provider::Backlog => backlog::thread(&item.identifier),
+                Provider::Jira => jira::thread(&item.identifier),
             },
             cx,
         );
@@ -1199,7 +1269,7 @@ impl BenCodeApp {
     ) -> Option<InboxCard> {
         match (item.kind, task) {
             (Kind::Issue, CardTask::Work) => {
-                let body = (item.provider == Provider::Backlog)
+                let body = matches!(item.provider, Provider::Backlog | Provider::Jira)
                     .then(|| {
                         let described = self.inbox(cx).details.get(&item.key())?;
                         described.as_ref().ok().map(|d| d.details.body.clone())
@@ -1273,12 +1343,14 @@ impl BenCodeApp {
             .get(&item.key())
             .cloned()
             .filter(|p| exists(p))
-            // A Backlog project's threads start where the last one did.
+            // A Backlog or Jira project's threads start where the last one did.
             .or_else(|| {
-                (item.provider == Provider::Backlog)
-                    .then(|| self.backlog.project_folders.get(&item.repo).cloned())
-                    .flatten()
-                    .filter(|p| exists(p))
+                match item.provider {
+                    Provider::Backlog => self.backlog.project_folders.get(&item.repo).cloned(),
+                    Provider::Jira => self.jira.project_folders.get(&item.repo).cloned(),
+                    Provider::GitHub => None,
+                }
+                .filter(|p| exists(p))
             })
             .or_else(|| Some(item.project.clone()).filter(|p| exists(p)))
             .unwrap_or_else(|| self.current_cwd.clone())
