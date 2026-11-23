@@ -6,6 +6,12 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+## [0.1.60] - 2026-11-23
+
+- In-app browser and HTML artifact pages on macOS now sit beneath GPUI's
+  Metal layer and show through a transparent cutout, so tooltips, popovers,
+  context menus, corner notices and dialogs composite cleanly on top of the
+  live page instead of being clipped or hiding the browser while open.
 - Jira Cloud joins the Inbox: connect a site with an Atlassian email and
   API token in Settings › Integrations, choose which projects it lists, and
   read issues with their descriptions and comments, reply, and move an
