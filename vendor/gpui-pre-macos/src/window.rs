@@ -151,6 +151,10 @@ unsafe fn build_classes() {
                 reset_cursor_rects as extern "C" fn(_, Sel),
             );
             decl.add_method(
+                sel!(hitTest:),
+                hit_test as extern "C" fn(_, Sel, NSPoint) -> *mut AnyObject,
+            );
+            decl.add_method(
                 sel!(pressureChangeWithEvent:),
                 handle_view_event as extern "C" fn(_, Sel, *mut AnyObject),
             );
@@ -762,8 +766,117 @@ struct MacWindowState {
     activated_least_once: bool,
     closed: Arc<AtomicBool>,
     accesskit_adapter: Option<accesskit_macos::SubclassingAdapter>,
+    /// Transparent cutout regions (in window points, y down) for native views
+    /// layered behind `GPUIView` (e.g. an in-app browser WKWebView): `hitTest:`
+    /// passes pointer events through unobstructed parts of these rects, and
+    /// `resetCursorRects` leaves them to the native view's own cursors.
+    cutouts: Vec<CutoutRegion>,
     // The parent window if this window is a sheet (Dialog kind)
     sheet_parent: Option<*mut AnyObject>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct CutoutRegion {
+    bounds: Bounds<Pixels>,
+    occluders: Vec<Bounds<Pixels>>,
+}
+
+impl CutoutRegion {
+    fn passes_through(&self, point: Point<Pixels>) -> bool {
+        self.bounds.contains(&point) && !self.occluders.iter().any(|r| r.contains(&point))
+    }
+}
+
+fn scaled_to_pixels(bounds: Bounds<gpui::ScaledPixels>, scale: f32) -> Bounds<Pixels> {
+    let inv = if scale > 0. { 1. / scale } else { 1. };
+    Bounds {
+        origin: point(px(bounds.origin.x.0 * inv), px(bounds.origin.y.0 * inv)),
+        size: size(px(bounds.size.width.0 * inv), px(bounds.size.height.0 * inv)),
+    }
+}
+
+fn quad_is_visible(quad: &gpui::Quad) -> bool {
+    !quad.background.is_transparent() || quad.border_color.a > 0.
+}
+
+/// Extracts pass-through cutout regions and any GPUI quads drawn *above* them
+/// from the scene painted this frame.
+fn cutouts_from_scene(scene: &gpui::Scene, scale_factor: f32) -> Vec<CutoutRegion> {
+    let mut regions = Vec::new();
+    for hole in &scene.quads {
+        if !gpui_apple::metal_renderer::hole_punch_pass_through(hole) {
+            continue;
+        }
+        let h_scaled = hole.bounds.intersect(&hole.content_mask.bounds);
+        if h_scaled.size.width.0 <= 0. || h_scaled.size.height.0 <= 0. {
+            continue;
+        }
+        let h_bounds = scaled_to_pixels(h_scaled, scale_factor);
+        let mut occluders = Vec::new();
+        for quad in &scene.quads {
+            if quad.order <= hole.order
+                || gpui_apple::metal_renderer::is_hole_punch(quad)
+                || !quad_is_visible(quad)
+            {
+                continue;
+            }
+            let q_scaled = quad.bounds.intersect(&quad.content_mask.bounds);
+            if q_scaled.size.width.0 <= 0. || q_scaled.size.height.0 <= 0. {
+                continue;
+            }
+            let q_bounds = scaled_to_pixels(q_scaled, scale_factor);
+            let overlap = h_bounds.intersect(&q_bounds);
+            if overlap.size.width > px(0.) && overlap.size.height > px(0.) {
+                occluders.push(overlap);
+            }
+        }
+        regions.push(CutoutRegion {
+            bounds: h_bounds,
+            occluders,
+        });
+    }
+    regions
+}
+
+/// Subtracts `cut` from each rectangle in `rects` (all in top-down pixels),
+/// returning up to 4 non-overlapping strips per rectangle.
+fn subtract_rect(rects: Vec<Bounds<Pixels>>, cut: Bounds<Pixels>) -> Vec<Bounds<Pixels>> {
+    let mut out = Vec::with_capacity(rects.len() + 4);
+    for rect in rects {
+        let hit = rect.intersect(&cut);
+        if hit.size.width <= px(0.) || hit.size.height <= px(0.) {
+            out.push(rect);
+            continue;
+        }
+        let top_h = hit.origin.y - rect.origin.y;
+        if top_h > px(0.) {
+            out.push(Bounds::new(rect.origin, size(rect.size.width, top_h)));
+        }
+        let bottom_y = hit.origin.y + hit.size.height;
+        let bottom_h = (rect.origin.y + rect.size.height) - bottom_y;
+        if bottom_h > px(0.) {
+            out.push(Bounds::new(
+                point(rect.origin.x, bottom_y),
+                size(rect.size.width, bottom_h),
+            ));
+        }
+        let left_w = hit.origin.x - rect.origin.x;
+        if left_w > px(0.) {
+            out.push(Bounds::new(
+                point(rect.origin.x, hit.origin.y),
+                size(left_w, hit.size.height),
+            ));
+        }
+        let right_x = hit.origin.x + hit.size.width;
+        let right_w = (rect.origin.x + rect.size.width) - right_x;
+        if right_w > px(0.) {
+            out.push(Bounds::new(
+                point(right_x, hit.origin.y),
+                size(right_w, hit.size.height),
+            ));
+        }
+    }
+    out
 }
 
 impl MacWindowState {
@@ -1238,6 +1351,7 @@ impl MacWindow {
                 activated_least_once: false,
                 closed: Arc::new(AtomicBool::new(false)),
                 accesskit_adapter: None,
+                cutouts: Vec::new(),
                 sheet_parent: None,
             }));
             let mut window = Self(state, marker);
@@ -2310,6 +2424,15 @@ impl PlatformWindow for MacWindow {
 
     fn draw(&self, scene: &gpui::Scene) {
         let mut this = self.0.lock();
+        let next_cutouts = cutouts_from_scene(scene, this.scale_factor());
+        if this.cutouts != next_cutouts {
+            this.cutouts = next_cutouts;
+            let native_window = this.native_window;
+            let native_view = this.native_view.as_ptr();
+            unsafe {
+                let _: () = msg_send![native_window, invalidateCursorRectsForView: native_view];
+            }
+        }
         this.renderer.draw(scene);
     }
 
@@ -2758,7 +2881,71 @@ extern "C" fn reset_cursor_rects(this: &AnyObject, _: Sel) {
         };
 
         let bounds: NSRect = msg_send![this, bounds];
-        let _: () = msg_send![this, addCursorRect: bounds, cursor: cursor];
+        let cutouts = window_state.lock().cutouts.clone();
+        if cutouts.is_empty() {
+            let _: () = msg_send![this, addCursorRect: bounds, cursor: cursor];
+            return;
+        }
+        let view_height = bounds.size.height as f32;
+        let full = Bounds::new(
+            point(px(0.), px(0.)),
+            size(px(bounds.size.width as f32), px(view_height)),
+        );
+        let mut rects = vec![full];
+        for cutout in &cutouts {
+            rects = subtract_rect(rects, cutout.bounds);
+        }
+        for cutout in &cutouts {
+            for occluder in &cutout.occluders {
+                let clamped = full.intersect(occluder);
+                if clamped.size.width > px(0.) && clamped.size.height > px(0.) {
+                    rects.push(clamped);
+                }
+            }
+        }
+        for rect in rects {
+            let ns_rect = NSRect::new(
+                NSPoint::new(
+                    f64::from(rect.origin.x),
+                    f64::from(view_height) - f64::from(rect.origin.y) - f64::from(rect.size.height),
+                ),
+                NSSize::new(f64::from(rect.size.width), f64::from(rect.size.height)),
+            );
+            let _: () = msg_send![this, addCursorRect: ns_rect, cursor: cursor];
+        }
+    }
+}
+
+extern "C" fn hit_test(this: &AnyObject, _: Sel, point: NSPoint) -> *mut AnyObject {
+    unsafe {
+        let window_state = get_window_state(this);
+        let pass_through = {
+            let lock = window_state.lock();
+            if lock.cutouts.is_empty() {
+                false
+            } else {
+                let superview: *mut AnyObject = msg_send![this, superview];
+                let local: NSPoint = if superview.is_null() {
+                    point
+                } else {
+                    msg_send![this, convertPoint: point, fromView: superview]
+                };
+                let bounds: NSRect = msg_send![this, bounds];
+                let flipped: Bool = msg_send![this, isFlipped];
+                let gx = px(local.x as f32);
+                let gy = px(if flipped.as_bool() {
+                    local.y as f32
+                } else {
+                    (bounds.size.height - local.y) as f32
+                });
+                let pt = gpui::point(gx, gy);
+                lock.cutouts.iter().any(|cutout| cutout.passes_through(pt))
+            }
+        };
+        if pass_through {
+            return ptr::null_mut();
+        }
+        msg_send![super(this, class!(NSView)), hitTest: point]
     }
 }
 
@@ -4301,5 +4488,29 @@ mod tests {
                 .expect("test screen description ivar")
                 .load::<*mut AnyObject>(screen)
         }
+    }
+
+    #[test]
+    fn cutout_passes_through_except_under_occluders() {
+        let region = CutoutRegion {
+            bounds: Bounds::new(point(px(100.), px(50.)), size(px(400.), px(300.))),
+            occluders: vec![Bounds::new(point(px(420.), px(120.)), size(px(80.), px(60.)))],
+        };
+        assert!(region.passes_through(point(px(200.), px(150.))));
+        assert!(!region.passes_through(point(px(50.), px(150.))));
+        assert!(!region.passes_through(point(px(450.), px(140.))));
+    }
+
+    #[test]
+    fn subtract_rect_carves_out_interior_without_overlap() {
+        let full = Bounds::new(point(px(0.), px(0.)), size(px(1000.), px(800.)));
+        let hole = Bounds::new(point(px(200.), px(100.)), size(px(500.), px(600.)));
+        let strips = subtract_rect(vec![full], hole);
+        assert_eq!(strips.len(), 4);
+        assert!(!strips.iter().any(|r| r.contains(&point(px(400.), px(400.)))));
+        assert!(strips.iter().any(|r| r.contains(&point(px(100.), px(400.)))));
+        assert!(strips.iter().any(|r| r.contains(&point(px(850.), px(400.)))));
+        assert!(strips.iter().any(|r| r.contains(&point(px(400.), px(50.)))));
+        assert!(strips.iter().any(|r| r.contains(&point(px(400.), px(750.)))));
     }
 }

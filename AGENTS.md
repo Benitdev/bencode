@@ -306,15 +306,19 @@ Monos under BenCode's own name, look and words
   connections never prompt; passwords are never stored or put on argv.
 
 **In-app browser** (`src/browser/`)
-- A page is a native view above GPUI, in its own box (`container.rs`),
-  placed by the file pane each frame it is drawn and hidden otherwise or
-  under a dialog. Agents reach it through `bencode --browser-mcp`, offered
-  only while a browser tab is open. Scripts start with `PRELUDE` and return
-  JSON. What a page posts is untrusted (addresses from the view, never a
-  message; no password values in `outline`). Every load is followed by
-  `watch_load`; a page event redraws only when it changed the tab. A page
-  with the keyboard gets ⌘X ⌘C ⌘V ⌘A from the Edit menu's selectors, and
-  ⌘+ ⌘− ⌘0 zoom it.
+- On macOS a page is a native view layered below GPUI in the window's
+  content view (`container.rs`), placed by the file pane each frame it is
+  drawn and revealed through a transparent cutout (`hole_punch_marker` in
+  `vendor/gpui-pre-apple`, `hitTest:` and `resetCursorRects` pass-through
+  in `vendor/gpui-pre-macos`) so tooltips, popovers and dialogs composite
+  above the live page while `browser.obscured` blocks pass-through and
+  reclaims keys; on other platforms it hides under dialogs. Agents reach it
+  through `bencode --browser-mcp`, offered only while a browser tab is open.
+  Scripts start with `PRELUDE` and return JSON. What a page posts is
+  untrusted (addresses from the view, never a message; no password values
+  in `outline`). Every load is followed by `watch_load`; a page event
+  redraws only when it changed the tab. A page with the keyboard gets
+  ⌘X ⌘C ⌘V ⌘A from the Edit menu's selectors, and ⌘+ ⌘− ⌘0 zoom it.
 
 **Terminal host** (`src/pty_host/`)
 - Shells run in `bencode --pty-host` (one per data folder, `pty-host.lock`);

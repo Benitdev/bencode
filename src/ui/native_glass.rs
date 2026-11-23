@@ -108,11 +108,13 @@ mod macos {
                 if !dark.is_null() {
                     let _: () = msg_send![view, setAppearance: dark];
                 }
+                // Place at the very bottom of `content` (behind any browser
+                // containers and GPUI's view), matching GPUI's own blur view.
                 let _: () = msg_send![
                     content,
                     addSubview: view
                     positioned: BELOW
-                    relativeTo: gpui_view
+                    relativeTo: std::ptr::null_mut::<Object>()
                 ];
                 let mut glass = NativeGlass {
                     view,

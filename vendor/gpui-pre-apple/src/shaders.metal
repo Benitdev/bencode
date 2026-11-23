@@ -1287,6 +1287,13 @@ float4 fill_color(Background background,
   return color;
 }
 
+// BenCode: clears a hole-punch cutout quad to transparent black so native views
+// layered behind GPUI (such as WKWebView) show through unobstructed.
+fragment float4 clear_quad_fragment(QuadFragmentInput input [[stage_in]]) {
+  (void)input;
+  return float4(0.0, 0.0, 0.0, 0.0);
+}
+
 // BenCode, after MonoCode: backdrop blur for frosted glass. The renderer copies
 // what is already drawn behind a marked quad, blurs it with
 // MPSImageGaussianBlur, then writes it back inside the quad's rounded bounds
@@ -1303,7 +1310,7 @@ struct BackdropCompositeParams {
   float2 region_size;
   float2 viewport_size;
   float corner_radius;
-  float padding;
+  float fallback_alpha;
 };
 
 vertex BackdropVertexOutput backdrop_composite_vertex(
@@ -1327,6 +1334,12 @@ fragment float4 backdrop_composite_fragment(BackdropVertexOutput input [[stage_i
   float2 position = input.position.xy;
   float2 local = position - params->region_origin;
   float4 soft = blurred.sample(linear_sampler, local / params->region_size);
+  if (params->fallback_alpha > 0.0) {
+    // Where a cutout hole cleared the backdrop to alpha=0, supply a dark
+    // frosted backing so light popup/tooltip text stays legible over web pages.
+    float missing = max(0.0, params->fallback_alpha - soft.a);
+    soft += float4(0.09, 0.09, 0.11, 1.0) * missing;
+  }
   float4 sharp = original.read(uint2(clamp(local, float2(0.), params->region_size - 1.)));
   float2 half_size = params->size * 0.5;
   float2 corner = abs(position - (params->origin + half_size)) - half_size + params->corner_radius;

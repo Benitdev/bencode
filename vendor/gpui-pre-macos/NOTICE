@@ -16,6 +16,11 @@ e6507351):
   The watcher runs until a delivered frame has answered every demand
   (`FrameDemand`), retrying a window it cannot restart yet (occluded,
   screenless), and the active app's main window counts as frontmost.
+- src/window.rs: `MacWindow::draw` tracks `CutoutRegion`s from the scene's
+  `hole_punch_marker` quads and any quads painted above them; `GPUIView`'s
+  `hitTest:` passes unobstructed cutout hits through to native views layered
+  below it (the in-app browser and HTML artifacts), and `resetCursorRects`
+  leaves those cutouts to the native view's own cursors.
 
 Everything else is the crates.io source unchanged. To move to a new
 gpui-pre, copy its `gpui-pre-macos` here and carry those changes over.

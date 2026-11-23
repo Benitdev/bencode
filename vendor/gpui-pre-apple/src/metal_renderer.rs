@@ -164,6 +164,7 @@ pub struct MetalRenderer {
     path_sprites_pipeline_state: metal::RenderPipelineState,
     shadows_pipeline_state: metal::RenderPipelineState,
     quads_pipeline_state: metal::RenderPipelineState,
+    clear_quads_pipeline_state: metal::RenderPipelineState,
     underlines_pipeline_state: metal::RenderPipelineState,
     monochrome_sprites_pipeline_state: metal::RenderPipelineState,
     polychrome_sprites_pipeline_state: metal::RenderPipelineState,
@@ -408,6 +409,14 @@ impl MetalRenderer {
             "quad_fragment",
             MTLPixelFormat::BGRA8Unorm,
         );
+        let clear_quads_pipeline_state = build_backdrop_pipeline_state(
+            &device,
+            &library,
+            "clear_quads",
+            "quad_vertex",
+            "clear_quad_fragment",
+            MTLPixelFormat::BGRA8Unorm,
+        );
         let underlines_pipeline_state = build_pipeline_state(
             &device,
             &library,
@@ -485,6 +494,7 @@ impl MetalRenderer {
             path_sprites_pipeline_state,
             shadows_pipeline_state,
             quads_pipeline_state,
+            clear_quads_pipeline_state,
             underlines_pipeline_state,
             monochrome_sprites_pipeline_state,
             polychrome_sprites_pipeline_state,
@@ -636,6 +646,12 @@ impl MetalRenderer {
                 return;
             }
         };
+        let has_hole = scene.quads.iter().any(is_hole_punch);
+        let layer_opaque = self.opaque && !has_hole;
+        if layer.is_opaque() != layer_opaque {
+            layer.set_opaque(layer_opaque);
+        }
+
         let viewport_size = layer.drawable_size();
         let viewport_size: Size<DevicePixels> = size(
             (viewport_size.width.ceil() as i32).into(),
@@ -732,6 +748,12 @@ impl MetalRenderer {
             .layer
             .clone()
             .ok_or_else(|| anyhow::anyhow!("render_to_image requires a layer-backed renderer"))?;
+        let has_hole = scene.quads.iter().any(is_hole_punch);
+        let layer_opaque = self.opaque && !has_hole;
+        if layer.is_opaque() != layer_opaque {
+            layer.set_opaque(layer_opaque);
+        }
+
         let viewport_size = layer.drawable_size();
         let viewport_size: Size<DevicePixels> = size(
             (viewport_size.width.ceil() as i32).into(),
@@ -870,16 +892,42 @@ impl MetalRenderer {
             Some(metal::MTLClearColor::new(0., 0., 0., alpha)),
         );
 
+        let hole_bounds: Vec<Bounds<ScaledPixels>> = scene
+            .quads
+            .iter()
+            .filter(|q| is_hole_punch(q))
+            .map(|q| q.bounds.intersect(&q.content_mask.bounds))
+            .filter(|b| b.size.width.0 > 0. && b.size.height.0 > 0.)
+            .collect();
+
         for batch in scene.batches() {
             match batch {
                 PrimitiveBatch::Shadows(range) => {
                     self.draw_shadows(range, instance_bindings, viewport_size, command_encoder)
                 }
                 PrimitiveBatch::Quads(range) => {
-                    // A marked quad first frosts what is already drawn behind it.
+                    // A marked quad either clears a transparent cutout for a
+                    // native view behind GPUI (`hole_punch_marker`) or frosts
+                    // what is already drawn behind it (`backdrop_blur_marker`).
                     let mut start = range.start;
                     for ix in range.clone() {
                         let quad = &scene.quads[ix];
+                        if is_hole_punch(quad) {
+                            self.draw_quads(
+                                start..ix,
+                                instance_bindings,
+                                viewport_size,
+                                command_encoder,
+                            );
+                            self.draw_clear_quad(
+                                ix,
+                                instance_bindings,
+                                viewport_size,
+                                command_encoder,
+                            );
+                            start = ix + 1;
+                            continue;
+                        }
                         let Some(sigma) = backdrop_sigma(quad) else {
                             continue;
                         };
@@ -890,7 +938,17 @@ impl MetalRenderer {
                             command_encoder,
                         );
                         command_encoder.end_encoding();
-                        self.blur_backdrop(quad, sigma, texture, viewport_size, command_buffer);
+                        let clipped = quad.bounds.intersect(&quad.content_mask.bounds);
+                        let overlaps_hole = hole_bounds.iter().any(|h| h.intersects(&clipped));
+                        let fallback_alpha = if overlaps_hole { 0.88 } else { 0. };
+                        self.blur_backdrop(
+                            quad,
+                            sigma,
+                            fallback_alpha,
+                            texture,
+                            viewport_size,
+                            command_buffer,
+                        );
                         command_encoder = new_command_encoder_for_texture(
                             command_buffer,
                             texture,
@@ -994,6 +1052,7 @@ impl MetalRenderer {
         &mut self,
         quad: &Quad,
         sigma: f32,
+        fallback_alpha: f32,
         target: &metal::TextureRef,
         viewport_size: Size<DevicePixels>,
         command_buffer: &metal::CommandBufferRef,
@@ -1090,7 +1149,7 @@ impl MetalRenderer {
             region_size: [region.0 as f32, region.1 as f32],
             viewport_size: viewport,
             corner_radius: quad.corner_radii.top_left.0,
-            padding: 0.,
+            fallback_alpha,
         };
         let encoder = new_command_encoder_for_texture(command_buffer, target, viewport_size, None);
         encoder.set_render_pipeline_state(&self.backdrop_composite_pipeline_state);
@@ -1291,6 +1350,38 @@ impl MetalRenderer {
             6,
             quads.len() as u64,
             quads.start as u64,
+        );
+    }
+
+    fn draw_clear_quad(
+        &self,
+        quad_index: usize,
+        instance_bindings: &InstanceBindings,
+        viewport_size: Size<DevicePixels>,
+        command_encoder: &metal::RenderCommandEncoderRef,
+    ) {
+        command_encoder.set_render_pipeline_state(&self.clear_quads_pipeline_state);
+        command_encoder.set_vertex_buffer(
+            QuadInputIndex::Vertices as u64,
+            Some(&self.unit_vertices),
+            0,
+        );
+        command_encoder.set_vertex_buffer(
+            QuadInputIndex::Quads as u64,
+            Some(&instance_bindings.quads.buffer),
+            instance_bindings.quads.offset as u64,
+        );
+        command_encoder.set_vertex_bytes(
+            QuadInputIndex::ViewportSize as u64,
+            mem::size_of_val(&viewport_size) as u64,
+            &viewport_size as *const Size<DevicePixels> as *const _,
+        );
+        command_encoder.draw_primitives_instanced_base_instance(
+            metal::MTLPrimitiveType::Triangle,
+            0,
+            6,
+            1,
+            quad_index as u64,
         );
     }
 
@@ -1712,6 +1803,36 @@ fn build_pipeline_state(
 }
 
 
+// BenCode: transparent cutout for native views layered behind GPUI (e.g. an
+// in-app browser WKWebView). A quad marked with this border colour (with a
+// non-transparent dummy fill so `Window::paint_quad` does not cull it) clears
+// its clipped pixels to `rgba(0, 0, 0, 0)` via `clear_quad_fragment` so the
+// native view behind GPUI shows through while tooltips, popovers and dialogs
+// drawn after it composite cleanly on top.
+const HOLE_PUNCH_MARKER_HUE: f32 = 0.292_893_23;
+
+/// Marks a quad as a transparent cutout for a native view behind GPUI.
+/// `pass_through` enables AppKit `hitTest:` routing through the unobstructed
+/// part of the cutout to the native view behind it (`false` while a modal
+/// dialog or context menu blocks pointer input).
+pub fn hole_punch_marker(pass_through: bool) -> Hsla {
+    Hsla {
+        h: HOLE_PUNCH_MARKER_HUE,
+        s: if pass_through { 1. } else { 0. },
+        l: 0.,
+        a: 0.,
+    }
+}
+
+pub fn is_hole_punch(quad: &Quad) -> bool {
+    let color = quad.border_color;
+    color.h == HOLE_PUNCH_MARKER_HUE && color.a == 0. && color.l == 0.
+}
+
+pub fn hole_punch_pass_through(quad: &Quad) -> bool {
+    is_hole_punch(quad) && quad.border_color.s > 0.5
+}
+
 // BenCode, after MonoCode: frosted glass. A quad marked with this border
 // colour (and no border width) asks the renderer to blur the backdrop
 // beneath it first.
@@ -1760,7 +1881,7 @@ struct BackdropCompositeParams {
     region_size: [f32; 2],
     viewport_size: [f32; 2],
     corner_radius: f32,
-    padding: f32,
+    fallback_alpha: f32,
 }
 
 /// The backdrop composite overwrites its target outright, mixing the

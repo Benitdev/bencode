@@ -1852,9 +1852,11 @@ impl Render for BenCodeApp {
         let workspace_visible = !surface_open && !bot_open;
         let compact_rail = self.compact_rail_active();
         let title_bar_above = self.compact_title_bar();
-        // A browser page is a native view above everything GPUI draws: it
-        // hides while one of these dialogs or a menu is open
-        // (`app/browser.rs`). Settings comes first so confirmations and
+        // On macOS a browser page sits behind GPUI's Metal layer (revealed
+        // through a transparent cutout), so these dialogs and menus composite
+        // on top of the live page while `browser.obscured` blocks pass-through
+        // clicks and reclaims keyboard focus. On other platforms the page
+        // hides while one is open. Settings comes first so confirmations and
         // sub-dialogs opened from it draw above it.
         let dialogs: Vec<AnyElement> = [
             any_elements(self.render_settings_dialog(cx)),
@@ -2078,7 +2080,7 @@ impl Render for BenCodeApp {
                     .children(self.render_tree_menu(cx))
                     .children(self.render_terminal_menu(cx))
                     .children(self.render_git_menu(cx))
-                    .children(self.render_corner_notices(window, cx))
+                    .children(self.render_corner_notices(cx))
                     .children(dialogs),
             );
         if crate::startup_trace::enabled() && !self.rendered_once {

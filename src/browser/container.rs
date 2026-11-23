@@ -35,20 +35,27 @@ struct Rect {
 const KEEP_TOP: usize = 8;
 /// `NSViewWidthSizable | NSViewHeightSizable`.
 const FILL: usize = 2 | 16;
+/// `NSWindowBelow`: places the container beneath GPUI's view in the window's
+/// content view so GPUI tooltips, popovers and dialogs composite on top of it.
+const BELOW: isize = -1;
 
 pub struct Container {
     view: Id,
+    /// GPUI's own NSView in the same window: receives first responder back
+    /// when `release_keys` runs.
+    gpui_view: Id,
 }
 
 impl Container {
-    /// A hidden box in `window`'s view.
+    /// A hidden box in `window`'s content view, layered right below GPUI's
+    /// view (and above NativeGlass / NSVisualEffectView).
     pub fn new(window: &gpui::Window) -> Result<Self> {
         let handle = HasWindowHandle::window_handle(window)
             .map_err(|err| anyhow!("the window has no native view: {err}"))?;
         let RawWindowHandle::AppKit(handle) = handle.as_raw() else {
             return Err(anyhow!("the window has no AppKit view"));
         };
-        let parent = handle.ns_view.as_ptr() as Id;
+        let gpui_view = handle.ns_view.as_ptr() as Id;
         // wry sizes a child view from its parent, so not empty.
         let frame = Rect {
             x: 0.0,
@@ -57,17 +64,28 @@ impl Container {
             height: 600.0,
         };
         unsafe {
+            let content: Id = msg_send![gpui_view, superview];
+            let host = if content.is_null() { gpui_view } else { content };
             let view: Id = msg_send![class!(NSView), alloc];
             let view: Id = msg_send![view, initWithFrame: frame];
             if view.is_null() {
                 return Err(anyhow!("no view for the page"));
             }
-            let flipped: BOOL = msg_send![parent, isFlipped];
+            let flipped: BOOL = msg_send![host, isFlipped];
             let mask = if flipped == NO { KEEP_TOP } else { 0 };
             let _: () = msg_send![view, setAutoresizingMask: mask];
             let _: () = msg_send![view, setHidden: YES];
-            let _: () = msg_send![parent, addSubview: view];
-            Ok(Self { view })
+            if !content.is_null() {
+                let _: () = msg_send![
+                    content,
+                    addSubview: view
+                    positioned: BELOW
+                    relativeTo: gpui_view
+                ];
+            } else {
+                let _: () = msg_send![gpui_view, addSubview: view];
+            }
+            Ok(Self { view, gpui_view })
         }
     }
 
@@ -152,15 +170,15 @@ impl Container {
     pub fn release_keys(&self) {
         unsafe {
             let window: Id = msg_send![self.view, window];
-            let parent: Id = msg_send![self.view, superview];
-            if window.is_null() || parent.is_null() {
+            let gpui_view = self.gpui_view;
+            if window.is_null() || gpui_view.is_null() {
                 return;
             }
             let responder: Id = msg_send![window, firstResponder];
-            if responder == parent || !(self.has_keys() || stray(window, responder)) {
+            if responder == gpui_view || !(self.has_keys() || stray(window, responder)) {
                 return;
             }
-            let taken: BOOL = msg_send![window, makeFirstResponder: parent];
+            let taken: BOOL = msg_send![window, makeFirstResponder: gpui_view];
             if taken == NO {
                 log::debug!("browser: keys stay with the page");
             }

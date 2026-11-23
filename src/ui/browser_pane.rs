@@ -58,6 +58,7 @@ impl BenCodeApp {
                 self.browser.drawn.set(Some(id));
                 let (placed, pressed) = (page.clone(), page.clone());
                 let obscured = self.browser.obscured.clone();
+                let obscured_paint = self.browser.obscured.clone();
                 div()
                     .relative()
                     .flex_1()
@@ -65,12 +66,38 @@ impl BenCodeApp {
                     .child(
                         canvas(
                             move |bounds, window, _| {
-                                let shown = !obscured.get()
-                                    && bounds.intersects(&window.content_mask().bounds);
+                                let in_view = bounds.intersects(&window.content_mask().bounds);
+                                // On macOS the WKWebView sits behind GPUI's Metal layer,
+                                // revealed through a transparent hole-punch cutout so
+                                // dialogs and popups composite over the live page.
+                                let shown = if cfg!(target_os = "macos") {
+                                    in_view
+                                } else {
+                                    in_view && !obscured.get()
+                                };
                                 placed.place(bounds, shown);
+                                if shown && obscured.get() {
+                                    placed.release_keys();
+                                }
                             },
-                            // A press anywhere GPUI draws gives it the keys back.
-                            move |_, _, window, _| {
+                            // Paint the cutout hole on macOS and give GPUI the keys back
+                            // on any click it handles.
+                            move |bounds, _, window, _| {
+                                #[cfg(target_os = "macos")]
+                                if bounds.intersects(&window.content_mask().bounds) {
+                                    // Non-transparent dummy fill keeps `Window::paint_quad`
+                                    // from culling the quad; `clear_quad_fragment` clears it
+                                    // to `rgba(0, 0, 0, 0)`.
+                                    window.paint_quad(
+                                        gpui::fill(bounds, gpui::black()).border_color(
+                                            gpui_apple::metal_renderer::hole_punch_marker(
+                                                !obscured_paint.get(),
+                                            ),
+                                        ),
+                                    );
+                                }
+                                #[cfg(not(target_os = "macos"))]
+                                let _ = (bounds, &obscured_paint);
                                 window.on_mouse_event(move |_: &MouseDownEvent, phase, _, _| {
                                     if phase == DispatchPhase::Capture {
                                         pressed.release_keys();
