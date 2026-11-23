@@ -125,7 +125,11 @@ impl BenCodeApp {
             cx,
         )];
         if let Some(kind) = &item.issue_type {
-            rows.push(property("Type", plain(cx).child(property_label(kind, cx)), cx));
+            rows.push(property(
+                "Type",
+                plain(cx).child(property_label(kind, cx)),
+                cx,
+            ));
         }
         if !item.priority.is_empty() {
             rows.push(property(

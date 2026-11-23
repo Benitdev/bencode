@@ -61,7 +61,10 @@ impl BenCodeApp {
             return;
         };
         let text = self.link_input.read(cx).text().trim().to_string();
-        match LinkedWorkItem::parse_any_url(&text, None, None) {
+        // Pasted by hand: a Jira issue URL of any site is meant as one.
+        let parsed = LinkedWorkItem::parse_any_url(&text, None, None)
+            .or_else(|| LinkedWorkItem::parse_jira_url(&text, None));
+        match parsed {
             Some(item) => {
                 let id = dialog.session_id.clone();
                 self.set_session_link(&id, Some(item), cx);

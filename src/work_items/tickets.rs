@@ -4,7 +4,7 @@
 //! ticket, so the Inbox shows them together instead of as strangers. The
 //! index is built once, when the list lands, never per frame.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::{Kind, Provider, WorkItem};
 
@@ -128,8 +128,10 @@ impl TicketLinks {
     /// of `known` (each tagged by tracker) and of the listed Backlog / Jira
     /// issues, in each pull request's title, then its head branch.
     pub fn build(items: &[WorkItem], known: &[(Provider, String)]) -> Self {
-        let mut by_provider: Vec<(Provider, Vec<String>)> =
-            vec![(Provider::Backlog, Vec::new()), (Provider::Jira, Vec::new())];
+        let mut by_provider: Vec<(Provider, Vec<String>)> = vec![
+            (Provider::Backlog, Vec::new()),
+            (Provider::Jira, Vec::new()),
+        ];
         for (provider, project) in known {
             if let Some((_, projects)) = by_provider.iter_mut().find(|(p, _)| p == provider)
                 && !projects.iter().any(|p| p.eq_ignore_ascii_case(project))
@@ -151,6 +153,10 @@ impl TicketLinks {
         if by_provider.iter().all(|(_, projects)| projects.is_empty()) {
             return links;
         }
+        let listed: HashSet<String> = (items.iter())
+            .filter(|i| matches!(i.provider, Provider::Backlog | Provider::Jira))
+            .map(WorkItem::key)
+            .collect();
         let prs = (items.iter()).filter(|i| i.provider == Provider::GitHub && i.kind == Kind::Pr);
         for pr in prs {
             let mut refs: Vec<TicketRef> = Vec::new();
@@ -174,6 +180,18 @@ impl TicketLinks {
                     }
                 }
             }
+            // A project key both trackers have names one ticket: the one
+            // the Inbox lists, when only one of them is listed.
+            let all = refs.clone();
+            refs.retain(|ticket| {
+                let rival = all.iter().find(|other| {
+                    other.provider != ticket.provider
+                        && other.identifier.eq_ignore_ascii_case(&ticket.identifier)
+                });
+                rival.is_none_or(|rival| {
+                    listed.contains(&ticket.item_key()) || !listed.contains(&rival.item_key())
+                })
+            });
             if refs.is_empty() {
                 continue;
             }
@@ -309,16 +327,30 @@ mod tests {
         assert_eq!(ids(links.tickets("acme/app:pr:483")), ["ACME_SHOP_D-1163"]);
         assert!(links.tickets("acme/app:pr:7").is_empty());
         // A project the space knows counts though none of its issues is listed.
-        let known = TicketLinks::build(
-            &items[..1],
-            &[(Provider::Backlog, "ACME_SHOP_D".into())],
-        );
+        let known = TicketLinks::build(&items[..1], &[(Provider::Backlog, "ACME_SHOP_D".into())]);
         assert_eq!(ids(known.tickets("acme/app:pr:182")), ["ACME_SHOP_D-1147"]);
         // Jira tickets link the same way under `jira:` keys.
         let jira_items = vec![pr(99, "ENG-42 fix login", "main")];
         let jira = TicketLinks::build(&jira_items, &[(Provider::Jira, "ENG".into())]);
         assert_eq!(jira.prs("jira:eng-42"), ["acme/app:pr:99"]);
         assert_eq!(jira.tickets("acme/app:pr:99")[0].item_key(), "jira:eng-42");
+        // The same project key on both trackers: the listed ticket wins.
+        let both = [
+            (Provider::Backlog, "ENG".into()),
+            (Provider::Jira, "ENG".into()),
+        ];
+        let mut listed_jira = WorkItem {
+            provider: Provider::Jira,
+            ..ticket("ENG-42")
+        };
+        listed_jira.repo = "ENG".into();
+        let links = TicketLinks::build(&[jira_items[0].clone(), listed_jira], &both);
+        assert_eq!(links.tickets("acme/app:pr:99").len(), 1);
+        assert_eq!(links.tickets("acme/app:pr:99")[0].provider, Provider::Jira);
+        assert!(links.prs("backlog:eng-42").is_empty());
+        // Neither listed: both stay.
+        let links = TicketLinks::build(&jira_items, &both);
+        assert_eq!(links.tickets("acme/app:pr:99").len(), 2);
         assert_eq!(TicketLinks::build(&items[..1], &[]), TicketLinks::default());
     }
 }

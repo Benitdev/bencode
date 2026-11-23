@@ -6,6 +6,15 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+- Jira Cloud joins the Inbox: connect a site with an Atlassian email and
+  API token in Settings › Integrations, choose which projects it lists, and
+  read issues with their descriptions and comments, reply, and move an
+  issue through its workflow from the status pill. Pull requests named
+  after a Jira issue link to it, and threads link to the Jira issue their
+  first message names. While connected, agents get the built-in Jira MCP
+  server (`bencode --jira-mcp`): search by JQL, read issues and comments,
+  list and run transitions, comment, create and update issues, and find
+  users.
 - An Antigravity turn that stops on the plan's quota ("Individual quota
   reached … Resets in 3h53m4s") now shows the amber usage-limit tab on the
   composer, with when it resets and Resume at reset, as Claude's limit does.

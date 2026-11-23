@@ -51,7 +51,9 @@ impl BenCodeApp {
     /// Reads the saved connection off the UI thread (once at launch).
     pub fn load_jira_account(&mut self, cx: &mut Context<Self>) {
         let generation = self.jira.generation;
-        let task = cx.background_executor().spawn(async move { jira::account() });
+        let task = cx
+            .background_executor()
+            .spawn(async move { jira::account() });
         cx.spawn(async move |this, cx| {
             let account = task.await;
             let landed = this.update(cx, |app, cx| {
@@ -202,6 +204,10 @@ impl BenCodeApp {
                         log::warn!("could not list Jira projects: {err}");
                     }
                     app.jira.projects = Some(result);
+                } else if app.jira.account.is_some() && app.jira.projects.is_none() {
+                    // A reconnect's own load was turned away while this
+                    // one ran: start it now.
+                    app.load_jira_projects(false, cx);
                 }
                 cx.notify();
             });

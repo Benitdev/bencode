@@ -116,8 +116,8 @@ fn config_path() -> Result<PathBuf, String> {
 pub(crate) fn read_config() -> Result<Option<Config>, String> {
     match std::fs::read_to_string(config_path()?) {
         Ok(raw) => {
-            let mut config: Config = serde_json::from_str(&raw)
-                .map_err(|_| "Jira settings are invalid".to_string())?;
+            let mut config: Config =
+                serde_json::from_str(&raw).map_err(|_| "Jira settings are invalid".to_string())?;
             config.site = normalize_site(&config.site)?;
             config.email = config.email.trim().to_string();
             config.token = config.token.trim().to_string();
@@ -574,7 +574,9 @@ fn parse_issue(node: &Value, site: &str) -> Option<WorkItem> {
         })
         .unwrap_or_default();
     if let Some(kind) = &issue_type
-        && !labels.iter().any(|l| l.name.eq_ignore_ascii_case(&kind.name))
+        && !labels
+            .iter()
+            .any(|l| l.name.eq_ignore_ascii_case(&kind.name))
     {
         labels.insert(0, kind.clone());
     }
@@ -774,8 +776,7 @@ pub fn issue(key: &str, host: &str) -> Result<WorkItem, String> {
         &format!("/rest/api/3/issue/{key}?fields={fields}"),
         None,
     )?;
-    parse_issue(&data, &config.site)
-        .ok_or_else(|| "Jira sent an unreadable issue".to_string())
+    parse_issue(&data, &config.site).ok_or_else(|| "Jira sent an unreadable issue".to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -923,8 +924,7 @@ pub fn transition(key: &str, transition_id: &str) -> Result<WorkItem, String> {
         &format!("/rest/api/3/issue/{key}?fields={fields}"),
         None,
     )?;
-    parse_issue(&data, &config.site)
-        .ok_or_else(|| "Jira sent an unreadable issue".to_string())
+    parse_issue(&data, &config.site).ok_or_else(|| "Jira sent an unreadable issue".to_string())
 }
 
 #[cfg(test)]
@@ -960,10 +960,7 @@ mod tests {
             account_id: String::new(),
             display_name: String::new(),
         };
-        assert_eq!(
-            authorization(&config),
-            "Basic YWRhQGFjbWUuY29tOnNlY3JldA=="
-        );
+        assert_eq!(authorization(&config), "Basic YWRhQGFjbWUuY29tOnNlY3JldA==");
     }
 
     #[test]
@@ -991,9 +988,7 @@ mod tests {
 
     #[test]
     fn rejects_stalled_project_pagination() {
-        assert!(
-            fetch_projects(|_| Ok(json!({ "isLast": false, "values": [] }))).is_err()
-        );
+        assert!(fetch_projects(|_| Ok(json!({ "isLast": false, "values": [] }))).is_err());
     }
 
     #[test]

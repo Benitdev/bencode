@@ -307,7 +307,7 @@ impl BenCodeApp {
                 div()
                     .text_size(Text::Md.px())
                     .line_height(relative(1.5))
-                    .text_color(cx.theme().colors.fg_muted)
+                    .text_color(cx.theme().colors.fg.ink(Ink::Muted))
                     .child(format!(
                         "Disconnect {space}? The saved API key is deleted and its issues leave the \
                          Inbox. Threads started from them stay."
@@ -383,9 +383,7 @@ impl BenCodeApp {
             .row(
                 SettingsRow::new("Atlassian email")
                     .description("The email address of your Atlassian account")
-                    .control(field(
-                        Input::new(&self.jira_email_input).into_any_element(),
-                    )),
+                    .control(field(Input::new(&self.jira_email_input).into_any_element())),
             )
             .row(
                 SettingsRow::new("API token")
@@ -499,7 +497,7 @@ impl BenCodeApp {
                 div()
                     .text_size(Text::Md.px())
                     .line_height(relative(1.5))
-                    .text_color(cx.theme().colors.fg_muted)
+                    .text_color(cx.theme().colors.fg.ink(Ink::Muted))
                     .child(format!(
                         "Disconnect {site}? The saved API token is deleted and its issues leave \
                          the Inbox. Threads started from them stay."

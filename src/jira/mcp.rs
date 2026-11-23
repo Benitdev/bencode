@@ -245,7 +245,9 @@ fn tool_get_issue(args: &Value) -> Result<String, String> {
     let data = call_json(
         &config,
         None,
-        &format!("/rest/api/3/issue/{key}?fields=summary,description,status,issuetype,priority,assignee,reporter,labels,duedate,created,updated,project,parent,subtasks,issuelinks"),
+        &format!(
+            "/rest/api/3/issue/{key}?fields=summary,description,status,issuetype,priority,assignee,reporter,labels,duedate,created,updated,project,parent,subtasks,issuelinks"
+        ),
         None,
     )?;
     let fields = data
@@ -350,7 +352,12 @@ fn tool_list_transitions(args: &Value) -> Result<String, String> {
     }
     let lines: Vec<String> = list
         .iter()
-        .map(|t| format!("- id {}: {} -> {} ({})", t.id, t.name, t.to_status, t.category))
+        .map(|t| {
+            format!(
+                "- id {}: {} -> {} ({})",
+                t.id, t.name, t.to_status, t.category
+            )
+        })
         .collect();
     Ok(format!("Transitions for {key}:\n{}", lines.join("\n")))
 }
@@ -573,7 +580,7 @@ fn schemas() -> Value {
                     "project": { "type": "string", "description": "Project key (e.g. ENG)." },
                     "status": { "type": "string", "description": "Exact status name (e.g. In Progress)." },
                     "includeDone": { "type": "boolean", "description": "Include Done issues when status is not set (default false)." },
-                    "assignee": { "type": "string", "description": "\"me\", \"unassigned\", or a user display name / accountId." },
+                    "assignee": { "type": "string", "description": "\"me\", \"unassigned\", or an accountId from jira_search_users (Jira Cloud's JQL matches users by accountId, not reliably by name)." },
                     "text": { "type": "string", "description": "Full-text search term." },
                     "limit": { "type": "integer", "description": "Max issues to return (default 20, max 100)." },
                     "nextPageToken": { "type": "string", "description": "Pagination token from a previous search." }

@@ -260,7 +260,9 @@ impl LinkedWorkItem {
         jira_url(text, host).map(|(_, item)| item)
     }
 
-    /// The first GitHub, Backlog, or Jira issue URL in `text`.
+    /// The first GitHub, Backlog, or Jira issue URL in `text` (`backlog_host`
+    /// as in `parse_backlog_url`). A Jira URL counts only on `jira_host`:
+    /// any site's `/browse/KEY-1` is too common a shape to take unasked.
     pub fn parse_any_url(
         text: &str,
         backlog_host: Option<&str>,
@@ -269,7 +271,7 @@ impl LinkedWorkItem {
         [
             github_url(text),
             backlog_url(text, backlog_host),
-            jira_url(text, jira_host),
+            jira_host.and_then(|host| jira_url(text, Some(host))),
         ]
         .into_iter()
         .flatten()
@@ -409,7 +411,7 @@ fn jira_url(text: &str, host: Option<&str>) -> Option<(usize, LinkedWorkItem)> {
             .chars()
             .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
             .collect();
-        if let Some(item) = LinkedWorkItem::jira(&key, url_host) {
+        if let Some(item) = LinkedWorkItem::jira(&key.to_ascii_uppercase(), url_host) {
             return Some((scheme, item));
         }
     }
@@ -622,7 +624,20 @@ mod tests {
         assert!(LinkedWorkItem::parse_jira_url(text, Some("other.atlassian.net")).is_none());
         assert_eq!(
             LinkedWorkItem::parse_any_url(text, None, Some("acme.atlassian.net")),
+            Some(item.clone())
+        );
+        // Keys typed in lower case read as the issue.
+        assert_eq!(
+            LinkedWorkItem::parse_jira_url(
+                "https://acme.atlassian.net/browse/eng-42",
+                Some("acme.atlassian.net")
+            ),
             Some(item)
+        );
+        // Without a connected site, no `/browse/` URL is taken for Jira.
+        assert!(LinkedWorkItem::parse_any_url(text, None, None).is_none());
+        assert!(
+            LinkedWorkItem::parse_any_url("https://example.com/browse/ABC-1", None, None).is_none()
         );
     }
 

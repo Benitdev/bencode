@@ -16,8 +16,8 @@ use bencode_ui::theme::ActiveTheme;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div};
 
 use super::{DetailView, loading_icon, short_key};
-use crate::app::file_pane::PaneTab;
 use crate::app::BenCodeApp;
+use crate::app::file_pane::PaneTab;
 use crate::db::{LinkedWorkItem, WorkItemKind};
 use crate::github::{self, Kind};
 use crate::ui::tokens::{Ink, Text, Tone as _};

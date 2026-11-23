@@ -350,9 +350,7 @@ mod tests {
 
     #[test]
     fn adf_renders_tables() {
-        let cell = |text: &str| {
-            json!({ "type": "tableCell", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": text }] }] })
-        };
+        let cell = |text: &str| json!({ "type": "tableCell", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": text }] }] });
         let doc = json!({
             "type": "doc",
             "content": [{ "type": "table", "content": [

@@ -211,6 +211,10 @@ impl BenCodeApp {
                         log::warn!("could not list Backlog projects: {err}");
                     }
                     app.backlog.projects = Some(result);
+                } else if app.backlog.account.is_some() && app.backlog.projects.is_none() {
+                    // A reconnect's own load was turned away while this
+                    // one ran: start it now.
+                    app.load_backlog_projects(cx);
                 }
                 cx.notify();
             });

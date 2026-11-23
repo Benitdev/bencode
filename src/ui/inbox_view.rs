@@ -43,8 +43,8 @@ use crate::app::item_threads::{PrimaryAction, primary_action};
 use crate::app::session_list::Selection;
 use crate::app::{BenCodeApp, Surface};
 use crate::backlog;
-use crate::jira;
 use crate::github::{self, Kind, Status, WorkItem};
+use crate::jira;
 use crate::ui::composer::cards::ComposerCard;
 use crate::ui::composer::inbox_card::{CardTask, InboxCard};
 use crate::ui::scale::px;
@@ -815,10 +815,20 @@ impl BenCodeApp {
                 Status::Ready => github::inbox(&projects, assigned),
                 _ => github::InboxList::default(),
             };
-            let backlog = backlog::inbox(&hidden, assigned);
-            let jira = jira::inbox(&jira_hidden, assigned);
+            // Side by side: a slow tracker does not hold the other's list.
+            let (backlog, jira) = std::thread::scope(|scope| {
+                let jira = scope.spawn(|| jira::inbox(&jira_hidden, assigned));
+                let backlog = backlog::inbox(&hidden, assigned);
+                let jira = jira.join().unwrap_or_else(|_| {
+                    log::error!("inbox: the Jira fetch panicked");
+                    None
+                });
+                (backlog, jira)
+            });
             let statuses = backlog.as_ref().map(|found| found.statuses.clone());
             let jira_connected = jira.is_some();
+            // A first list that failed is not the one to take as read.
+            let jira_listed = jira.as_ref().is_some_and(|found| found.errors.is_empty());
             let jira_me = jira.as_ref().map(|found| found.me.clone());
             let mut ticket_projects: Vec<(Provider, String)> = Vec::new();
             if let Some(found) = backlog {
@@ -846,6 +856,7 @@ impl BenCodeApp {
                 list,
                 statuses,
                 jira_connected,
+                jira_listed,
                 jira_me,
                 ticket_projects,
                 missing,
@@ -857,6 +868,7 @@ impl BenCodeApp {
                 list,
                 backlog_statuses,
                 jira_connected,
+                jira_listed,
                 jira_me,
                 ticket_projects,
                 missing,
@@ -868,7 +880,7 @@ impl BenCodeApp {
                 // A fresh Backlog/Jira connection: its first list counts as read.
                 let seed_backlog =
                     std::mem::take(&mut app.backlog.seed_seen) && backlog_statuses.is_some();
-                let seed_jira = std::mem::take(&mut app.jira.seed_seen) && jira_connected;
+                let seed_jira = jira_listed && std::mem::take(&mut app.jira.seed_seen);
                 app.backlog.statuses = backlog_statuses.clone().unwrap_or_default();
                 let (failed, seeded, first) = app.inbox_state.update(cx, |inbox, cx| {
                     let first = inbox.fetched_at.is_none();
@@ -1157,7 +1169,9 @@ impl BenCodeApp {
         if item.provider == Provider::Backlog {
             self.load_backlog_field_options(&item.container_id, cx);
         } else if item.provider == Provider::Jira {
-            self.load_jira_transitions(key, &item.identifier, false, cx);
+            // Fresh each time: the status may have moved on Jira (or by an
+            // agent's tools) since the list was taken.
+            self.load_jira_transitions(key, &item.identifier, true, cx);
         }
         if item.kind == Kind::Pr {
             self.load_pr_checks(key, false, cx);
