@@ -6,6 +6,37 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+## [0.1.61] - 2026-11-24
+
+- GitHub issues and pull requests in the Inbox are edited in place:
+  assignees (with Assign to me), labels and requested reviewers from the
+  item's properties, each with its own busy mark and rolled back when `gh`
+  refuses. Reviewers show their verdict and can be re-requested in one
+  click, and a pull request is approved, sent back with requested changes
+  or commented on from the actions bar, the Review property or the palette
+  (Inbox: Review Pull Request).
+- Antigravity's subagents (`invoke_subagent`) show as subagent rows named
+  for their role, as Claude's do. Antigravity reports neither their steps
+  nor their result, so a row marks the start of a run only.
+- Comments and review-thread replies on a project on another machine post
+  again: the body now reaches `gh` on stdin instead of a file on this
+  computer.
+- A pull request's merge, close or draft change reports on that pull
+  request even after another item is opened, and your own change no longer
+  marks it unread. A comment that finishes posting after you switch items
+  leaves the new item's draft and reply alone.
+- Cancelling a batch send while it reads Backlog descriptions, then opening
+  another, no longer starts the first batch's threads.
+- A dialog that refuses to close (Esc while a review is submitting) keeps
+  the keyboard instead of handing it to the page behind it.
+- Cancelling an input-method composition typed over a selection (Backspace
+  or Esc in a Japanese IME) can be undone and is seen as an edit.
+- Browser MCP: `browser_network` masks secrets in form-encoded bodies
+  (`password=…`) as well as JSON, and `browser_history` reports a reload,
+  back or forward that fails at once instead of "Now at …".
+- Backlog MCP: `backlog_update_pull_request` no longer offers a status
+  Backlog's API cannot set, which it used to report as updated.
+
 ## [0.1.60] - 2026-11-23
 
 - In-app browser and HTML artifact pages on macOS now sit beneath GPUI's
