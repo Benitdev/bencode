@@ -9,7 +9,6 @@ pub mod branch_picker;
 pub mod cards;
 mod context_ring;
 pub mod edit_last_turn;
-mod effort;
 mod folder_picker;
 pub mod handoff;
 pub mod inbox_card;

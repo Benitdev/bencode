@@ -131,10 +131,6 @@ pub const RED_400: u32 = 0xf87171;
 pub const SKY_400: u32 = 0x38bdf8;
 /// Tailwind's `sky-300`: a link under the pointer, on dark.
 pub const SKY_300: u32 = 0x7dd3fc;
-/// Tailwind's `orange-400`: the peak reasoning effort, on dark.
-pub const ORANGE_400: u32 = 0xfb923c;
-/// Tailwind's `orange-600`: the peak reasoning effort, on light.
-pub const ORANGE_600: u32 = 0xea580c;
 
 /// A link in agent text and artifacts: MonoCode's `text-sky-400/90` on
 /// dark; the theme's link blue keeps contrast on light.

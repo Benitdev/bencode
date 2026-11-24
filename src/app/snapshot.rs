@@ -403,17 +403,6 @@ const SCENES: &[(&str, SetUp)] = &[
             app.open_bot(&id, cx);
         }
     }),
-    // Its effort pill's menu open: the gauge at every level.
-    ("bot-effort", |app, _, cx| {
-        let Some(id) = app.settings.bots.first().map(|bot| bot.id.clone()) else {
-            return;
-        };
-        app.open_bot(&id, cx);
-        let key = app.selected_session().map(|s| s.model.clone());
-        app.composer_menus.pill_menu = key
-            .and_then(|key| crate::harness::catalog::effort_setting(&key))
-            .map(|setting| setting.id);
-    }),
     // Its Changes tab over a staged checkout: files, a folder, and a
     // repository nested in it (git's `dir/`).
     ("bot-changes", |app, _, cx| {

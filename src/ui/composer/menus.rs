@@ -32,8 +32,6 @@ pub struct MenuState {
     /// The model setting whose pill menu is open (MonoCode `SelectPill`),
     /// by its id.
     pub pill_menu: Option<String>,
-    /// One-shot animation state for committed effort changes on the Effort icon.
-    pub effort_motion: super::effort::EffortMotion,
     /// The context meter's card, pinned open by a click.
     pub context_pinned: bool,
     /// The checkout menu of a new thread, and its highlighted row.
@@ -61,7 +59,6 @@ impl MenuState {
             model_tab: ModelTab::default(),
             models_only: None,
             pill_menu: None,
-            effort_motion: super::effort::EffortMotion::default(),
             context_pinned: false,
             workspace_menu: None,
             recent_open: false,
