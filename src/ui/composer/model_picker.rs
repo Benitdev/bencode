@@ -588,8 +588,7 @@ impl BenCodeApp {
                 }
                 SettingKind::Select => {
                     let effort_gauge = setting.is_effort().then(|| {
-                        let (_, level) =
-                            super::effort::option_intensity(setting, setting.value(values));
+                        let level = super::effort::option_intensity(setting, setting.value(values));
                         super::effort::static_effort_gauge(14.0, level, cx)
                     });
                     base.on_click(

@@ -545,7 +545,7 @@ impl BenCodeApp {
                 }
                 let open = self.composer_menus.pill_menu.as_deref() == Some(setting.id.as_str());
                 let icon: Option<AnyElement> = if setting.is_effort() {
-                    Some(self.render_bot_effort_gauge(&session.id, setting, values, cx))
+                    Some(self.render_bot_effort_gauge(&session.id, setting, values, open, cx))
                 } else if setting.id == "serviceTier" {
                     Some(
                         Icon::new(IconName::Zap)
@@ -597,43 +597,47 @@ impl BenCodeApp {
         let grouped = menu.len() > 1;
         let sections = menu.iter().map(|setting| {
             let current = setting.value(values).to_string();
-            let options = setting.options.iter().enumerate().map(|(ix, (value, label))| {
-                let (id, picked) = (setting.id.clone(), value.clone());
-                div()
-                    .id(SharedString::from(format!(
-                        "bot-pill-opt-{}-{value}",
-                        setting.id
-                    )))
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .h(px(OPTION_HEIGHT))
-                    .px_2()
-                    .rounded(px(8.0))
-                    .cursor_pointer()
-                    .text_size(Text::Md.px())
-                    .text_color(fg)
-                    .hover(move |s| s.bg(fg.fill(Fill::Hover)))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.set_model_setting(&id, &picked, cx);
-                        this.composer_menus.pill_menu = None;
-                        this.refocus_prompt(cx);
-                        cx.notify();
-                    }))
-                    .children(setting.is_effort().then(|| {
-                        let level =
-                            super::effort::effort_intensity(value, ix, setting.options.len());
-                        super::effort::static_effort_gauge(14.0, level, cx)
-                    }))
-                    .child(div().flex_1().min_w_0().truncate().child(label.clone()))
-                    .when(*value == current, |el| {
-                        el.child(
-                            Icon::new(IconName::Check)
-                                .size(IconSize::Xs)
-                                .color(fg.ink(Ink::Secondary)),
-                        )
-                    })
-            });
+            let options = setting
+                .options
+                .iter()
+                .enumerate()
+                .map(|(ix, (value, label))| {
+                    let (id, picked) = (setting.id.clone(), value.clone());
+                    div()
+                        .id(SharedString::from(format!(
+                            "bot-pill-opt-{}-{value}",
+                            setting.id
+                        )))
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .h(px(OPTION_HEIGHT))
+                        .px_2()
+                        .rounded(px(8.0))
+                        .cursor_pointer()
+                        .text_size(Text::Md.px())
+                        .text_color(fg)
+                        .hover(move |s| s.bg(fg.fill(Fill::Hover)))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.set_model_setting(&id, &picked, cx);
+                            this.composer_menus.pill_menu = None;
+                            this.refocus_prompt(cx);
+                            cx.notify();
+                        }))
+                        .children(setting.is_effort().then(|| {
+                            let level =
+                                super::effort::effort_intensity(value, ix, setting.options.len());
+                            super::effort::static_effort_gauge(14.0, level, cx)
+                        }))
+                        .child(div().flex_1().min_w_0().truncate().child(label.clone()))
+                        .when(*value == current, |el| {
+                            el.child(
+                                Icon::new(IconName::Check)
+                                    .size(IconSize::Xs)
+                                    .color(fg.ink(Ink::Secondary)),
+                            )
+                        })
+                });
             div()
                 .when(grouped, |el| {
                     el.child(

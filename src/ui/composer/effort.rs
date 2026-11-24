@@ -7,7 +7,7 @@
 //! at rest.
 
 use std::f32::consts::{PI, TAU};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bencode_ui::theme::{ActiveTheme, Theme};
 use gpui::{
@@ -19,12 +19,7 @@ use serde_json::{Map, Value};
 use crate::app::BenCodeApp;
 use crate::harness::catalog::ModelSetting;
 use crate::ui::scale::px;
-use crate::ui::tokens::{AMBER_400, Ink, SKY_400, Tone as _};
-
-/// Tailwind's `orange-400`: peak tier (Max / Ultra / Ultrathink) on dark.
-const ORANGE_400: u32 = 0xfb923c;
-/// Deeper amber-orange for peak tiers on light backgrounds.
-const ORANGE_600: u32 = 0xea580c;
+use crate::ui::tokens::{AMBER_400, Ink, ORANGE_400, ORANGE_600, SKY_400, Tone as _};
 
 /// Sweep of the dial track: 240° clockwise from 8 o'clock across 12 to 4 o'clock.
 const START_ANGLE: f32 = 5.0 * PI / 6.0;
@@ -38,7 +33,19 @@ pub struct EffortMotion {
     pub session_id: Option<String>,
     pub from: f32,
     pub to: f32,
-    pub generation: usize,
+    /// When the change was made: the glide plays only right after it, so a
+    /// pill drawn anew later (the bot reopened) does not replay it.
+    pub at: Option<Instant>,
+}
+
+impl EffortMotion {
+    /// Whether thread `session_id`'s gauge, now at `level`, is still gliding.
+    fn gliding(&self, session_id: &str, level: f32, now: Instant) -> bool {
+        self.at
+            .is_some_and(|at| now.saturating_duration_since(at) < GAUGE_MOTION)
+            && self.session_id.as_deref() == Some(session_id)
+            && (self.to - level).abs() < 0.01
+    }
 }
 
 /// Normalized intensity (`0.0..=1.0`) for an effort option value.
@@ -47,7 +54,7 @@ pub fn effort_intensity(value: &str, index: usize, total: usize) -> f32 {
         "none" | "off" => 0.06,
         "minimal" => 0.16,
         "low" => 0.25,
-        "medium" | "normal" | "default" => 0.50,
+        "medium" => 0.50,
         "high" => 0.72,
         "xhigh" | "extra-high" | "extra_high" => 0.85,
         "max" => 0.93,
@@ -63,15 +70,15 @@ pub fn effort_intensity(value: &str, index: usize, total: usize) -> f32 {
     }
 }
 
-/// Option index and normalized intensity for `value` within `setting`.
-pub fn option_intensity(setting: &ModelSetting, value: &str) -> (usize, f32) {
+/// Normalized intensity for `value` within `setting`.
+pub fn option_intensity(setting: &ModelSetting, value: &str) -> f32 {
     let total = setting.options.len();
     let ix = setting
         .options
         .iter()
         .position(|(v, _)| v == value)
         .unwrap_or(0);
-    (ix, effort_intensity(value, ix, total))
+    effort_intensity(value, ix, total)
 }
 
 fn ease_out_cubic(t: f32) -> f32 {
@@ -136,6 +143,8 @@ struct GaugeFrame {
     arc_level: f32,
     needle_level: f32,
     fg: Hsla,
+    /// The track's strength: brighter while its menu is open.
+    track: f32,
     accent: Hsla,
 }
 
@@ -216,7 +225,7 @@ fn paint_gauge(frame: GaugeFrame, bounds: Bounds<Pixels>, window: &mut Window) {
         START_ANGLE,
         SWEEP_ANGLE,
         stroke,
-        frame.fg.opacity(0.16),
+        frame.fg.opacity(frame.track),
         window,
     );
 
@@ -244,8 +253,9 @@ fn paint_gauge(frame: GaugeFrame, bounds: Bounds<Pixels>, window: &mut Window) {
     let mut needle = PathBuilder::stroke(needle_w);
     needle.move_to(tail);
     needle.line_to(tip);
-    if let Ok(path) = needle.build() {
-        window.paint_path(path, frame.accent);
+    match needle.build() {
+        Ok(path) => window.paint_path(path, frame.accent),
+        Err(err) => log::debug!("effort gauge needle: {err:?}"),
     }
     paint_dot(tip, needle_w / 2.0, frame.accent, window);
 
@@ -258,37 +268,47 @@ fn gauge_canvas(frame: GaugeFrame) -> AnyElement {
         .size(px(frame.size_px))
         .flex_none()
         .child(
-            canvas(|_, _, _| {}, move |bounds, _, window, _| {
-                paint_gauge(frame, bounds, window);
-            })
+            canvas(
+                |_, _, _| {},
+                move |bounds, _, window, _| {
+                    paint_gauge(frame, bounds, window);
+                },
+            )
             .size_full(),
         )
         .into_any_element()
 }
 
+const TRACK: f32 = 0.16;
+const TRACK_OPEN: f32 = 0.32;
+
 /// Static circular effort gauge icon at `level` (`0.0..=1.0`).
 pub fn static_effort_gauge(size_px: f32, level: f32, cx: &gpui::App) -> AnyElement {
+    gauge_at(size_px, level, TRACK, cx)
+}
+
+fn gauge_at(size_px: f32, level: f32, track: f32, cx: &gpui::App) -> AnyElement {
     let theme = cx.theme();
-    let accent = effort_accent(level, theme);
     gauge_canvas(GaugeFrame {
         size_px,
         arc_level: level,
         needle_level: level,
         fg: theme.colors.fg,
-        accent,
+        track,
+        accent: effort_accent(level, theme),
     })
 }
 
 fn animated_effort_gauge(
     id: &'static str,
-    generation: usize,
     size_px: f32,
     from: f32,
     to: f32,
+    track: f32,
     cx: &gpui::App,
 ) -> AnyElement {
-    if generation == 0 || (from - to).abs() < 0.001 {
-        return static_effort_gauge(size_px, to, cx);
+    if (from - to).abs() < 0.001 {
+        return gauge_at(size_px, to, track, cx);
     }
     let theme = cx.theme();
     let fg = theme.colors.fg;
@@ -297,21 +317,18 @@ fn animated_effort_gauge(
     div()
         .size(px(size_px))
         .flex_none()
-        .with_animation(
-            (id, generation),
-            Animation::new(GAUGE_MOTION),
-            move |el, t| {
-                let eased = ease_out_cubic(t);
-                let spring = ease_out_back(t);
-                el.child(gauge_canvas(GaugeFrame {
-                    size_px,
-                    arc_level: from + (to - from) * eased,
-                    needle_level: from + (to - from) * spring,
-                    fg,
-                    accent: lerp_color(from_color, to_color, eased),
-                }))
-            },
-        )
+        .with_animation(id, Animation::new(GAUGE_MOTION), move |el, t| {
+            let eased = ease_out_cubic(t);
+            let spring = ease_out_back(t);
+            el.child(gauge_canvas(GaugeFrame {
+                size_px,
+                arc_level: from + (to - from) * eased,
+                needle_level: from + (to - from) * spring,
+                fg,
+                track,
+                accent: lerp_color(from_color, to_color, eased),
+            }))
+        })
         .into_any_element()
 }
 
@@ -323,8 +340,8 @@ impl BenCodeApp {
         old_value: &str,
         new_value: &str,
     ) {
-        let (_, from) = option_intensity(setting, old_value);
-        let (_, to) = option_intensity(setting, new_value);
+        let from = option_intensity(setting, old_value);
+        let to = option_intensity(setting, new_value);
         if (from - to).abs() < 0.001 {
             return;
         }
@@ -332,33 +349,26 @@ impl BenCodeApp {
         motion.session_id = self.selected_session_id.clone();
         motion.from = from;
         motion.to = to;
-        motion.generation = motion.generation.wrapping_add(1).max(1);
+        motion.at = Some(Instant::now());
     }
 
-    /// Animated effort gauge icon for the Bot composer's Effort pill.
+    /// Animated effort gauge icon for the Bot composer's Effort pill; its
+    /// track brightens while the pill's menu is `open`.
     pub(super) fn render_bot_effort_gauge(
         &self,
         session_id: &str,
         setting: &ModelSetting,
         values: Option<&Map<String, Value>>,
+        open: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let (_, level) = option_intensity(setting, setting.value(values));
+        let level = option_intensity(setting, setting.value(values));
+        let track = if open { TRACK_OPEN } else { TRACK };
         let motion = &self.composer_menus.effort_motion;
-        let matches = motion.generation > 0
-            && motion.session_id.as_deref() == Some(session_id)
-            && (motion.to - level).abs() < 0.01;
-        if matches {
-            animated_effort_gauge(
-                "bot-effort-gauge",
-                motion.generation,
-                14.0,
-                motion.from,
-                motion.to,
-                cx,
-            )
+        if motion.gliding(session_id, level, Instant::now()) {
+            animated_effort_gauge("bot-effort-gauge", 14.0, motion.from, motion.to, track, cx)
         } else {
-            static_effort_gauge(14.0, level, cx)
+            gauge_at(14.0, level, track, cx)
         }
     }
 }
@@ -389,6 +399,23 @@ mod tests {
         assert!((effort_intensity("tier-a", 0, 3) - 0.20).abs() < 1e-5);
         assert!((effort_intensity("tier-b", 1, 3) - 0.60).abs() < 1e-5);
         assert!((effort_intensity("tier-c", 2, 3) - 1.00).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_change_glides_once_then_the_gauge_rests() {
+        let at = Instant::now();
+        let motion = EffortMotion {
+            session_id: Some("s1".into()),
+            from: 0.25,
+            to: 0.72,
+            at: Some(at),
+        };
+        assert!(motion.gliding("s1", 0.72, at + Duration::from_millis(100)));
+        assert!(!motion.gliding("s2", 0.72, at + Duration::from_millis(100)));
+        assert!(!motion.gliding("s1", 0.50, at + Duration::from_millis(100)));
+        // Drawn again later (the bot reopened): no replay.
+        assert!(!motion.gliding("s1", 0.72, at + Duration::from_secs(5)));
+        assert!(!EffortMotion::default().gliding("s1", 0.72, at));
     }
 
     #[test]
