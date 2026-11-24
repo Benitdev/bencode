@@ -544,10 +544,15 @@ impl BenCodeApp {
                         .into_any_element();
                 }
                 let open = self.composer_menus.pill_menu.as_deref() == Some(setting.id.as_str());
-                let icon = if setting.is_effort() {
-                    Some(IconName::Gauge)
+                let icon: Option<AnyElement> = if setting.is_effort() {
+                    Some(self.render_bot_effort_gauge(&session.id, setting, values, cx))
                 } else if setting.id == "serviceTier" {
-                    Some(IconName::Zap)
+                    Some(
+                        Icon::new(IconName::Zap)
+                            .size(IconSize::Xs)
+                            .color(if open { fg } else { fg.ink(Ink::Secondary) })
+                            .into_any_element(),
+                    )
                 } else {
                     None
                 };
@@ -564,13 +569,7 @@ impl BenCodeApp {
                         this.composer_menus.pill_menu = next;
                         cx.notify();
                     }))
-                    .children(icon.map(|icon| {
-                        Icon::new(icon).size(IconSize::Xs).color(if open {
-                            fg
-                        } else {
-                            fg.ink(Ink::Secondary)
-                        })
-                    }))
+                    .children(icon)
                     .child(div().min_w_0().truncate().child(label));
                 div()
                     .relative()
@@ -598,7 +597,7 @@ impl BenCodeApp {
         let grouped = menu.len() > 1;
         let sections = menu.iter().map(|setting| {
             let current = setting.value(values).to_string();
-            let options = setting.options.iter().map(|(value, label)| {
+            let options = setting.options.iter().enumerate().map(|(ix, (value, label))| {
                 let (id, picked) = (setting.id.clone(), value.clone());
                 div()
                     .id(SharedString::from(format!(
@@ -620,6 +619,11 @@ impl BenCodeApp {
                         this.composer_menus.pill_menu = None;
                         this.refocus_prompt(cx);
                         cx.notify();
+                    }))
+                    .children(setting.is_effort().then(|| {
+                        let level =
+                            super::effort::effort_intensity(value, ix, setting.options.len());
+                        super::effort::static_effort_gauge(14.0, level, cx)
                     }))
                     .child(div().flex_1().min_w_0().truncate().child(label.clone()))
                     .when(*value == current, |el| {

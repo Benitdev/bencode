@@ -404,8 +404,12 @@ impl BenCodeApp {
     /// MonoCode `onModelSettingsChange`: the focused thread's settings take
     /// `value`, and it is remembered for threads to come.
     pub(super) fn set_model_setting(&mut self, id: &str, value: &str, cx: &mut Context<Self>) {
-        let mut next =
-            catalog::merge_settings(&self.current_model_key(cx), self.current_model_values());
+        let model_key = self.current_model_key(cx);
+        if let Some(effort) = catalog::effort_setting(&model_key).filter(|e| e.id == id) {
+            let old = effort.value(self.current_model_values()).to_string();
+            self.record_effort_change(&effort, &old, value);
+        }
+        let mut next = catalog::merge_settings(&model_key, self.current_model_values());
         next.insert(id.to_string(), Value::String(value.to_string()));
         self.save_last_model_settings(&next, false, cx);
         if let Some(session) = self.selected_session_mut() {
@@ -582,16 +586,32 @@ impl BenCodeApp {
                     )
                     .child(toggle_switch(on, cx))
                 }
-                SettingKind::Select => base
-                    .on_click(cx.listener(move |this, _, _, cx| this.show_entry_submenu(ix, cx)))
+                SettingKind::Select => {
+                    let effort_gauge = setting.is_effort().then(|| {
+                        let (_, level) =
+                            super::effort::option_intensity(setting, setting.value(values));
+                        super::effort::static_effort_gauge(14.0, level, cx)
+                    });
+                    base.on_click(
+                        cx.listener(move |this, _, _, cx| this.show_entry_submenu(ix, cx)),
+                    )
                     .child(
                         div()
-                            .max_w(px(112.0))
-                            .truncate()
+                            .flex()
+                            .items_center()
+                            .gap_1p5()
+                            .max_w(px(124.0))
                             .text_color(colors.fg.ink(Ink::Secondary))
-                            .child(setting.value_label(values).to_string()),
+                            .children(effort_gauge)
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .child(setting.value_label(values).to_string()),
+                            ),
                     )
-                    .child(chevron()),
+                    .child(chevron())
+                }
             }
         });
         let model_ix = settings.len();
@@ -691,6 +711,11 @@ impl BenCodeApp {
                             this.close_model_picker(cx);
                         })
                     })
+                    .children(setting.is_effort().then(|| {
+                        let level =
+                            super::effort::effort_intensity(value, ix, setting.options.len());
+                        super::effort::static_effort_gauge(14.0, level, cx)
+                    }))
                     .child(div().flex_1().min_w_0().truncate().child(label.clone()))
                     .when(*value == current, |el| {
                         el.child(
