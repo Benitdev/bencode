@@ -585,6 +585,12 @@ impl BenCodeApp {
                     .issue_error
                     .clone()
                     .filter(|_| item.provider == Provider::Backlog)
+                    .or_else(|| {
+                        self.jira
+                            .issue_error
+                            .clone()
+                            .filter(|_| item.provider == Provider::Jira)
+                    })
                     .map(|err| {
                         div()
                             .text_size(Text::Base.px())
@@ -689,17 +695,20 @@ impl BenCodeApp {
         )
     }
 
-    /// The rail's projects, the one threads start in checked; a Backlog
-    /// project keeps the folder picked for one of its issues.
+    /// The rail's projects, the one threads start in checked; a Backlog or
+    /// Jira project keeps the folder picked for one of its issues.
     fn inbox_project_choices(&self, item: &WorkItem, menu: Menu, cx: &Context<Self>) -> Menu {
         let chosen = self.inbox_start_project_shown(item, cx);
         let key = item.key();
-        let backlog_project = (item.provider == Provider::Backlog).then(|| item.repo.clone());
+        let tracker_project = match item.provider {
+            Provider::Backlog | Provider::Jira => Some((item.provider, item.repo.clone())),
+            Provider::GitHub => None,
+        };
         self.inbox_projects_shown(cx)
             .into_iter()
             .fold(menu, |menu, path| {
                 let (key, target) = (key.clone(), path.clone());
-                let backlog_project = backlog_project.clone();
+                let tracker_project = tracker_project.clone();
                 menu.item(
                     MenuItem::check(
                         format!("In {}", project_name(&path)),
@@ -710,8 +719,16 @@ impl BenCodeApp {
                             .as_mut(cx)
                             .start_project
                             .insert(key.clone(), target.clone());
-                        if let Some(project) = &backlog_project {
-                            this.set_backlog_project_folder(project, &target, cx);
+                        if let Some((provider, project)) = &tracker_project {
+                            match provider {
+                                Provider::Backlog => {
+                                    this.set_backlog_project_folder(project, &target, cx);
+                                }
+                                Provider::Jira => {
+                                    this.set_jira_project_folder(project, &target, cx);
+                                }
+                                Provider::GitHub => {}
+                            }
                         }
                         cx.notify();
                     })),
@@ -906,9 +923,49 @@ impl BenCodeApp {
     }
 
     /// The item's state at the head. A Backlog issue's pill opens its
-    /// project's workflow (its one status control); a GitHub item's only
-    /// shows.
+    /// project's workflow; a Jira issue's pill opens its available workflow
+    /// transitions; a GitHub item's only shows.
     fn render_state_control(&self, item: &WorkItem, cx: &Context<Self>) -> AnyElement {
+        if item.provider == Provider::Jira {
+            let key = item.key();
+            let Some(transitions) = self
+                .jira
+                .transitions
+                .get(&key)
+                .filter(|list| !list.is_empty())
+            else {
+                return state_pill(item, None, cx).into_any_element();
+            };
+            let busy = self.jira.issue_busy.is_some();
+            let menu = transitions.iter().fold(Menu::new(), |menu, t| {
+                let (key, id) = (key.clone(), t.id.clone());
+                let label = if t.to_status.eq_ignore_ascii_case(&t.name) {
+                    t.to_status.clone()
+                } else {
+                    format!("{} → {}", t.name, t.to_status)
+                };
+                menu.item(
+                    MenuItem::check(label, t.to_status.eq_ignore_ascii_case(&item.state))
+                        .disabled(busy)
+                        .on_click(app_callback(cx, move |this, cx| {
+                            this.transition_jira_issue(&key, id.clone(), cx)
+                        })),
+                )
+            });
+            let updating = self.jira.issue_busy.as_deref() == Some(key.as_str());
+            let tint = status_mark(item, cx).1;
+            let pill = state_pill(item, updating.then_some("Updating…"), cx)
+                .id("inbox-jira-status-pill")
+                .hover(move |s| s.bg(tint.opacity(0.24)))
+                .child(
+                    Icon::new(IconName::ChevronDown)
+                        .size(IconSize::Xs)
+                        .color(tint),
+                );
+            return DropdownMenu::new("inbox-jira-status", item.state.clone(), menu)
+                .trigger(pill)
+                .into_any_element();
+        }
         let statuses = (item.provider == Provider::Backlog)
             .then(|| self.backlog.statuses.get(&item.container_id))
             .flatten();
@@ -985,7 +1042,7 @@ fn state_pill(item: &WorkItem, label: Option<&str>, cx: &gpui::App) -> gpui::Div
             (None, Provider::GitHub) => {
                 format!("{status} {}", kind_label(item.kind).to_lowercase())
             }
-            (None, Provider::Backlog) => status.to_string(),
+            (None, Provider::Backlog | Provider::Jira) => status.to_string(),
         })
 }
 

@@ -55,12 +55,14 @@ pub enum PaneTab {
 /// How an Inbox key names its item before the item is known: `PROJ-12`,
 /// `#42`.
 fn work_item_name(key: &str) -> String {
-    match key.strip_prefix("backlog:") {
-        Some(issue) => issue.to_ascii_uppercase(),
-        None => key
-            .rsplit_once(':')
-            .map_or_else(|| key.to_string(), |(_, number)| format!("#{number}")),
+    if let Some(issue) = key
+        .strip_prefix("backlog:")
+        .or_else(|| key.strip_prefix("jira:"))
+    {
+        return issue.to_ascii_uppercase();
     }
+    key.rsplit_once(':')
+        .map_or_else(|| key.to_string(), |(_, number)| format!("#{number}"))
 }
 
 fn basename(path: &str) -> &str {

@@ -61,15 +61,17 @@ impl BenCodeApp {
             return;
         };
         let text = self.link_input.read(cx).text().trim().to_string();
-        match LinkedWorkItem::parse_any_url(&text, None) {
+        // Pasted by hand: a Jira issue URL of any site is meant as one.
+        let parsed = LinkedWorkItem::parse_any_url(&text, None, None)
+            .or_else(|| LinkedWorkItem::parse_jira_url(&text, None));
+        match parsed {
             Some(item) => {
                 let id = dialog.session_id.clone();
                 self.set_session_link(&id, Some(item), cx);
             }
             None => {
                 dialog.error = Some(
-                    "Enter a valid GitHub issue or pull request URL, or a Backlog issue URL."
-                        .into(),
+                    "Enter a valid GitHub, Backlog, or Jira issue or pull request URL.".into(),
                 );
                 cx.notify();
             }
@@ -170,7 +172,7 @@ impl BenCodeApp {
                 None => div()
                     .text_size(Text::Sm.px())
                     .text_color(fg.ink(Ink::Muted))
-                    .child("Paste a github.com issue or pull request URL, or a Backlog issue URL. The linked item will appear on the session card."),
+                    .child("Paste a github.com issue or pull request URL, or a Backlog or Jira issue URL. The linked item will appear on the session card."),
             });
         let remove = app_callback(cx, |this, cx| {
             if let Some(id) = this.link_dialog.as_ref().map(|d| d.session_id.clone()) {

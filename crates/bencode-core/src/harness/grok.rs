@@ -41,6 +41,7 @@ static GROK: Dialect = Dialect {
     cached_in_input: true,
     approves_in_auto: true,
     wait_open_tools: false,
+    usage_limit: |_| None,
 };
 
 /// The parser for one Grok turn.

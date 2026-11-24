@@ -15,7 +15,8 @@ use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{AnyElement, Context, IntoElement, ParentElement, SharedString, Styled, div, relative};
 
 use crate::app::BenCodeApp;
-use crate::backlog::Account;
+use crate::backlog::Account as BacklogAccount;
+use crate::jira::Account as JiraAccount;
 use crate::ui::app_callback::{app_callback, app_callback_with, on_value};
 use crate::ui::scale::px;
 use crate::ui::settings_modal::SettingsTab;
@@ -43,6 +44,12 @@ impl BenCodeApp {
                 .group(self.render_backlog_connection(account, cx))
                 .group(self.render_backlog_projects(cx)),
             None => page.group(self.render_backlog_form(cx)),
+        };
+        let page = match &self.jira.account {
+            Some(account) => page
+                .group(self.render_jira_connection(account, cx))
+                .group(self.render_jira_projects(cx)),
+            None => page.group(self.render_jira_form(cx)),
         };
         page.group(self.render_inbox_translation(cx))
     }
@@ -215,7 +222,11 @@ impl BenCodeApp {
     }
 
     /// Connected: who and where, and Disconnect.
-    fn render_backlog_connection(&self, account: &Account, cx: &Context<Self>) -> SettingsGroup {
+    fn render_backlog_connection(
+        &self,
+        account: &BacklogAccount,
+        cx: &Context<Self>,
+    ) -> SettingsGroup {
         let who = if account.user_name.is_empty() {
             account.space.clone()
         } else {
@@ -296,7 +307,7 @@ impl BenCodeApp {
                 div()
                     .text_size(Text::Md.px())
                     .line_height(relative(1.5))
-                    .text_color(cx.theme().colors.fg_muted)
+                    .text_color(cx.theme().colors.fg.ink(Ink::Muted))
                     .child(format!(
                         "Disconnect {space}? The saved API key is deleted and its issues leave the \
                          Inbox. Threads started from them stay."
@@ -309,6 +320,196 @@ impl BenCodeApp {
             })
             .action(move |_| {
                 Button::new("backlog-disconnect-confirm", "Disconnect")
+                    .variant(ButtonVariant::Danger)
+                    .on_click(move |_, window, cx| confirm(window, cx))
+            });
+        Some(dialog.into_any_element())
+    }
+
+    fn jira_group(&self) -> SettingsGroup {
+        SettingsGroup::new("Jira").description(
+            "Open issues of a Jira Cloud site show in the Inbox, and agents reach Jira through \
+             built-in MCP tools while connected.",
+        )
+    }
+
+    /// Not connected: site, Atlassian email, API token, Connect + token link.
+    fn render_jira_form(&self, cx: &Context<Self>) -> SettingsGroup {
+        let busy = self.jira.busy || !self.jira.loaded;
+        let typed = !self.jira_site_input.read(cx).text().trim().is_empty()
+            && !self.jira_email_input.read(cx).text().trim().is_empty()
+            && !self.jira_token_input.read(cx).text().trim().is_empty();
+        let field = |input: AnyElement| div().w(px(FIELD_WIDTH)).child(input);
+        let connect = SettingsRow::new("Access");
+        let connect = match self.jira.error.clone() {
+            Some(error) => connect.error(error),
+            None => connect.description(
+                "BenCode reads issues and comments, and posts the comments and status transitions \
+                 you make in the Inbox.",
+            ),
+        };
+        let actions = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(
+                Button::new("jira-create-token", "Create API token")
+                    .variant(ButtonVariant::Ghost)
+                    .size(ControlSize::Sm)
+                    .on_click(|_, _, cx| {
+                        cx.open_url("https://id.atlassian.com/manage-profile/security/api-tokens")
+                    }),
+            )
+            .child(
+                Button::new(
+                    "jira-connect",
+                    if self.jira.busy {
+                        "Checking credentials…"
+                    } else {
+                        "Connect"
+                    },
+                )
+                .primary()
+                .loading(self.jira.busy)
+                .disabled(busy || !typed)
+                .on_click(cx.listener(|this, _, _, cx| this.connect_jira(cx))),
+            );
+        self.jira_group()
+            .row(
+                SettingsRow::new("Jira site")
+                    .description("Your site's address, like yourteam.atlassian.net")
+                    .control(field(Input::new(&self.jira_site_input).into_any_element())),
+            )
+            .row(
+                SettingsRow::new("Atlassian email")
+                    .description("The email address of your Atlassian account")
+                    .control(field(Input::new(&self.jira_email_input).into_any_element())),
+            )
+            .row(
+                SettingsRow::new("API token")
+                    .description(
+                        "An API token without scopes from your Atlassian account security \
+                         settings. Saved on this Mac, in a file only your account can read.",
+                    )
+                    .control(field(
+                        PasswordInput::new(&self.jira_token_input).into_any_element(),
+                    )),
+            )
+            .row(connect.control(actions))
+    }
+
+    /// Connected: who and where, and Disconnect.
+    fn render_jira_connection(&self, account: &JiraAccount, cx: &Context<Self>) -> SettingsGroup {
+        let who = if account.display_name.is_empty() {
+            format!("{} · {}", account.email, account.site)
+        } else {
+            format!(
+                "{} ({}) · {}",
+                account.display_name, account.email, account.site
+            )
+        };
+        let row = SettingsRow::new("Connected");
+        let row = match &self.jira.error {
+            Some(err) => row.error(format!("{who}\n{err}")),
+            None => row.description(who),
+        };
+        self.jira_group().row(
+            row.control(
+                Button::new("jira-disconnect", "Disconnect")
+                    .variant(ButtonVariant::Outline)
+                    .size(ControlSize::Sm)
+                    .disabled(self.jira.busy)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.jira_disconnect_open = true;
+                        cx.notify();
+                    })),
+            ),
+        )
+    }
+
+    /// The site's projects, each with a switch for the Inbox.
+    fn render_jira_projects(&self, cx: &Context<Self>) -> SettingsGroup {
+        let group = SettingsGroup::new("Jira projects")
+            .description("Projects whose open issues the Inbox lists.")
+            .row(
+                SettingsRow::new("Refresh projects")
+                    .description("Reload accessible projects from Jira.")
+                    .control(
+                        Button::new("jira-projects-refresh", "Refresh")
+                            .variant(ButtonVariant::Outline)
+                            .size(ControlSize::Sm)
+                            .loading(self.jira.projects_loading)
+                            .disabled(self.jira.projects_loading)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.load_jira_projects(true, cx);
+                            })),
+                    ),
+            );
+        let projects = match &self.jira.projects {
+            None => return group.note("Loading projects…"),
+            Some(Err(err)) => {
+                return group.row(SettingsRow::new("Could not list projects").error(err.clone()));
+            }
+            Some(Ok(projects)) if projects.is_empty() => {
+                return group.note("No projects found on this Jira site.");
+            }
+            Some(Ok(projects)) => projects,
+        };
+        group.rows(projects.iter().map(|project| {
+            let shown = !self.jira.hidden_projects.contains(&project.id);
+            let id = project.id.clone();
+            SettingsRow::new(project.name.clone())
+                .aside(project.key.clone())
+                .control(
+                    Switch::new(
+                        SharedString::from(format!("jira-project-{}", project.id)),
+                        shown,
+                    )
+                    .on_change(app_callback_with(cx, move |this, on, cx| {
+                        this.set_jira_project_shown(&id, on, cx);
+                        this.play_cue(crate::sounds::Cue::Switch);
+                    })),
+                )
+        }))
+    }
+
+    /// Disconnect's confirmation: the token is deleted.
+    pub fn render_jira_disconnect(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        if !self.jira_disconnect_open {
+            return None;
+        }
+        let site = self
+            .jira
+            .account
+            .as_ref()
+            .map(|a| a.site.clone())
+            .unwrap_or_default();
+        let close = app_callback(cx, |this, cx| {
+            this.jira_disconnect_open = false;
+            cx.notify();
+        });
+        let confirm = app_callback(cx, |this, cx| {
+            this.jira_disconnect_open = false;
+            this.disconnect_jira(cx);
+        });
+        let dialog = Dialog::new("jira-disconnect-dialog", "Disconnect Jira", close)
+            .child(
+                div()
+                    .text_size(Text::Md.px())
+                    .line_height(relative(1.5))
+                    .text_color(cx.theme().colors.fg.ink(Ink::Muted))
+                    .child(format!(
+                        "Disconnect {site}? The saved API token is deleted and its issues leave \
+                         the Inbox. Threads started from them stay."
+                    )),
+            )
+            .action(|close| {
+                Button::new("jira-disconnect-cancel", "Cancel")
+                    .variant(ButtonVariant::Ghost)
+                    .on_click(move |_, window, cx| close(window, cx))
+            })
+            .action(move |_| {
+                Button::new("jira-disconnect-confirm", "Disconnect")
                     .variant(ButtonVariant::Danger)
                     .on_click(move |_, window, cx| confirm(window, cx))
             });

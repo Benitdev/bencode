@@ -88,6 +88,7 @@ impl Source {
 pub struct Attention {
     github: Source,
     backlog: Source,
+    jira: Source,
     /// An ask is running.
     pub fetching: bool,
 }
@@ -97,6 +98,7 @@ impl Attention {
         match provider {
             Provider::GitHub => &self.github,
             Provider::Backlog => &self.backlog,
+            Provider::Jira => &self.jira,
         }
     }
 
@@ -111,14 +113,24 @@ impl Attention {
         match provider {
             Provider::GitHub => self.github.land(found, now),
             Provider::Backlog => self.backlog.land(found, now),
+            Provider::Jira => self.jira.land(found, now),
         }
     }
 
-    /// The newest notification about item `key`, from either tracker.
+    /// Records the connected Jira user's display name for `assigned_to_me`.
+    pub fn set_jira_me(&mut self, display_name: Option<String>) {
+        self.jira.me.clear();
+        if let Some(name) = display_name.filter(|n| !n.trim().is_empty()) {
+            self.jira.me.insert(String::new(), name);
+        }
+    }
+
+    /// The newest notification about item `key`, from any tracker.
     pub fn notified_at(&self, key: &str) -> Option<i64> {
         let github = self.github.notified.get(key);
         let backlog = self.backlog.notified.get(key);
-        github.into_iter().chain(backlog).copied().max()
+        let jira = self.jira.notified.get(key);
+        github.into_iter().chain(backlog).chain(jira).copied().max()
     }
 
     /// `item` is assigned to the user as its tracker knows them.
@@ -126,6 +138,7 @@ impl Attention {
         let me = match item.provider {
             Provider::GitHub => self.github.me.get(&item.project),
             Provider::Backlog => self.backlog.me.get(""),
+            Provider::Jira => self.jira.me.get(""),
         };
         me.is_some_and(|me| {
             !me.is_empty() && (item.assignees.iter()).any(|a| a.eq_ignore_ascii_case(me))

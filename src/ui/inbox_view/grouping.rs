@@ -151,7 +151,7 @@ fn group_of(item: &WorkItem, how: &Arrange) -> (String, String, Option<usize>) {
         GroupBy::Project => {
             let project = match item.provider {
                 Provider::GitHub => item.repo.clone(),
-                Provider::Backlog => item.repo.to_uppercase(),
+                Provider::Backlog | Provider::Jira => item.repo.to_uppercase(),
             };
             (format!("project:{project}"), project, None)
         }

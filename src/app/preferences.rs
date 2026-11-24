@@ -146,6 +146,8 @@ impl BenCodeApp {
         });
         self.backlog.hidden_projects = saved.backlog_hidden_projects.clone();
         self.backlog.project_folders = saved.backlog_project_folders.clone();
+        self.jira.hidden_projects = saved.jira_hidden_projects.clone();
+        self.jira.project_folders = saved.jira_project_folders.clone();
         self.github.choices = saved.github_accounts.clone();
         crate::github_accounts::set_choices(self.github.choices.clone());
         self.changes_ui.tree = saved.changes_tree;
@@ -213,6 +215,8 @@ impl BenCodeApp {
             inbox_list: self.inbox(cx).list_prefs.clone(),
             backlog_hidden_projects: self.backlog.hidden_projects.clone(),
             backlog_project_folders: self.backlog.project_folders.clone(),
+            jira_hidden_projects: self.jira.hidden_projects.clone(),
+            jira_project_folders: self.jira.project_folders.clone(),
             github_accounts: self.github.choices.clone(),
             changes_tree: self.changes_ui.tree,
             diff_split: self.diff_split,

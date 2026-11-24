@@ -140,8 +140,9 @@ pub struct BrowserState {
     /// Where the agents' MCP server reaches this app; None when the
     /// socket could not be opened.
     socket: Option<PathBuf>,
-    /// Set while a dialog or a menu covers the window: the page hides
-    /// under it.
+    /// Set while a dialog or a menu covers the window: on macOS this stops
+    /// pointer pass-through and reclaims keyboard focus while keeping the page
+    /// visible behind the overlay; on other platforms the page hides under it.
     pub obscured: Rc<Cell<bool>>,
     /// The tab the file pane draws this frame; the others hide.
     pub drawn: Cell<Option<u64>>,
@@ -216,13 +217,6 @@ impl BrowserState {
             next_eval: 1,
             _subscriptions: subscriptions,
         }
-    }
-
-    /// The left edge (window coordinates) of the page drawn this frame,
-    /// from where it was last put.
-    pub fn drawn_page_left(&self) -> Option<gpui::Pixels> {
-        let page = self.tabs.get(&self.drawn.get()?)?.page.as_ref()?;
-        Some(page.bounds()?.origin.x)
     }
 
     /// Hides every page but the one drawn this frame.

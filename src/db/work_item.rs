@@ -23,23 +23,25 @@ pub enum WorkItemKind {
 
 /// `provider` of a Backlog link.
 const BACKLOG: &str = "backlog";
+/// `provider` of a Jira link.
+const JIRA: &str = "jira";
 /// The domains Backlog spaces live under.
 const BACKLOG_DOMAINS: [&str; 3] = [".backlog.jp", ".backlog.com", ".backlogtool.com"];
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinkedWorkItem {
     pub kind: WorkItemKind,
-    /// GitHub: `owner/name`, case kept. Backlog: the project key.
+    /// GitHub: `owner/name`, case kept. Backlog / Jira: the project key.
     pub repo: String,
     pub number: i64,
     pub url: String,
-    /// `backlog`; absent for GitHub (MonoCode's shape).
+    /// `backlog` or `jira`; absent for GitHub (MonoCode's shape).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     provider: Option<String>,
-    /// A Backlog issue's key, `PROJ-42`.
+    /// A Backlog or Jira issue's key, `PROJ-42`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     identifier: Option<String>,
-    /// A Backlog space's host, `acme.backlog.com`.
+    /// A Backlog space's or Jira site's host, `acme.backlog.com` / `acme.atlassian.net`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     host: Option<String>,
 }
@@ -83,6 +85,27 @@ fn backlog_host_ok(host: &str) -> bool {
     })
 }
 
+/// A Jira site's host: a lowercase DNS host (with optional `:port`).
+fn jira_host_ok(host: &str) -> bool {
+    let (domain, port) = match host.split_once(':') {
+        Some((d, p)) => (d, Some(p)),
+        None => (host, None),
+    };
+    let domain_ok = domain.contains('.')
+        && !domain.starts_with(['.', '-'])
+        && !domain.ends_with(['.', '-'])
+        && !domain.contains("..")
+        && domain
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '-'));
+    let port_ok = port.is_none_or(|p| {
+        !p.is_empty()
+            && p.chars().all(|c| c.is_ascii_digit())
+            && p.parse::<u16>().is_ok_and(|n| n > 0)
+    });
+    domain_ok && port_ok
+}
+
 impl LinkedWorkItem {
     /// A checked `owner/name` and number, its URL built from them.
     pub fn new(kind: WorkItemKind, repo: &str, number: i64) -> Option<Self> {
@@ -124,11 +147,33 @@ impl LinkedWorkItem {
         })
     }
 
+    /// A checked Jira issue key on a checked site host, its URL built from them.
+    pub fn jira(key: &str, host: &str) -> Option<Self> {
+        let (key, host) = (key.trim(), host.trim().to_ascii_lowercase());
+        let (project, number) = backlog_key(key)?;
+        if !jira_host_ok(&host) {
+            return None;
+        }
+        Some(Self {
+            kind: WorkItemKind::Issue,
+            repo: project.to_string(),
+            number,
+            url: format!("https://{host}/browse/{key}"),
+            provider: Some(JIRA.to_string()),
+            identifier: Some(key.to_string()),
+            host: Some(host),
+        })
+    }
+
     pub fn is_backlog(&self) -> bool {
         self.provider.as_deref() == Some(BACKLOG)
     }
 
-    /// A Backlog issue's space host.
+    pub fn is_jira(&self) -> bool {
+        self.provider.as_deref() == Some(JIRA)
+    }
+
+    /// A Backlog space's or Jira site's host.
     pub fn host(&self) -> Option<&str> {
         self.host.as_deref()
     }
@@ -142,11 +187,18 @@ impl LinkedWorkItem {
     }
 
     /// The link an Inbox key (`WorkItem::key`) stands for, to fetch the
-    /// item by: a Backlog key needs the connected space's `host`. A
-    /// GitHub key keeps its repository lower case, which GitHub ignores.
-    pub fn from_item_key(key: &str, host: Option<&str>) -> Option<Self> {
+    /// item by: a Backlog or Jira key needs the connected host. A GitHub
+    /// key keeps its repository lower case, which GitHub ignores.
+    pub fn from_item_key(
+        key: &str,
+        backlog_host: Option<&str>,
+        jira_host: Option<&str>,
+    ) -> Option<Self> {
         if let Some(issue) = key.strip_prefix("backlog:") {
-            return Self::backlog(&issue.to_ascii_uppercase(), host?);
+            return Self::backlog(&issue.to_ascii_uppercase(), backlog_host?);
+        }
+        if let Some(issue) = key.strip_prefix("jira:") {
+            return Self::jira(&issue.to_ascii_uppercase(), jira_host?);
         }
         let mut parts = key.rsplitn(3, ':');
         let number = parts.next()?.parse().ok()?;
@@ -160,9 +212,10 @@ impl LinkedWorkItem {
 
     /// The Inbox's key for the item (`WorkItem::key`).
     pub fn item_key(&self) -> String {
-        match &self.identifier {
-            Some(key) => format!("backlog:{}", key.to_lowercase()),
-            None => format!(
+        match (self.provider.as_deref(), &self.identifier) {
+            (Some(JIRA), Some(key)) => format!("jira:{}", key.to_lowercase()),
+            (_, Some(key)) => format!("backlog:{}", key.to_lowercase()),
+            (_, None) => format!(
                 "{}:{}:{}",
                 self.repo.to_lowercase(),
                 match self.kind {
@@ -200,13 +253,30 @@ impl LinkedWorkItem {
         backlog_url(text, host).map(|(_, item)| item)
     }
 
-    /// The first GitHub or Backlog issue URL in `text` (`host` as in
-    /// `parse_backlog_url`).
-    pub fn parse_any_url(text: &str, host: Option<&str>) -> Option<Self> {
-        match (github_url(text), backlog_url(text, host)) {
-            (Some((a, github)), Some((b, backlog))) => Some(if a < b { github } else { backlog }),
-            (github, backlog) => github.or(backlog).map(|(_, item)| item),
-        }
+    /// A Jira issue URL (`https://<host>/browse/KEY`) anywhere in `text`,
+    /// on `host` when one is given (the connected site), else on any valid
+    /// HTTPS host; rebuilt canonically.
+    pub fn parse_jira_url(text: &str, host: Option<&str>) -> Option<Self> {
+        jira_url(text, host).map(|(_, item)| item)
+    }
+
+    /// The first GitHub, Backlog, or Jira issue URL in `text` (`backlog_host`
+    /// as in `parse_backlog_url`). A Jira URL counts only on `jira_host`:
+    /// any site's `/browse/KEY-1` is too common a shape to take unasked.
+    pub fn parse_any_url(
+        text: &str,
+        backlog_host: Option<&str>,
+        jira_host: Option<&str>,
+    ) -> Option<Self> {
+        [
+            github_url(text),
+            backlog_url(text, backlog_host),
+            jira_host.and_then(|host| jira_url(text, Some(host))),
+        ]
+        .into_iter()
+        .flatten()
+        .min_by_key(|(at, _)| *at)
+        .map(|(_, item)| item)
     }
 
     /// MonoCode `sanitizeLinkedWorkItem`: stored JSON, checked, its URL
@@ -217,6 +287,9 @@ impl LinkedWorkItem {
             None => {}
             Some(Some(BACKLOG)) => {
                 return Self::backlog(raw.get("identifier")?.as_str()?, raw.get("host")?.as_str()?);
+            }
+            Some(Some(JIRA)) => {
+                return Self::jira(raw.get("identifier")?.as_str()?, raw.get("host")?.as_str()?);
             }
             Some(_) => return None,
         }
@@ -320,6 +393,31 @@ fn backlog_url(text: &str, host: Option<&str>) -> Option<(usize, LinkedWorkItem)
     None
 }
 
+/// The first Jira issue URL in `text` (on `host`, when given), and where it starts.
+fn jira_url(text: &str, host: Option<&str>) -> Option<(usize, LinkedWorkItem)> {
+    let host = host.map(str::to_ascii_lowercase);
+    let mut from = 0;
+    while let Some(found) = text[from..].find("/browse/").map(|at| from + at) {
+        from = found + "/browse/".len();
+        let before = text[..found].to_ascii_lowercase();
+        let Some(scheme) = before.rfind("https://") else {
+            continue;
+        };
+        let url_host = &before[scheme + "https://".len()..];
+        if host.as_deref().is_some_and(|host| host != url_host) {
+            continue;
+        }
+        let key: String = text[from..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+            .collect();
+        if let Some(item) = LinkedWorkItem::jira(&key.to_ascii_uppercase(), url_host) {
+            return Some((scheme, item));
+        }
+    }
+    None
+}
+
 impl AppDb {
     /// MonoCode `set_linked_work_item`; `None` unlinks.
     pub fn set_linked_work_item(
@@ -343,17 +441,22 @@ mod tests {
     #[test]
     fn inbox_keys_lead_back_to_their_links() {
         let pr = LinkedWorkItem::new(WorkItemKind::Pr, "Acme/App", 182).unwrap();
-        let back = LinkedWorkItem::from_item_key(&pr.item_key(), None).unwrap();
+        let back = LinkedWorkItem::from_item_key(&pr.item_key(), None, None).unwrap();
         assert_eq!((back.repo.as_str(), back.number), ("acme/app", 182));
         assert_eq!(back.kind, WorkItemKind::Pr);
         assert_eq!(back.item_key(), pr.item_key());
         let issue = LinkedWorkItem::backlog("PROJ_D-7", "acme.backlog.jp").unwrap();
-        let back = LinkedWorkItem::from_item_key(&issue.item_key(), Some("acme.backlog.jp"));
+        let back = LinkedWorkItem::from_item_key(&issue.item_key(), Some("acme.backlog.jp"), None);
         assert_eq!(back.as_ref(), Some(&issue));
         // A Backlog key cannot be fetched without the space it is in.
-        assert!(LinkedWorkItem::from_item_key("backlog:proj_d-7", None).is_none());
-        assert!(LinkedWorkItem::from_item_key("o/r:thing:1", None).is_none());
-        assert!(LinkedWorkItem::from_item_key("nonsense", None).is_none());
+        assert!(LinkedWorkItem::from_item_key("backlog:proj_d-7", None, None).is_none());
+        let jira = LinkedWorkItem::jira("ENG-42", "acme.atlassian.net").unwrap();
+        let back =
+            LinkedWorkItem::from_item_key(&jira.item_key(), None, Some("acme.atlassian.net"));
+        assert_eq!(back.as_ref(), Some(&jira));
+        assert!(LinkedWorkItem::from_item_key("jira:eng-42", None, None).is_none());
+        assert!(LinkedWorkItem::from_item_key("o/r:thing:1", None, None).is_none());
+        assert!(LinkedWorkItem::from_item_key("nonsense", None, None).is_none());
     }
 
     #[test]
@@ -492,15 +595,49 @@ mod tests {
         // The first of either kind wins.
         let both = "https://acme.backlog.com/view/WEB-1 and https://github.com/a/b/pull/2";
         assert!(
-            LinkedWorkItem::parse_any_url(both, None)
+            LinkedWorkItem::parse_any_url(both, None, None)
                 .unwrap()
                 .is_backlog()
         );
         let both = "https://github.com/a/b/pull/2 and https://acme.backlog.com/view/WEB-1";
         assert!(
-            !LinkedWorkItem::parse_any_url(both, None)
+            !LinkedWorkItem::parse_any_url(both, None, None)
                 .unwrap()
                 .is_backlog()
+        );
+    }
+
+    #[test]
+    fn jira_urls_and_rows_round_trip() {
+        let item = LinkedWorkItem::jira("ENG-42", "Acme.Atlassian.Net").unwrap();
+        assert!(item.is_jira());
+        assert!(!item.is_backlog());
+        assert_eq!(item.url, "https://acme.atlassian.net/browse/ENG-42");
+        assert_eq!(item.item_key(), "jira:eng-42");
+        let json = serde_json::to_string(&item).unwrap();
+        assert_eq!(LinkedWorkItem::from_json(&json), Some(item.clone()));
+        let text = "Fix https://acme.atlassian.net/browse/ENG-42?focusedCommentId=1 please";
+        assert_eq!(
+            LinkedWorkItem::parse_jira_url(text, Some("acme.atlassian.net")),
+            Some(item.clone())
+        );
+        assert!(LinkedWorkItem::parse_jira_url(text, Some("other.atlassian.net")).is_none());
+        assert_eq!(
+            LinkedWorkItem::parse_any_url(text, None, Some("acme.atlassian.net")),
+            Some(item.clone())
+        );
+        // Keys typed in lower case read as the issue.
+        assert_eq!(
+            LinkedWorkItem::parse_jira_url(
+                "https://acme.atlassian.net/browse/eng-42",
+                Some("acme.atlassian.net")
+            ),
+            Some(item)
+        );
+        // Without a connected site, no `/browse/` URL is taken for Jira.
+        assert!(LinkedWorkItem::parse_any_url(text, None, None).is_none());
+        assert!(
+            LinkedWorkItem::parse_any_url("https://example.com/browse/ABC-1", None, None).is_none()
         );
     }
 

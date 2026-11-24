@@ -194,7 +194,8 @@ impl InboxTracker {
             self.primed.insert(item.provider);
         }
         if !failed {
-            self.primed.extend([Provider::GitHub, Provider::Backlog]);
+            self.primed
+                .extend([Provider::GitHub, Provider::Backlog, Provider::Jira]);
         }
         changed
     }

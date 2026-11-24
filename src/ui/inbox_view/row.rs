@@ -218,6 +218,19 @@ impl BenCodeApp {
                 )
                 .children(item.issue_type.as_ref().map(|kind| label_chip(kind, cx)))
             }
+            Provider::Jira => lead
+                .child(key_text(item.identifier.clone()))
+                .children(item.issue_type.as_ref().map(|kind| label_chip(kind, cx)))
+                .children(
+                    item.labels
+                        .iter()
+                        .find(|l| {
+                            item.issue_type
+                                .as_ref()
+                                .is_none_or(|k| !l.name.eq_ignore_ascii_case(&k.name))
+                        })
+                        .map(|l| label_chip(l, cx)),
+                ),
             Provider::GitHub => lead
                 .child(key_text(format!("#{}", item.number)))
                 .child(

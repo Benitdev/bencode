@@ -346,8 +346,9 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    /// The page's box: the native view is placed over it each frame it is
-    /// drawn, and hidden under a dialog (`browser.obscured`).
+    /// The page's box: the native view is placed behind GPUI's cutout on macOS
+    /// (so dialogs and popups composite over it while `browser.obscured`
+    /// blocks pass-through), or hidden under a dialog on other platforms.
     fn render_artifact_page(&self, error: Option<String>, cx: &Context<Self>) -> AnyElement {
         let fg = cx.theme().colors.fg;
         let Some(page) = self.artifacts.page.clone() else {
@@ -356,6 +357,7 @@ impl BenCodeApp {
         self.artifacts.page_drawn.set(true);
         let pressed = page.clone();
         let obscured = self.browser.obscured.clone();
+        let obscured_paint = self.browser.obscured.clone();
         div()
             .flex()
             .flex_col()
@@ -365,12 +367,35 @@ impl BenCodeApp {
                 div().relative().flex_1().min_h_0().mx_4().my_3().child(
                     canvas(
                         move |bounds, window, _| {
-                            let shown =
-                                !obscured.get() && bounds.intersects(&window.content_mask().bounds);
+                            let in_view = bounds.intersects(&window.content_mask().bounds);
+                            let shown = if cfg!(target_os = "macos") {
+                                in_view
+                            } else {
+                                in_view && !obscured.get()
+                            };
                             page.place(bounds, shown);
+                            if shown && obscured.get() {
+                                page.release_keys();
+                            }
                         },
-                        // A press anywhere GPUI draws gives it the keys back.
-                        move |_, _, window, _| {
+                        // Paint the cutout hole on macOS and give GPUI the keys back
+                        // on any click it handles.
+                        move |bounds, _, window, _| {
+                            #[cfg(target_os = "macos")]
+                            if bounds.intersects(&window.content_mask().bounds) {
+                                // Non-transparent dummy fill keeps `Window::paint_quad`
+                                // from culling the quad; `clear_quad_fragment` clears it
+                                // to `rgba(0, 0, 0, 0)`.
+                                window.paint_quad(
+                                    gpui::fill(bounds, gpui::black()).border_color(
+                                        gpui_apple::metal_renderer::hole_punch_marker(
+                                            !obscured_paint.get(),
+                                        ),
+                                    ),
+                                );
+                            }
+                            #[cfg(not(target_os = "macos"))]
+                            let _ = (bounds, &obscured_paint);
                             window.on_mouse_event(move |_: &MouseDownEvent, phase, _, _| {
                                 if phase == DispatchPhase::Capture {
                                     pressed.release_keys();

@@ -33,5 +33,13 @@ And so a card fading by opacity fades its frost too (MonoCode da39885e eases
 the blur by hand): the marker carries its tint's alpha, and the renderer
 scales the blur by how far the element's opacity has faded that tint.
 
+And so native views behind GPUI (the in-app browser WKWebView and HTML
+artifacts) stay visible behind dialogs and never clip GPUI tooltips/popovers:
+- src/metal_renderer.rs: `hole_punch_marker(pass_through)` clears a quad's
+  clipped bounds to `rgba(0, 0, 0, 0)` using a non-blending quad pipeline
+  (`clear_quads_pipeline_state`), switches `CAMetalLayer.opaque` off while a
+  cutout is present (even in Light mode), and supplies a dark frosted backing
+  in `backdrop_composite_fragment` where frosted popups overlap a cutout.
+
 Everything else is the crates.io source unchanged. To move to a new
 gpui-pre, copy its `gpui-pre-apple` here and carry those changes over.

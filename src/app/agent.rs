@@ -1025,15 +1025,19 @@ impl BenCodeApp {
                 attachments: request.attachments.clone(),
                 plan: request.plan,
                 compact: request.purpose == RunPurpose::Compact,
-                // The browser and the Backlog connection are on this
+                // The browser, Backlog and Jira connections are on this
                 // computer, out of a machine's reach.
                 mcp_servers: if request.purpose == RunPurpose::Turn
                     && !crate::remote::is_remote(&session.cwd)
                 {
-                    [self.browser_mcp_launch(), self.backlog_mcp_launch()]
-                        .into_iter()
-                        .flatten()
-                        .collect()
+                    [
+                        self.browser_mcp_launch(),
+                        self.backlog_mcp_launch(),
+                        self.jira_mcp_launch(),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect()
                 } else {
                     Vec::new()
                 },

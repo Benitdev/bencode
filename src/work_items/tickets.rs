@@ -4,7 +4,7 @@
 //! ticket, so the Inbox shows them together instead of as strangers. The
 //! index is built once, when the list lands, never per frame.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::{Kind, Provider, WorkItem};
 
@@ -12,6 +12,28 @@ use super::{Kind, Provider, WorkItem};
 /// `WorkItem::key` makes it.
 pub fn ticket_item_key(identifier: &str) -> String {
     format!("backlog:{}", identifier.to_lowercase())
+}
+
+/// The Inbox's key of Jira issue `identifier` (`ENG-42`), as `WorkItem::key`
+/// makes it.
+pub fn jira_item_key(identifier: &str) -> String {
+    format!("jira:{}", identifier.to_lowercase())
+}
+
+/// A ticket named by a pull request, with the tracker it belongs to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TicketRef {
+    pub provider: Provider,
+    pub identifier: String,
+}
+
+impl TicketRef {
+    pub fn item_key(&self) -> String {
+        match self.provider {
+            Provider::Jira => jira_item_key(&self.identifier),
+            Provider::Backlog | Provider::GitHub => ticket_item_key(&self.identifier),
+        }
+    }
 }
 
 /// The issue keys of `projects` that `text` names, as Backlog writes them
@@ -96,45 +118,91 @@ pub fn title_without_key<'a>(title: &'a str, key: &str) -> &'a str {
 pub struct TicketLinks {
     /// A ticket's item key: its pull requests' item keys, in list order.
     prs: HashMap<String, Vec<String>>,
-    /// A pull request's item key: the tickets it names (`PROJ-12`), listed
-    /// or not.
-    tickets: HashMap<String, Vec<String>>,
+    /// A pull request's item key: the tickets it names (`PROJ-12`, `ENG-42`),
+    /// listed or not.
+    tickets: HashMap<String, Vec<TicketRef>>,
 }
 
 impl TicketLinks {
     /// The links among `items`. Tickets are looked for among the projects
-    /// of `known` (the connected space's) and of the listed Backlog
+    /// of `known` (each tagged by tracker) and of the listed Backlog / Jira
     /// issues, in each pull request's title, then its head branch.
-    pub fn build(items: &[WorkItem], known: &[String]) -> Self {
-        let mut projects: Vec<String> = known.to_vec();
-        for item in items.iter().filter(|i| i.provider == Provider::Backlog) {
-            if !projects.iter().any(|p| p.eq_ignore_ascii_case(&item.repo)) {
+    pub fn build(items: &[WorkItem], known: &[(Provider, String)]) -> Self {
+        let mut by_provider: Vec<(Provider, Vec<String>)> = vec![
+            (Provider::Backlog, Vec::new()),
+            (Provider::Jira, Vec::new()),
+        ];
+        for (provider, project) in known {
+            if let Some((_, projects)) = by_provider.iter_mut().find(|(p, _)| p == provider)
+                && !projects.iter().any(|p| p.eq_ignore_ascii_case(project))
+            {
+                projects.push(project.clone());
+            }
+        }
+        for item in items
+            .iter()
+            .filter(|i| matches!(i.provider, Provider::Backlog | Provider::Jira))
+        {
+            if let Some((_, projects)) = by_provider.iter_mut().find(|(p, _)| *p == item.provider)
+                && !projects.iter().any(|p| p.eq_ignore_ascii_case(&item.repo))
+            {
                 projects.push(item.repo.clone());
             }
         }
         let mut links = Self::default();
-        if projects.is_empty() {
+        if by_provider.iter().all(|(_, projects)| projects.is_empty()) {
             return links;
         }
+        let listed: HashSet<String> = (items.iter())
+            .filter(|i| matches!(i.provider, Provider::Backlog | Provider::Jira))
+            .map(WorkItem::key)
+            .collect();
         let prs = (items.iter()).filter(|i| i.provider == Provider::GitHub && i.kind == Kind::Pr);
         for pr in prs {
-            let mut keys = ticket_keys(&pr.title, &projects);
-            for key in ticket_keys(&pr.head_ref, &projects) {
-                if !keys.contains(&key) {
-                    keys.push(key);
+            let mut refs: Vec<TicketRef> = Vec::new();
+            for (provider, projects) in &by_provider {
+                if projects.is_empty() {
+                    continue;
+                }
+                let mut keys = ticket_keys(&pr.title, projects);
+                for key in ticket_keys(&pr.head_ref, projects) {
+                    if !keys.contains(&key) {
+                        keys.push(key);
+                    }
+                }
+                for key in keys {
+                    let ticket = TicketRef {
+                        provider: *provider,
+                        identifier: key,
+                    };
+                    if !refs.contains(&ticket) {
+                        refs.push(ticket);
+                    }
                 }
             }
-            if keys.is_empty() {
+            // A project key both trackers have names one ticket: the one
+            // the Inbox lists, when only one of them is listed.
+            let all = refs.clone();
+            refs.retain(|ticket| {
+                let rival = all.iter().find(|other| {
+                    other.provider != ticket.provider
+                        && other.identifier.eq_ignore_ascii_case(&ticket.identifier)
+                });
+                rival.is_none_or(|rival| {
+                    listed.contains(&ticket.item_key()) || !listed.contains(&rival.item_key())
+                })
+            });
+            if refs.is_empty() {
                 continue;
             }
             let pr_key = pr.key();
-            for key in &keys {
-                let listed = links.prs.entry(ticket_item_key(key)).or_default();
+            for ticket in &refs {
+                let listed = links.prs.entry(ticket.item_key()).or_default();
                 if !listed.contains(&pr_key) {
                     listed.push(pr_key.clone());
                 }
             }
-            links.tickets.insert(pr_key, keys);
+            links.tickets.insert(pr_key, refs);
         }
         links
     }
@@ -145,7 +213,7 @@ impl TicketLinks {
     }
 
     /// The tickets pull request `key` (an item key) is named after.
-    pub fn tickets(&self, key: &str) -> &[String] {
+    pub fn tickets(&self, key: &str) -> &[TicketRef] {
         self.tickets.get(key).map_or(&[], Vec::as_slice)
     }
 }
@@ -251,13 +319,38 @@ mod tests {
             links.prs("backlog:acme_shop_d-1147"),
             ["acme/app:pr:182", "acme/app:pr:190"]
         );
-        assert_eq!(links.tickets("acme/app:pr:182"), ["ACME_SHOP_D-1147"]);
+        fn ids(list: &[TicketRef]) -> Vec<&str> {
+            list.iter().map(|t| t.identifier.as_str()).collect()
+        }
+        assert_eq!(ids(links.tickets("acme/app:pr:182")), ["ACME_SHOP_D-1147"]);
         // D-1163 is not listed, but its project is: the PR still names it.
-        assert_eq!(links.tickets("acme/app:pr:483"), ["ACME_SHOP_D-1163"]);
+        assert_eq!(ids(links.tickets("acme/app:pr:483")), ["ACME_SHOP_D-1163"]);
         assert!(links.tickets("acme/app:pr:7").is_empty());
         // A project the space knows counts though none of its issues is listed.
-        let known = TicketLinks::build(&items[..1], &["ACME_SHOP_D".into()]);
-        assert_eq!(known.tickets("acme/app:pr:182"), ["ACME_SHOP_D-1147"]);
+        let known = TicketLinks::build(&items[..1], &[(Provider::Backlog, "ACME_SHOP_D".into())]);
+        assert_eq!(ids(known.tickets("acme/app:pr:182")), ["ACME_SHOP_D-1147"]);
+        // Jira tickets link the same way under `jira:` keys.
+        let jira_items = vec![pr(99, "ENG-42 fix login", "main")];
+        let jira = TicketLinks::build(&jira_items, &[(Provider::Jira, "ENG".into())]);
+        assert_eq!(jira.prs("jira:eng-42"), ["acme/app:pr:99"]);
+        assert_eq!(jira.tickets("acme/app:pr:99")[0].item_key(), "jira:eng-42");
+        // The same project key on both trackers: the listed ticket wins.
+        let both = [
+            (Provider::Backlog, "ENG".into()),
+            (Provider::Jira, "ENG".into()),
+        ];
+        let mut listed_jira = WorkItem {
+            provider: Provider::Jira,
+            ..ticket("ENG-42")
+        };
+        listed_jira.repo = "ENG".into();
+        let links = TicketLinks::build(&[jira_items[0].clone(), listed_jira], &both);
+        assert_eq!(links.tickets("acme/app:pr:99").len(), 1);
+        assert_eq!(links.tickets("acme/app:pr:99")[0].provider, Provider::Jira);
+        assert!(links.prs("backlog:eng-42").is_empty());
+        // Neither listed: both stay.
+        let links = TicketLinks::build(&jira_items, &both);
+        assert_eq!(links.tickets("acme/app:pr:99").len(), 2);
         assert_eq!(TicketLinks::build(&items[..1], &[]), TicketLinks::default());
     }
 }

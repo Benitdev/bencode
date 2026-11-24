@@ -4,6 +4,27 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+## [0.1.60] - 2026-11-23
+
+- In-app browser and HTML artifact pages on macOS now sit beneath GPUI's
+  Metal layer and show through a transparent cutout, so tooltips, popovers,
+  context menus, corner notices and dialogs composite cleanly on top of the
+  live page instead of being clipped or hiding the browser while open.
+- Jira Cloud joins the Inbox: connect a site with an Atlassian email and
+  API token in Settings › Integrations, choose which projects it lists, and
+  read issues with their descriptions and comments, reply, and move an
+  issue through its workflow from the status pill. Pull requests named
+  after a Jira issue link to it, and threads link to the Jira issue their
+  first message names. While connected, agents get the built-in Jira MCP
+  server (`bencode --jira-mcp`): search by JQL, read issues and comments,
+  list and run transitions, comment, create and update issues, and find
+  users.
+- An Antigravity turn that stops on the plan's quota ("Individual quota
+  reached … Resets in 3h53m4s") now shows the amber usage-limit tab on the
+  composer, with when it resets and Resume at reset, as Claude's limit does.
+
 ## [0.1.59] - 2026-11-21
 
 - Expanded the built-in Backlog MCP server (`bencode --backlog-mcp`) to 33

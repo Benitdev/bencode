@@ -7,7 +7,7 @@ use bencode_ui::primitives::{Icon, IconName};
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement,
-    SharedString, Styled, Window, deferred, div, prelude::*, relative, rgb,
+    SharedString, Styled, deferred, div, prelude::*, relative, rgb,
 };
 
 use crate::app::BenCodeApp;
@@ -30,27 +30,19 @@ impl BenCodeApp {
     /// The top-right notices, stacked as MonoCode stacks them: due reminders,
     /// then harness updates; then a file that did not open while no tab is
     /// open to show it over.
-    pub fn render_corner_notices(&self, window: &Window, cx: &Context<Self>) -> Option<AnyElement> {
+    pub fn render_corner_notices(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let reminders = self.render_reminder_notices(cx);
         let updates = self.render_harness_update_notice(cx);
         let editor = self.render_editor_corner_notice(cx);
         if reminders.is_none() && updates.is_none() && editor.is_none() {
             return None;
         }
-        // A browser page is a native view above everything drawn here: the
-        // notices keep to its left (where it was put last frame).
-        let page_width = self
-            .browser
-            .drawn_page_left()
-            .map_or(gpui::Pixels::ZERO, |left| {
-                window.viewport_size().width - left
-            });
         Some(
             deferred(
                 div()
                     .absolute()
                     .top(px(INSET))
-                    .right(px(INSET) + page_width)
+                    .right(px(INSET))
                     .flex()
                     .flex_col()
                     .items_end()

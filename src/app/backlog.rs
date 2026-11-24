@@ -97,6 +97,10 @@ impl BenCodeApp {
         if self.backlog.account.is_some() {
             self.load_backlog_projects(cx);
         }
+        self.jira.error = None;
+        if self.jira.account.is_some() {
+            self.load_jira_projects(false, cx);
+        }
     }
 
     /// Checks the typed space and key, saves them, and fills the Inbox.
@@ -207,6 +211,10 @@ impl BenCodeApp {
                         log::warn!("could not list Backlog projects: {err}");
                     }
                     app.backlog.projects = Some(result);
+                } else if app.backlog.account.is_some() && app.backlog.projects.is_none() {
+                    // A reconnect's own load was turned away while this
+                    // one ran: start it now.
+                    app.load_backlog_projects(cx);
                 }
                 cx.notify();
             });

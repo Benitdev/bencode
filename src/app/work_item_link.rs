@@ -110,6 +110,7 @@ fn resolve_with_gh(message: &str, cwd: &str) -> Option<LinkedWorkItem> {
 pub(crate) fn link_for(item: &WorkItem) -> Option<LinkedWorkItem> {
     match item.provider {
         Provider::Backlog => LinkedWorkItem::parse_backlog_url(&item.url, None),
+        Provider::Jira => LinkedWorkItem::parse_jira_url(&item.url, None),
         Provider::GitHub => {
             let kind = match item.kind {
                 crate::github::Kind::Pr => WorkItemKind::Pr,
@@ -135,10 +136,30 @@ fn backlog_links(
         .collect()
 }
 
+/// The Jira issue each first message names on `host`, by thread id:
+/// for the background executor.
+fn jira_links(
+    firsts: Vec<(String, std::sync::Arc<Block>)>,
+    host: &str,
+) -> Vec<(String, LinkedWorkItem)> {
+    firsts
+        .into_iter()
+        .filter_map(|(id, block)| {
+            let text = block.text.as_deref()?;
+            Some((id, LinkedWorkItem::parse_jira_url(text, Some(host))?))
+        })
+        .collect()
+}
+
 impl BenCodeApp {
     /// The connected Backlog space's host, once known.
     fn backlog_host(&self) -> Option<String> {
         self.backlog.account.as_ref().map(|a| a.space.clone())
+    }
+
+    /// The connected Jira site's host, once known.
+    fn jira_host(&self) -> Option<String> {
+        self.jira.account.as_ref().map(|a| a.site.clone())
     }
 
     /// Unlinked threads in memory whose first message holds an issue URL
@@ -186,6 +207,49 @@ impl BenCodeApp {
         .detach();
     }
 
+    /// Unlinked threads in memory whose first message holds an issue URL
+    /// of the connected Jira site are linked to it.
+    pub(crate) fn backfill_jira_links(&mut self, cx: &mut Context<Self>) {
+        let Some(host) = self.jira_host() else {
+            return;
+        };
+        let mut firsts = Vec::new();
+        for session in &self.sessions {
+            if session.linked_work_item.is_some()
+                || !self.item_threads.jira_searched.insert(session.id.clone())
+            {
+                continue;
+            }
+            if let Some(block) = session.blocks.iter().find(|b| b.role == "user") {
+                firsts.push((session.id.clone(), block.clone()));
+            }
+        }
+        if firsts.is_empty() {
+            return;
+        }
+        let task = cx
+            .background_executor()
+            .spawn(async move { jira_links(firsts, &host) });
+        cx.spawn(async move |this, cx| {
+            let found = task.await;
+            let landed = this.update(cx, |app, cx| {
+                for (id, item) in found {
+                    let unlinked = (app.sessions.iter())
+                        .find(|s| s.id == id)
+                        .is_some_and(|s| s.linked_work_item.is_none());
+                    let editing = app.link_dialog.as_ref().is_some_and(|d| d.session_id == id);
+                    if unlinked && !editing && !app.is_bot_session(&id) {
+                        app.set_session_link(&id, Some(item), cx);
+                    }
+                }
+            });
+            if let Err(err) = landed {
+                log::debug!("jira links found after app drop: {err:#}");
+            }
+        })
+        .detach();
+    }
+
     /// After a thread's first message is sent: links what it names, unless
     /// the thread is linked already (from the Inbox, or by hand).
     pub(crate) fn link_first_work_item(
@@ -201,8 +265,11 @@ impl BenCodeApp {
         if !first || session.linked_work_item.is_some() || self.is_bot_session(session_id) {
             return;
         }
-        let host = self.backlog_host();
-        if let Some(item) = LinkedWorkItem::parse_any_url(message, host.as_deref()) {
+        let backlog_host = self.backlog_host();
+        let jira_host = self.jira_host();
+        if let Some(item) =
+            LinkedWorkItem::parse_any_url(message, backlog_host.as_deref(), jira_host.as_deref())
+        {
             self.set_session_link(session_id, Some(item), cx);
             return;
         }
