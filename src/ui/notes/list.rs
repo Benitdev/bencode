@@ -2,8 +2,8 @@
 //! card per note with its project, age, title, first prose and tags.
 
 use bencode_ui::buttons::{ButtonVariant, IconButton};
-use bencode_ui::primitives::{Icon, IconName, Tooltip};
-use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::primitives::{IconName, Tooltip};
+use bencode_ui::theme::{ActiveTheme, ControlSize};
 use gpui::{AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, div, prelude::*};
 
 use crate::app::notes::{note_matches, note_preview, note_project};
@@ -77,30 +77,10 @@ impl BenCodeApp {
                     .gap_1p5()
                     .h(px(40.0))
                     .px_2()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_1()
-                            .min_w_0()
-                            .h(px(28.0))
-                            .items_center()
-                            .gap_1p5()
-                            .px_2()
-                            .rounded(px(7.0))
-                            .bg(colors.fg.fill(Fill::Hover))
-                            .child(
-                                Icon::new(IconName::Search)
-                                    .size(IconSize::Xs)
-                                    .color(colors.fg_muted),
-                            )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .text_size(Text::Base.px())
-                                    .child(self.notes.filter_input.clone()),
-                            ),
-                    )
+                    .child(crate::ui::tokens::SearchField::new(
+                        "notes-filter",
+                        &self.notes.filter_input,
+                    ))
                     .child(
                         IconButton::new("notes-new", IconName::Plus)
                             .size(ControlSize::Sm)

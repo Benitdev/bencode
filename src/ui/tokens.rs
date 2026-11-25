@@ -7,8 +7,13 @@
 //! `fg.ink(Ink::Muted)` reads as "muted text"; `fg.opacity(0.45)` does not,
 //! and drifts. Pixel sizes still go through `scale::px`.
 
-use bencode_ui::theme::ActiveTheme;
-use gpui::{App, BoxShadow, Div, Hsla, Pixels, Styled, div, point, prelude::*, rgb};
+use bencode_ui::forms::TextInput;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, IconSize};
+use gpui::{
+    App, BoxShadow, Div, Entity, Focusable as _, Hsla, IntoElement, MouseButton, ParentElement,
+    Pixels, RenderOnce, SharedString, Styled, Window, div, point, prelude::*, rgb,
+};
 
 /// Corner radius of floating workspace panels (Chat, File/Browser, Terminal, Surface, Bot).
 pub const PANEL_RADIUS: f32 = 10.0;
@@ -177,6 +182,120 @@ pub fn resize_pill(group: &'static str, horizontal: bool, active: bool, cx: &App
         .when(!active, |el| {
             el.group_hover(group, move |s| s.bg(hover_fill))
         })
+}
+
+/// Borderless tonal search/filter pill with clear hover and focus feedback
+/// (lifted fill, accent ring, brightened icon, click-anywhere focus).
+#[derive(IntoElement)]
+pub struct SearchField {
+    id: SharedString,
+    input: Entity<TextInput>,
+    rest: Fill,
+    hover: Fill,
+    icon: bool,
+    key_context: Option<&'static str>,
+    height: f32,
+    radius: f32,
+}
+
+impl SearchField {
+    pub fn new(id: impl Into<SharedString>, input: &Entity<TextInput>) -> Self {
+        Self {
+            id: id.into(),
+            input: input.clone(),
+            rest: Fill::Hover,
+            hover: Fill::Line,
+            icon: true,
+            key_context: None,
+            height: 28.0,
+            radius: 7.0,
+        }
+    }
+
+    pub fn rest(mut self, fill: Fill) -> Self {
+        self.rest = fill;
+        self
+    }
+
+    pub fn hover(mut self, fill: Fill) -> Self {
+        self.hover = fill;
+        self
+    }
+
+    pub fn no_icon(mut self) -> Self {
+        self.icon = false;
+        self
+    }
+
+    pub fn key_context(mut self, context: &'static str) -> Self {
+        self.key_context = Some(context);
+        self
+    }
+
+    pub fn height(mut self, height: f32) -> Self {
+        self.height = height;
+        self
+    }
+
+    pub fn radius(mut self, radius: f32) -> Self {
+        self.radius = radius;
+        self
+    }
+}
+
+impl RenderOnce for SearchField {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let focus = self.input.read(cx).focus_handle(cx);
+        let focused = focus.is_focused(window);
+        let colors = &cx.theme().colors;
+        let fg = colors.fg;
+        let bg = if focused {
+            fg.fill(Fill::Selected)
+        } else {
+            fg.fill(self.rest)
+        };
+        let border = if focused {
+            colors.accent.opacity(0.65)
+        } else {
+            gpui::transparent_black()
+        };
+        let hover_bg = fg.fill(self.hover);
+        let icon_color = if focused { fg } else { fg.ink(Ink::Secondary) };
+        div()
+            .id(self.id)
+            .flex()
+            .flex_1()
+            .min_w_0()
+            .h(crate::ui::scale::px(self.height))
+            .items_center()
+            .gap_1p5()
+            .px_2()
+            .rounded(crate::ui::scale::px(self.radius))
+            .bg(bg)
+            .border_1()
+            .border_color(border)
+            .when(!focused, |el| el.hover(move |s| s.bg(hover_bg)))
+            .cursor_text()
+            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                window.focus(&focus, cx);
+            })
+            .when(self.icon, |el| {
+                el.child(
+                    Icon::new(IconName::Search)
+                        .size(IconSize::Xs)
+                        .color(icon_color),
+                )
+            })
+            .child(
+                div()
+                    .when_some(self.key_context, |el, ctx| el.key_context(ctx))
+                    .flex_1()
+                    .min_w_0()
+                    .text_size(Text::Base.px())
+                    .text_color(fg)
+                    .child(self.input),
+            )
+    }
 }
 
 /// A link in agent text and artifacts: MonoCode's `text-sky-400/90` on

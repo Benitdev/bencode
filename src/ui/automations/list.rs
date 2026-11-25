@@ -88,30 +88,10 @@ impl BenCodeApp {
                     .gap_1()
                     .h(px(40.0))
                     .px_2()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_1()
-                            .min_w_0()
-                            .h(px(28.0))
-                            .items_center()
-                            .gap_1p5()
-                            .px_2()
-                            .rounded(px(7.0))
-                            .bg(colors.fg.fill(Fill::Hover))
-                            .child(
-                                Icon::new(IconName::Search)
-                                    .size(IconSize::Xs)
-                                    .color(colors.fg_muted),
-                            )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .text_size(Text::Base.px())
-                                    .child(self.automations.filter_input.clone()),
-                            ),
-                    )
+                    .child(crate::ui::tokens::SearchField::new(
+                        "automations-filter",
+                        &self.automations.filter_input,
+                    ))
                     .child(self.render_pause_menu(cx))
                     .child(
                         IconButton::new("automation-new", IconName::Plus)

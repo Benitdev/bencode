@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-use bencode_ui::primitives::{Icon, IconName, Tooltip};
+use bencode_ui::primitives::Tooltip;
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     AnyElement, Context, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
@@ -537,32 +537,9 @@ impl BenCodeApp {
             .px_2()
             .pb(px(4.0))
             .child(
-                div()
-                    .relative()
-                    .flex()
-                    .flex_1()
-                    .min_w_0()
-                    .h(px(28.0))
-                    .items_center()
-                    .rounded(px(7.0))
-                    .bg(fg.fill(Fill::Faint))
-                    .child(
-                        div().absolute().left(px(8.0)).child(
-                            Icon::new(IconName::Search)
-                                .size(IconSize::Xs)
-                                .color(fg.ink(Ink::Secondary)),
-                        ),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .pl(px(28.0))
-                            .pr_2()
-                            .text_size(Text::Base.px())
-                            .text_color(fg)
-                            .child(self.search_input.clone()),
-                    ),
+                crate::ui::tokens::SearchField::new("sessions-search", &self.search_input)
+                    .rest(Fill::Faint)
+                    .hover(Fill::Hover),
             )
             .child(
                 div()

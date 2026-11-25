@@ -54,7 +54,6 @@ fn kind_counts(items: &[WorkItem], matches: &[usize]) -> [usize; 3] {
 
 impl BenCodeApp {
     pub(super) fn render_inbox_toolbar(&self, cx: &Context<Self>) -> impl IntoElement {
-        let colors = &cx.theme().colors;
         let inbox = self.inbox(cx);
         let counts = kind_counts(&inbox.items, &self.inbox_matches(cx));
         let kinds = (KindFilter::ALL.iter().zip(counts)).fold(
@@ -83,30 +82,12 @@ impl BenCodeApp {
             .child(
                 row()
                     .child(
-                        div()
-                            .flex()
-                            .flex_1()
-                            .min_w_0()
-                            .h(px(28.0))
-                            .items_center()
-                            .gap_1p5()
-                            .px_2()
-                            .rounded(px(7.0))
-                            .bg(colors.fg.fill(Fill::Hover))
-                            .child(
-                                Icon::new(IconName::Search)
-                                    .size(IconSize::Xs)
-                                    .color(colors.fg.ink(Ink::Secondary)),
-                            )
-                            .child(
-                                div()
-                                    // Esc hands the keyboard back to the list.
-                                    .key_context("InboxFilter")
-                                    .flex_1()
-                                    .min_w_0()
-                                    .text_size(Text::Base.px())
-                                    .child(self.inbox_search_input.clone()),
-                            ),
+                        crate::ui::tokens::SearchField::new(
+                            "inbox-filter",
+                            &self.inbox_search_input,
+                        )
+                        // Esc hands the keyboard back to the list.
+                        .key_context("InboxFilter"),
                     )
                     .child(self.render_inbox_toolbar_button(Menu::Filter, cx))
                     .children(self.render_inbox_toolbar_menu(Menu::Filter, cx))

@@ -15,7 +15,7 @@ use gpui::{
 use crate::app::BenCodeApp;
 use crate::app::browser::{ZOOM_DEFAULT, stepped_zoom};
 use crate::ui::scale::px;
-use crate::ui::tokens::{Fill, Tone as _};
+use crate::ui::tokens::{Fill, SearchField};
 
 impl BenCodeApp {
     pub(crate) fn render_browser_tab(&self, id: u64, cx: &Context<Self>) -> AnyElement {
@@ -134,8 +134,7 @@ impl BenCodeApp {
     }
 
     fn render_browser_toolbar(&self, id: u64, cx: &Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let colors = &theme.colors;
+        let dark = cx.theme().is_dark();
         let tab = self.browser.tabs.get(&id);
         let (can_back, can_forward, loading) = tab.map_or((false, false, false), |t| {
             (t.can_back, t.can_forward, t.loading)
@@ -150,11 +149,6 @@ impl BenCodeApp {
                 .variant(ButtonVariant::Ghost)
                 .tooltip(tip)
         };
-        let url_fill = colors.fg.fill(if theme.is_dark() {
-            Fill::Line
-        } else {
-            Fill::Hover
-        });
         div()
             .flex()
             .items_center()
@@ -190,22 +184,12 @@ impl BenCodeApp {
                 })),
             )
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .flex_1()
-                    .min_w_0()
-                    .h(px(26.0))
-                    .px_2()
-                    .rounded(px(8.0))
-                    .bg(url_fill)
-                    .text_size(theme.text_size(TextSize::Sm))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .child(self.browser.url_input.clone()),
-                    ),
+                SearchField::new("browser-url", &self.browser.url_input)
+                    .no_icon()
+                    .height(26.0)
+                    .radius(8.0)
+                    .rest(if dark { Fill::Line } else { Fill::Hover })
+                    .hover(if dark { Fill::Selected } else { Fill::Line }),
             )
             .child(
                 button("browser-zoom-out", IconName::ZoomOut, "Zoom out")
