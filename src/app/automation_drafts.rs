@@ -231,11 +231,11 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// "Discard changes?" confirmed.
-    pub(crate) fn confirm_discard(&mut self, cx: &mut Context<Self>) {
-        if let Some(discard) = self.automations.pending_discard.take() {
-            self.discard_now(discard, cx);
-        }
+    /// "Discard changes?" confirmed. `discard` comes from the dialog:
+    /// `ConfirmDialog` closes (clearing `pending_discard`) before it confirms.
+    pub(crate) fn confirm_discard(&mut self, discard: Discard, cx: &mut Context<Self>) {
+        self.automations.pending_discard = None;
+        self.discard_now(discard, cx);
     }
 
     fn discard_now(&mut self, discard: Discard, cx: &mut Context<Self>) {

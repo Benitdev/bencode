@@ -26,6 +26,7 @@ pub struct RunningTerminal {
 }
 
 /// Terminals to close once "Close anyway?" is answered.
+#[derive(Clone)]
 pub(super) struct CloseConfirm {
     /// Each project's terminals to close.
     closing: Vec<(String, Vec<u64>)>,
@@ -359,11 +360,12 @@ impl BenCodeApp {
             this.terminals_state.as_mut(cx).close_confirm = None;
             cx.notify();
         });
-        let close = app_callback(cx, |this, cx| {
-            let confirm = this.terminals_mut(cx, |docks| docks.close_confirm.take());
-            if let Some(confirm) = confirm {
-                this.finish_close_terminals(&confirm.closing, confirm.keep, cx);
-            }
+        // `ConfirmDialog` closes (clearing `close_confirm`) before it
+        // confirms, so the terminals to close are taken now.
+        let (closing, keep) = (confirm.closing.clone(), confirm.keep);
+        let close = app_callback(cx, move |this, cx| {
+            this.terminals_mut(cx, |docks| docks.close_confirm = None);
+            this.finish_close_terminals(&closing, keep, cx);
             cx.notify();
         });
         Some(

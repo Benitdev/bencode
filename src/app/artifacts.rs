@@ -277,10 +277,10 @@ impl BenCodeApp {
 
     /// MonoCode `deleteArtifact` and `ARTIFACT_DELETED_EVENT`: gone from the
     /// database and from every chat's cards, then the reader goes back.
-    pub fn confirm_delete_artifact(&mut self, cx: &mut Context<Self>) {
-        let Some((id, _)) = self.artifacts.pending_delete.take() else {
-            return;
-        };
+    /// `id` comes from the dialog: `ConfirmDialog` closes (clearing
+    /// `pending_delete`) before it confirms.
+    pub fn confirm_delete_artifact(&mut self, id: String, cx: &mut Context<Self>) {
+        self.artifacts.pending_delete = None;
         let mut touched = Vec::new();
         for session in &mut self.sessions {
             if calls::remove_card(&mut session.blocks, &id) {

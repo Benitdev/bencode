@@ -113,7 +113,10 @@ impl BenCodeApp {
             this.automations.pending_discard = None;
             cx.notify();
         });
-        let confirm_discard = app_callback(cx, |this, cx| this.confirm_discard(cx));
+        let confirmed = discard.clone();
+        let confirm_discard = app_callback(cx, move |this, cx| {
+            this.confirm_discard(confirmed.clone(), cx)
+        });
         Some(
             ConfirmDialog::new("automation-discard-confirm", title, message, close)
                 .confirm(confirm)

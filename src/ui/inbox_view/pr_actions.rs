@@ -129,10 +129,9 @@ impl BenCodeApp {
         }
     }
 
-    fn run_pr_action(&mut self, cx: &mut Context<Self>) {
-        let Some((key, action)) = self.inbox_state.as_mut(cx).pr.confirm.take() else {
-            return;
-        };
+    /// Runs the confirmed action. `key` and `action` come from the dialog:
+    /// `ConfirmDialog` closes (clearing `pr.confirm`) before it confirms.
+    fn run_pr_action(&mut self, key: String, action: PrAction, cx: &mut Context<Self>) {
         let Some(item) = self.inbox(cx).item(&key).cloned() else {
             return;
         };
@@ -351,7 +350,9 @@ impl BenCodeApp {
             this.inbox_state.as_mut(cx).pr.confirm = None;
             cx.notify();
         });
-        let run = app_callback(cx, |this, cx| this.run_pr_action(cx));
+        let run = app_callback(cx, move |this, cx| {
+            this.run_pr_action(key.clone(), action, cx)
+        });
         let dialog = ConfirmDialog::new("inbox-pr-confirm", title, detail, cancel)
             .confirm(confirm)
             .on_confirm(run);

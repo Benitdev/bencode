@@ -386,13 +386,11 @@ impl BenCodeApp {
                                 // Non-transparent dummy fill keeps `Window::paint_quad`
                                 // from culling the quad; `clear_quad_fragment` clears it
                                 // to `rgba(0, 0, 0, 0)`.
-                                window.paint_quad(
-                                    gpui::fill(bounds, gpui::black()).border_color(
-                                        gpui_apple::metal_renderer::hole_punch_marker(
-                                            !obscured_paint.get(),
-                                        ),
+                                window.paint_quad(gpui::fill(bounds, gpui::black()).border_color(
+                                    gpui_apple::metal_renderer::hole_punch_marker(
+                                        !obscured_paint.get(),
                                     ),
-                                );
+                                ));
                             }
                             #[cfg(not(target_os = "macos"))]
                             let _ = (bounds, &obscured_paint);
@@ -422,9 +420,12 @@ impl BenCodeApp {
 
     /// MonoCode's `window.confirm("Delete “title”?")`.
     pub(crate) fn render_artifact_delete(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let (_, title) = self.artifacts.pending_delete.as_ref()?;
+        let (id, title) = self.artifacts.pending_delete.as_ref()?;
+        let id = id.clone();
         let close = app_callback(cx, |this, cx| this.cancel_delete_artifact(cx));
-        let delete = app_callback(cx, |this, cx| this.confirm_delete_artifact(cx));
+        let delete = app_callback(cx, move |this, cx| {
+            this.confirm_delete_artifact(id.clone(), cx)
+        });
         Some(
             ConfirmDialog::new(
                 "artifact-delete-confirm",
