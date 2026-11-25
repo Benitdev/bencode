@@ -54,15 +54,23 @@ fn small_icon(icon: IconName, color: Hsla) -> AnyElement {
         .into_any_element()
 }
 
+/// Centered 14×14 slot for a row's leading icon so it aligns horizontally with
+/// the `ml(7px)` fold rail and vertically with the row's text.
+fn icon_box(icon: AnyElement) -> gpui::Div {
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .size(px(ICON_BOX))
+        .child(icon)
+}
+
 /// The 14px slot that shows an icon, or a chevron on hover / when open.
 fn icon_slot(icon: AnyElement, open: bool, expandable: bool, group: &str, cx: &App) -> AnyElement {
     let chevron = muted(cx.theme().colors.fg, 0.45);
     if open {
-        return div()
-            .flex_none()
-            .size(px(ICON_BOX))
-            .child(small_icon(IconName::ChevronDown, chevron))
-            .into_any_element();
+        return icon_box(small_icon(IconName::ChevronDown, chevron)).into_any_element();
     }
     let group = SharedString::from(group.to_string());
     let hover_group = group.clone();
@@ -75,6 +83,9 @@ fn icon_slot(icon: AnyElement, open: bool, expandable: bool, group: &str, cx: &A
         .size(px(ICON_BOX))
         .child(
             div()
+                .flex()
+                .items_center()
+                .justify_center()
                 .when(expandable, |el| {
                     el.group_hover(hover_group, |s| s.opacity(0.0))
                 })
@@ -85,6 +96,9 @@ fn icon_slot(icon: AnyElement, open: bool, expandable: bool, group: &str, cx: &A
                 div()
                     .absolute()
                     .inset_0()
+                    .flex()
+                    .items_center()
+                    .justify_center()
                     .opacity(0.0)
                     .group_hover(group, |s| s.opacity(1.0))
                     .child(small_icon(IconName::ChevronRight, chevron)),
@@ -426,21 +440,7 @@ impl BenCodeApp {
             // brings its own figure.
             let icon = phase_icon(phase.kind)
                 .filter(|_| !turns::is_subagent(&trail.blocks[phase.steps[0]]));
-            return div()
-                .flex()
-                .min_w_0()
-                .items_start()
-                .gap_1p5()
-                .when_some(icon, |el, icon| {
-                    el.child(div().mt(px(7.0)).child(small_icon(icon, muted(fg, 0.45))))
-                })
-                .child(div().flex_1().min_w_0().child(self.render_step(
-                    trail,
-                    phase.steps[0],
-                    active,
-                    cx,
-                )))
-                .into_any_element();
+            return self.render_step(trail, phase.steps[0], active, icon, cx);
         }
         let open = self
             .transcript_ui
@@ -501,7 +501,7 @@ impl BenCodeApp {
                             phase
                                 .steps
                                 .iter()
-                                .map(|&ix| self.render_step(trail, ix, active, cx)),
+                                .map(|&ix| self.render_step(trail, ix, active, None, cx)),
                         ),
                 )
             })
@@ -515,6 +515,7 @@ impl BenCodeApp {
         trail: Trail<'_>,
         ix: usize,
         live: bool,
+        leading_icon: Option<IconName>,
         cx: &Context<Self>,
     ) -> AnyElement {
         let block = &trail.blocks[ix];
@@ -523,11 +524,26 @@ impl BenCodeApp {
         let row = if turns::is_subagent(block) {
             self.render_subagent_row(trail, ix, live, cx)
         } else if turns::is_tool(block) {
-            self.render_tool_row(trail, ix, live, cx)
+            self.render_tool_row(trail, ix, live, leading_icon, cx)
         } else if turns::is_thinking(block) || turns::is_prose(block) {
-            self.render_thought_row(trail, ix, cx)
+            self.render_thought_row(trail, ix, leading_icon, cx)
         } else {
-            dim_label(turns::text(block).to_string(), "status", cx)
+            let label = dim_label(turns::text(block).to_string(), "status", cx);
+            match leading_icon {
+                Some(icon) => div()
+                    .flex()
+                    .min_w_0()
+                    .items_center()
+                    .gap_1p5()
+                    .py_1()
+                    .child(icon_box(small_icon(
+                        icon,
+                        muted(cx.theme().colors.fg, 0.45),
+                    )))
+                    .child(label)
+                    .into_any_element(),
+                None => label,
+            }
         };
         // The fade runs from when the step landed, not from when it was
         // first drawn (MonoCode `PhaseStep`'s `turn`, set only on the render
@@ -549,7 +565,13 @@ impl BenCodeApp {
 
     /// MonoCode `ActivityThinkingRow` / `ActivityNoteRow`: one dim line,
     /// opening onto the full text.
-    fn render_thought_row(&self, trail: Trail<'_>, ix: usize, cx: &Context<Self>) -> AnyElement {
+    fn render_thought_row(
+        &self,
+        trail: Trail<'_>,
+        ix: usize,
+        leading_icon: Option<IconName>,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let block = &trail.blocks[ix];
         let key = block.id.clone();
         let open = self.expanded_reasoning.contains(&key);
@@ -561,12 +583,14 @@ impl BenCodeApp {
         };
         let group = format!("thought-{key}");
         let body = turns::text(block).to_string();
+        let fg = cx.theme().colors.fg;
         let header = div()
             .id(SharedString::from(group.clone()))
             .group(SharedString::from(group.clone()))
             .flex()
             .min_w_0()
             .items_center()
+            .gap_1p5()
             .py_1()
             .cursor_pointer()
             .owns_press()
@@ -583,6 +607,9 @@ impl BenCodeApp {
                     cx,
                 );
             }))
+            .when_some(leading_icon, |el, icon| {
+                el.child(icon_box(small_icon(icon, muted(fg, 0.45))))
+            })
             .child(dim_label(summary, &group, cx));
         div()
             .min_w_0()
@@ -607,6 +634,7 @@ impl BenCodeApp {
         trail: Trail<'_>,
         ix: usize,
         live: bool,
+        leading_icon: Option<IconName>,
         cx: &Context<Self>,
     ) -> AnyElement {
         let block = &trail.blocks[ix];
@@ -653,6 +681,9 @@ impl BenCodeApp {
                             cx,
                         );
                     }))
+            })
+            .when_some(leading_icon, |el, icon| {
+                el.child(icon_box(small_icon(icon, muted(colors.fg, 0.45))))
             })
             .when_some(verb, |el, verb| {
                 el.child(
