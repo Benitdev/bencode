@@ -179,6 +179,13 @@ pub fn context_window_tokens(key: &str, values: Option<&Map<String, Value>>) -> 
     if one_million { 1_000_000 } else { 200_000 }
 }
 
+/// Fallback context window before the CLI reports its own. Only Claude has
+/// statically known windows (200K / 1M); other harnesses report their model's
+/// real window and must not be stamped with Claude's 200K.
+pub fn default_context_window(key: &str, values: Option<&Map<String, Value>>) -> Option<i64> {
+    (harness_of(key) == Some(HarnessKind::Claude)).then(|| context_window_tokens(key, values))
+}
+
 pub fn context_window(default: &str) -> ModelSetting {
     ModelSetting::select(
         "context",

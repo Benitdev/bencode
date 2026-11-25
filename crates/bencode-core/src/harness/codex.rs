@@ -2,7 +2,8 @@
 //! `exec` cannot prompt for approvals, so the permission policy maps onto
 //! Codex's sandbox levels instead.
 
-use std::path::Path;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context as _, Result};
@@ -18,6 +19,7 @@ use crate::harness::{EventRx, PermissionPolicy, SpawnRequest, str_field};
 
 pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
     let program = HarnessResolver::resolve_codex().unwrap_or_else(|| "codex".into());
+    let home = codex_home(req.account.as_ref());
     let spec = ProcessSpec {
         program,
         args: build_args(req),
@@ -28,7 +30,18 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         account: req.account.clone(),
         env: super::app_env(req),
     };
-    process::spawn(spec, CodexParser::default())
+    process::spawn(spec, CodexParser::for_session(home, req.resume_id.clone()))
+}
+
+/// The `CODEX_HOME` a spawned Codex process writes its session rollout under.
+fn codex_home(account: Option<&AccountProfile>) -> Option<PathBuf> {
+    if let Some(account) = account {
+        return Some(account.dir.clone());
+    }
+    std::env::var_os("CODEX_HOME")
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex")))
 }
 
 /// How long a thread edit may take (the app-server loads the thread).
@@ -141,9 +154,77 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
     args
 }
 
+/// Latest per-request context usage read from Codex's rollout JSONL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RolloutUsage {
+    input_tokens: u64,
+    output_tokens: u64,
+    total_tokens: u64,
+    context_window: Option<u64>,
+}
+
+/// Backwards scan window when reading the tail of a Codex rollout JSONL.
+const ROLLOUT_CHUNK_BYTES: usize = 64 * 1024;
+const ROLLOUT_MAX_SCAN_BYTES: usize = 16 * 1024 * 1024;
+const ROLLOUT_MAX_CARRY_BYTES: usize = 4 * 1024 * 1024;
+
 #[derive(Default)]
 pub struct CodexParser {
     wrote_text: bool,
+    /// `CODEX_HOME` for the running turn; `None` in pure unit tests.
+    codex_home: Option<PathBuf>,
+    thread_id: Option<String>,
+    rollout_path: Option<PathBuf>,
+    last_rollout_len: Option<u64>,
+    last_emitted_usage: Option<RolloutUsage>,
+}
+
+impl CodexParser {
+    fn for_session(codex_home: Option<PathBuf>, thread_id: Option<String>) -> Self {
+        Self {
+            codex_home,
+            thread_id,
+            ..Self::default()
+        }
+    }
+
+    /// Reads the latest `last_token_usage` and `model_context_window` from
+    /// Codex's rollout file when it has grown since the last check.
+    ///
+    /// `codex exec --json`'s `turn.completed.usage` is the cumulative token
+    /// spend across every model request in the turn (good for `TurnMetrics`,
+    /// wrong for context occupancy) and carries no context window. The rollout
+    /// JSONL records both the last request's size and `model_context_window`.
+    fn poll_rollout_usage(&mut self, events: &mut Vec<AgentEvent>) {
+        let Some(usage) = self.read_rollout_usage() else {
+            return;
+        };
+        if self.last_emitted_usage == Some(usage) {
+            return;
+        }
+        self.last_emitted_usage = Some(usage);
+        events.push(AgentEvent::Usage {
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+            total_tokens: usage.total_tokens,
+            context_window: usage.context_window,
+        });
+    }
+
+    fn read_rollout_usage(&mut self) -> Option<RolloutUsage> {
+        let home = self.codex_home.as_deref()?;
+        let thread_id = self.thread_id.as_deref()?;
+        if self.rollout_path.is_none() {
+            self.rollout_path = find_rollout(home, thread_id);
+        }
+        let path = self.rollout_path.as_deref()?;
+        let len = std::fs::metadata(path).ok()?.len();
+        if self.last_rollout_len == Some(len) {
+            return None;
+        }
+        self.last_rollout_len = Some(len);
+        read_last_rollout_usage(path)
+    }
 }
 
 impl LineParser for CodexParser {
@@ -155,6 +236,11 @@ impl LineParser for CodexParser {
         match str_field(&rec, "type") {
             Some("thread.started") => {
                 if let Some(id) = str_field(&rec, "thread_id") {
+                    if self.thread_id.as_deref() != Some(id) {
+                        self.thread_id = Some(id.to_string());
+                        self.rollout_path = None;
+                        self.last_rollout_len = None;
+                    }
                     events.push(AgentEvent::SessionStarted {
                         provider_session_id: id.to_string(),
                     });
@@ -169,20 +255,18 @@ impl LineParser for CodexParser {
                 if let Some(item) = rec.get("item") {
                     self.on_item_completed(item, &mut events);
                 }
+                self.poll_rollout_usage(&mut events);
             }
             Some("turn.completed") => {
+                self.poll_rollout_usage(&mut events);
                 if let Some(usage) = rec.get("usage") {
                     let field = |name: &str| usage.get(name).and_then(Value::as_u64).unwrap_or(0);
                     let input_tokens = field("input_tokens");
                     let output_tokens = field("output_tokens");
-                    events.push(AgentEvent::Usage {
-                        input_tokens,
-                        output_tokens,
-                        total_tokens: input_tokens + output_tokens,
-                        context_window: None,
-                    });
                     // Codex counts cached input inside `input_tokens`
-                    // (MonoCode `mapTokenUsage`).
+                    // (MonoCode `mapTokenUsage`). `turn.completed.usage` is the
+                    // whole turn's spend, so it feeds `TurnMetrics` only; the
+                    // context meter comes from the rollout's `last_token_usage`.
                     let cached = field("cached_input_tokens");
                     let reported = usage.get("cached_input_tokens").is_some();
                     if let Some(metrics) = TurnMetrics::from_counts(
@@ -376,6 +460,122 @@ fn tool_output(item: &Value) -> String {
         .unwrap_or_default()
 }
 
+fn find_rollout(codex_home: &Path, thread_id: &str) -> Option<PathBuf> {
+    if thread_id.is_empty()
+        || !thread_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return None;
+    }
+    let suffix = format!("-{thread_id}.jsonl");
+    find_rollout_in(&codex_home.join("sessions"), &suffix, 3)
+}
+
+/// Walks `sessions/YYYY/MM/DD` newest-first so active sessions are found on
+/// the first dated directory check.
+fn find_rollout_in(dir: &Path, suffix: &str, depth: usize) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    let mut subdirs = Vec::new();
+    for entry in entries.flatten() {
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        let name = entry.file_name();
+        if kind.is_dir() {
+            if depth > 0 {
+                subdirs.push((name, entry.path()));
+            }
+        } else if name
+            .to_str()
+            .is_some_and(|n| n.starts_with("rollout-") && n.ends_with(suffix))
+        {
+            return Some(entry.path());
+        }
+    }
+    subdirs.sort_by(|(a, _), (b, _)| b.cmp(a));
+    for (_, path) in subdirs {
+        if let Some(found) = find_rollout_in(&path, suffix, depth - 1) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// Scans backwards from EOF in 64 KiB chunks for the latest `token_count`
+/// event carrying `last_token_usage` and `model_context_window`.
+fn read_last_rollout_usage(path: &Path) -> Option<RolloutUsage> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut pos = file.metadata().ok()?.len();
+    let mut scanned = 0usize;
+    let mut carry = Vec::<u8>::new();
+    while pos > 0 && scanned < ROLLOUT_MAX_SCAN_BYTES {
+        let take = usize::try_from(pos)
+            .unwrap_or(ROLLOUT_CHUNK_BYTES)
+            .min(ROLLOUT_CHUNK_BYTES);
+        pos -= take as u64;
+        scanned += take;
+        file.seek(SeekFrom::Start(pos)).ok()?;
+        let mut chunk = vec![0u8; take];
+        file.read_exact(&mut chunk).ok()?;
+        if !carry.is_empty() {
+            chunk.extend_from_slice(&carry);
+            carry.clear();
+        }
+        let mut iter = chunk.rsplit(|&b| b == b'\n').peekable();
+        while let Some(line) = iter.next() {
+            if pos > 0 && iter.peek().is_none() {
+                if line.len() <= ROLLOUT_MAX_CARRY_BYTES {
+                    carry.extend_from_slice(line);
+                }
+                break;
+            }
+            if let Some(usage) = parse_rollout_token_count(line) {
+                return Some(usage);
+            }
+        }
+    }
+    None
+}
+
+fn parse_rollout_token_count(line: &[u8]) -> Option<RolloutUsage> {
+    if !line
+        .windows(b"token_count".len())
+        .any(|w| w == b"token_count")
+    {
+        return None;
+    }
+    let rec: Value = serde_json::from_slice(line).ok()?;
+    if str_field(&rec, "type") != Some("event_msg") {
+        return None;
+    }
+    let payload = rec.get("payload")?;
+    if str_field(payload, "type") != Some("token_count") {
+        return None;
+    }
+    let info = payload.get("info").filter(|v| v.is_object())?;
+    let last = info.get("last_token_usage").filter(|v| v.is_object())?;
+    let field = |name: &str| last.get(name).and_then(Value::as_u64).unwrap_or(0);
+    let input_tokens = field("input_tokens");
+    let output_tokens = field("output_tokens");
+    let total = field("total_tokens");
+    let total_tokens = if total > 0 {
+        total
+    } else {
+        input_tokens + output_tokens
+    };
+    let context_window = info
+        .get("model_context_window")
+        .and_then(Value::as_u64)
+        .filter(|&w| w > 0);
+    (total_tokens > 0).then_some(RolloutUsage {
+        input_tokens,
+        output_tokens,
+        total_tokens,
+        context_window,
+    })
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -401,8 +601,8 @@ mod tests {
     }
 
     #[test]
-    fn an_open_browser_tab_adds_its_mcp_server() {
-        let req = SpawnRequest {
+    fn app_tools_add_their_mcp_servers_ahead_of_resume() {
+        let mut req = SpawnRequest {
             harness: HarnessKind::Codex,
             cwd: "/tmp".into(),
             prompt: "go".into(),
@@ -539,12 +739,6 @@ mod tests {
                 },
                 AgentEvent::TextDelta("First.".into()),
                 AgentEvent::TextDelta("\n\nSecond.".into()),
-                AgentEvent::Usage {
-                    input_tokens: 7,
-                    output_tokens: 3,
-                    total_tokens: 10,
-                    context_window: None,
-                },
                 AgentEvent::TurnMetrics(TurnMetrics {
                     input_tokens: Some(7),
                     output_tokens: Some(3),
@@ -553,6 +747,72 @@ mod tests {
                 AgentEvent::Done(DoneStatus::Completed),
             ]
         );
+    }
+
+    #[test]
+    fn context_usage_comes_from_rollout_last_request_and_window() {
+        let dir =
+            std::env::temp_dir().join(format!("bencode-codex-rollout-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        struct Cleanup(PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(dir.clone());
+
+        let rollout = dir.join("sessions/2026/11/25/rollout-2026-11-25T14-00-00-th_sol.jsonl");
+        std::fs::create_dir_all(rollout.parent().unwrap()).unwrap();
+        // Pad > 64 KiB between token_count lines to exercise backwards chunk scanning.
+        let padding = "x".repeat(ROLLOUT_CHUNK_BYTES + 128);
+        let content = format!(
+            concat!(
+                "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"info\":null}}}}\n",
+                "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"info\":{{\"total_token_usage\":{{\"input_tokens\":500000,\"output_tokens\":2000,\"total_tokens\":502000}},\"last_token_usage\":{{\"input_tokens\":150000,\"output_tokens\":8483,\"total_tokens\":158483}},\"model_context_window\":475000}}}}}}\n",
+                "{{\"type\":\"response_item\",\"payload\":{{\"type\":\"function_call_output\",\"output\":\"{}\"}}}}\n",
+                "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"info\":null}}}}\n"
+            ),
+            padding
+        );
+        std::fs::write(&rollout, content).unwrap();
+
+        let mut parser = CodexParser::for_session(Some(dir), None);
+        let events: Vec<_> = [
+            r#"{"type":"thread.started","thread_id":"th_sol"}"#,
+            r#"{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"Done."}}"#,
+            r#"{"type":"turn.completed","usage":{"input_tokens":740000,"cached_input_tokens":700000,"output_tokens":3700}}"#,
+        ]
+        .iter()
+        .flat_map(|line| parser.parse_line(line))
+        .collect();
+
+        // Context ring gets last_token_usage + model_context_window (158.5K / 475K),
+        // NOT cumulative turn spend (743.7K / 200K).
+        let usages: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Usage { .. }))
+            .collect();
+        assert_eq!(
+            usages,
+            vec![&AgentEvent::Usage {
+                input_tokens: 150_000,
+                output_tokens: 8_483,
+                total_tokens: 158_483,
+                context_window: Some(475_000),
+            }]
+        );
+        // Turn metrics still reflect the whole turn's cumulative spend.
+        let metrics = events
+            .iter()
+            .find_map(|e| match e {
+                AgentEvent::TurnMetrics(m) => Some(m),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(metrics.input_tokens, Some(740_000));
+        assert_eq!(metrics.output_tokens, Some(3_700));
+        assert_eq!(metrics.cache_read_tokens, Some(700_000));
     }
 
     #[test]

@@ -1784,12 +1784,14 @@ pub fn apply_event(session: &mut SessionRow, event: AgentEvent, now: i64) {
             if let Some(window) = context_window.and_then(|w| i64::try_from(w).ok()) {
                 session.context_window = Some(window);
             }
-            // The ring appears with the first report (MonoCode `contextUsage`).
+            // The ring appears with the first report for Claude (whose
+            // window arrives only on the final result); other harnesses
+            // supply their own model window.
             if session.context_window.is_none() {
-                session.context_window = Some(crate::harness::catalog::context_window_tokens(
+                session.context_window = crate::harness::catalog::default_context_window(
                     &session.model,
                     session.model_settings.as_ref(),
-                ));
+                );
             }
         }
         AgentEvent::Tasks(items) => crate::app::task_list::upsert(session, &items, now),
@@ -2051,6 +2053,35 @@ mod tests {
         );
         assert_eq!(s.provider_session_id.as_deref(), Some("abc"));
         assert_eq!(s.context_used, Some(10));
+        assert_eq!(s.context_window, Some(200_000));
+
+        // Non-Claude models never fall back to Claude's 200K window.
+        let mut codex = session();
+        codex.harness = "codex".into();
+        codex.model = "codex:gpt-6.2-sol".into();
+        apply_event(
+            &mut codex,
+            AgentEvent::Usage {
+                input_tokens: 5,
+                output_tokens: 5,
+                total_tokens: 10,
+                context_window: None,
+            },
+            1,
+        );
+        assert_eq!(codex.context_window, None);
+        apply_event(
+            &mut codex,
+            AgentEvent::Usage {
+                input_tokens: 150_000,
+                output_tokens: 8_483,
+                total_tokens: 158_483,
+                context_window: Some(475_000),
+            },
+            2,
+        );
+        assert_eq!(codex.context_used, Some(158_483));
+        assert_eq!(codex.context_window, Some(475_000));
     }
 
     #[test]
