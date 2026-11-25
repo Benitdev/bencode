@@ -325,6 +325,7 @@ impl Render for Terminal {
             .key_context(input::CONTEXT)
             .track_focus(&self.focus)
             .size_full()
+            .rounded(gpui::px(6.0))
             .p_2()
             .bg(ink.bg)
             .when_some(flash, |root, left| {

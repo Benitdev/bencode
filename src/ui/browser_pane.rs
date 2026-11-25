@@ -14,6 +14,8 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::app::browser::{ZOOM_DEFAULT, stepped_zoom};
+use crate::ui::scale::px;
+use crate::ui::tokens::{Fill, Tone as _};
 
 impl BenCodeApp {
     pub(crate) fn render_browser_tab(&self, id: u64, cx: &Context<Self>) -> AnyElement {
@@ -59,10 +61,14 @@ impl BenCodeApp {
                 let (placed, pressed) = (page.clone(), page.clone());
                 let obscured = self.browser.obscured.clone();
                 let obscured_paint = self.browser.obscured.clone();
+                // Inset slightly from the floating card's rounded bottom corners
+                // so the rectangular hole-punch cutout stays inside the bezel.
                 div()
                     .relative()
                     .flex_1()
                     .min_h_0()
+                    .mx(px(4.0))
+                    .mb(px(4.0))
                     .child(
                         canvas(
                             move |bounds, window, _| {
@@ -144,17 +150,20 @@ impl BenCodeApp {
                 .variant(ButtonVariant::Ghost)
                 .tooltip(tip)
         };
+        let url_fill = colors.fg.fill(if theme.is_dark() {
+            Fill::Line
+        } else {
+            Fill::Hover
+        });
         div()
             .flex()
             .items_center()
             .gap_1()
-            .h(theme.control_height(ControlSize::Lg))
+            .h(px(34.0))
             .w_full()
             .min_w_0()
             .px_2()
-            .border_b_1()
-            .border_color(colors.border)
-            .bg(colors.surface)
+            .pb(px(4.0))
             .child(
                 button("browser-back", IconName::ArrowLeft, "Back")
                     .disabled(!can_back)
@@ -182,10 +191,21 @@ impl BenCodeApp {
             )
             .child(
                 div()
+                    .flex()
+                    .items_center()
                     .flex_1()
                     .min_w_0()
+                    .h(px(26.0))
+                    .px_2()
+                    .rounded(px(8.0))
+                    .bg(url_fill)
                     .text_size(theme.text_size(TextSize::Sm))
-                    .child(self.browser.url_input.clone()),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(self.browser.url_input.clone()),
+                    ),
             )
             .child(
                 button("browser-zoom-out", IconName::ZoomOut, "Zoom out")
@@ -194,16 +214,17 @@ impl BenCodeApp {
                         cx.listener(move |this, _, _, cx| this.step_browser_zoom(id, false, cx)),
                     ),
             )
-            // The zoom itself; a click puts it back.
-            .child(
-                Button::new(("browser-zoom", id as usize), format!("{zoom}%"))
-                    .size(ControlSize::Sm)
-                    .variant(ButtonVariant::Ghost)
-                    .disabled(!has_page || zoom == ZOOM_DEFAULT)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.set_browser_zoom(id, ZOOM_DEFAULT, cx)
-                    })),
-            )
+            // Show the zoom badge only when away from 100%; a click resets it.
+            .when(has_page && zoom != ZOOM_DEFAULT, |el| {
+                el.child(
+                    Button::new(("browser-zoom", id as usize), format!("{zoom}%"))
+                        .size(ControlSize::Sm)
+                        .variant(ButtonVariant::Ghost)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.set_browser_zoom(id, ZOOM_DEFAULT, cx)
+                        })),
+                )
+            })
             .child(
                 button("browser-zoom-in", IconName::ZoomIn, "Zoom in")
                     .disabled(!has_page || stepped_zoom(zoom, true) == zoom)

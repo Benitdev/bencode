@@ -5,13 +5,12 @@
 //! left edge drags to resize. Whether it shows, what and how wide are kept
 //! in `settings.json`.
 
-use bencode_ui::theme::ActiveTheme;
 use gpui::{Context, InteractiveElement, IntoElement, ParentElement, Styled, div, prelude::*};
 
 use crate::app::{BenCodeApp, InspectorMode};
 use crate::ui::region::Region;
 use crate::ui::scale::px;
-use crate::ui::tokens::{Fill, Tone as _};
+use crate::ui::tokens::resize_pill;
 
 pub const INSPECTOR_DEFAULT_WIDTH: f32 = 320.0;
 const INSPECTOR_MIN_WIDTH: f32 = 260.0;
@@ -99,8 +98,6 @@ impl BenCodeApp {
     }
 
     pub fn render_inspector(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let glass = self.glass(cx);
-        let colors = &cx.theme().colors;
         div()
             .relative()
             .flex()
@@ -108,9 +105,6 @@ impl BenCodeApp {
             .flex_none()
             .w(px(self.inspector_width))
             .h_full()
-            .bg(glass.body(colors.bg))
-            .border_l_1()
-            .border_color(colors.fg.fill(Fill::Line))
             .line_height(gpui::relative(1.5))
             .child(match self.inspector_mode {
                 InspectorMode::Files if self.project_search.open => {
@@ -122,24 +116,24 @@ impl BenCodeApp {
             .child(self.render_inspector_sash(cx))
     }
 
-    /// The resize separator on the inspector's left edge; a double click
-    /// restores the default width.
+    /// Invisible resize channel on the inspector's left edge: reveals a centered
+    /// pill grip on hover or drag; a double click restores the default width.
     fn render_inspector_sash(&self, cx: &Context<Self>) -> impl IntoElement {
-        let fg = cx.theme().colors.fg;
         let dragging = self.inspector_resizing;
         let width = self.inspector_width;
         div()
             .id("inspector-resize")
+            .group("inspector-resize")
             .absolute()
             .top_0()
             .bottom_0()
             .left(px(-3.0))
             .w(px(6.0))
+            .flex()
+            .items_center()
+            .justify_center()
             .cursor_col_resize()
-            .when(dragging, |el| el.bg(fg.fill(Fill::Bold)))
-            .when(!dragging, |el| {
-                el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
-            })
+            .child(resize_pill("inspector-resize", false, dragging, cx))
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {

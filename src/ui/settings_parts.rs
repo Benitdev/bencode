@@ -383,18 +383,14 @@ pub fn icon_tile(icon: impl IntoElement, fg: Hsla) -> Div {
         .child(icon)
 }
 
-/// MonoCode `rounded-md border border-content/10`: a lightweight section panel
-/// used in Automations and Notes surfaces.
+/// Soft borderless section panel used in Automations and Notes surfaces.
 pub fn panel(fg: Hsla) -> Div {
-    div()
-        .rounded(px(6.0))
-        .border_1()
-        .border_color(fg.fill(Fill::Strong))
+    div().rounded(px(10.0)).bg(fg.fill(Fill::Faint))
 }
 
 /// The hairline between a [`panel`]'s rows.
 pub fn rule(fg: Hsla) -> Div {
-    div().h(px(1.0)).bg(fg.fill(Fill::Selected))
+    div().h(px(1.0)).bg(fg.fill(Fill::Line))
 }
 
 /// MonoCode `SectionTitle`.

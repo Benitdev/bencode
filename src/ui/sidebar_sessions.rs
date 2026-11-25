@@ -533,10 +533,9 @@ impl BenCodeApp {
             .flex_none()
             .items_center()
             .gap_1()
-            .h(px(36.0))
+            .h(px(34.0))
             .px_2()
-            .border_b_1()
-            .border_color(fg.fill(Fill::Line))
+            .pb(px(4.0))
             .child(
                 div()
                     .relative()
@@ -545,6 +544,8 @@ impl BenCodeApp {
                     .min_w_0()
                     .h(px(28.0))
                     .items_center()
+                    .rounded(px(7.0))
+                    .bg(fg.fill(Fill::Faint))
                     .child(
                         div().absolute().left(px(8.0)).child(
                             Icon::new(IconName::Search)

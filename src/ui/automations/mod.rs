@@ -14,7 +14,6 @@ mod settings;
 pub mod templates;
 
 use bencode_ui::overlays::ConfirmDialog;
-use bencode_ui::theme::ActiveTheme;
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div};
 
 use crate::app::BenCodeApp;
@@ -30,7 +29,6 @@ const PAGE_WIDTH: f32 = 1024.0;
 
 impl BenCodeApp {
     pub(crate) fn render_automations_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let colors = &cx.theme().colors;
         let main = match self.automations.page {
             AutomationPage::Overview => self.render_automation_overview(cx),
             AutomationPage::Editor if self.automations.draft.is_some() => {
@@ -49,8 +47,6 @@ impl BenCodeApp {
                     .flex_none()
                     .w(px(LIST_WIDTH))
                     .h_full()
-                    .border_r_1()
-                    .border_color(colors.border)
                     .child(self.render_automation_list(cx)),
             )
             .child(

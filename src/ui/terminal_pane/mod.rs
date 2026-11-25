@@ -45,7 +45,7 @@ use crate::ui::layout::{
     LayoutNode, PaneEdge, SplitDir, pane_edge_from_point, set_split_sizes, split_shares,
 };
 use crate::ui::region::Region;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, PANEL_GAP, Text, Tone as _, resize_pill};
 
 const TAB_HEIGHT: f32 = 28.0;
 /// The least a split's sash leaves a terminal.
@@ -577,7 +577,7 @@ impl BenCodeApp {
             style.h_full().w(size)
         };
         let dock = self.regions.element(Region::Terminal, style, cx);
-        let frame = div().flex().flex_1().min_w_0().min_h_0().overflow_hidden();
+        let frame = div().flex().flex_1().min_w_0().min_h_0().gap(px(PANEL_GAP));
         match layout.side {
             DockSide::Bottom => frame.flex_col().child(main).child(dock),
             DockSide::Top => frame.flex_col().child(dock).child(main),
@@ -630,7 +630,6 @@ impl BenCodeApp {
                 .child("No terminal. Press ⌘` to open one.")
                 .into_any_element(),
         };
-        let colors = &cx.theme().colors;
         let glass = self.glass(cx);
         // A window made smaller since keeps the dock within its bounds.
         let size = px(layout::clamp_size(layout.side, layout.size, viewport));
@@ -641,14 +640,13 @@ impl BenCodeApp {
             .flex_none()
             .min_w_0()
             .min_h_0()
-            .map(|el| match layout.side {
-                DockSide::Bottom => el.w_full().h(size).border_t_1(),
-                DockSide::Top => el.w_full().h(size).border_b_1(),
-                DockSide::Left => el.h_full().w(size).border_r_1(),
-                DockSide::Right => el.h_full().w(size).border_l_1(),
+            .map(|el| {
+                if layout.side.is_vertical() {
+                    el.w_full().h(size)
+                } else {
+                    el.h_full().w(size)
+                }
             })
-            .border_color(colors.border)
-            .bg(glass.fill(colors.bg))
             .on_drag_move::<TerminalResize>(cx.listener(
                 |this, event: &gpui::DragMoveEvent<TerminalResize>, window, cx| {
                     let Some((start, start_size)) = this.terminals(cx).resize_from else {
@@ -674,15 +672,19 @@ impl BenCodeApp {
                     }
                 },
             ))
-            .child(self.render_terminal_tabs(layout.side, cx))
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
-                    .min_h_0()
-                    .child(body),
+                glass
+                    .card(div().flex().flex_col().flex_1().min_w_0().min_h_0(), cx)
+                    .child(self.render_terminal_tabs(layout.side, cx))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .min_h_0()
+                            .child(body),
+                    ),
             )
             .child(self.render_terminal_sash(layout.side, cx))
     }
@@ -803,7 +805,8 @@ impl BenCodeApp {
                     .flex_1()
                     .min_h_0()
                     .min_w_0()
-                    .p_1()
+                    .px_1p5()
+                    .pb_1p5()
                     .child(div().flex_1().min_h_0().min_w_0().child(tab.view.clone())),
             )
             // MonoCode writes this line into the terminal; bencode-ui's grid
@@ -846,8 +849,7 @@ impl BenCodeApp {
             .h(px(TAB_HEIGHT))
             .pl_2()
             .pr_1()
-            .border_b_1()
-            .border_color(colors.border)
+            .bg(colors.fg.fill(Fill::Faint))
             .cursor_grab()
             .on_drag(TerminalTabDrag { id, from: ix }, move |_, _, _, cx| {
                 DragGhost::new(ghost.clone(), Some(IconName::Terminal), cx)
@@ -889,11 +891,9 @@ impl BenCodeApp {
             )
     }
 
-    /// MonoCode's "Resize terminal" separator on the dock's inner edge; a
-    /// double click restores the side's default size. The size is saved
-    /// when the drag ends.
+    /// Invisible resize channel on the dock's inner edge: reveals a centered
+    /// pill grip on hover or drag; a double click restores the side's default size.
     fn render_terminal_sash(&self, side: DockSide, cx: &Context<Self>) -> impl IntoElement + use<> {
-        let fg = cx.theme().colors.fg;
         let dragging = self.terminals(cx).resizing;
         let end_drag =
             |this: &mut Self, _: &gpui::MouseUpEvent, _: &mut Window, cx: &mut Context<Self>| {
@@ -905,37 +905,43 @@ impl BenCodeApp {
             };
         div()
             .id("terminal-resize")
+            .group("terminal-resize")
             .absolute()
+            .flex()
+            .items_center()
+            .justify_center()
             .map(|el| match side {
                 DockSide::Bottom => el
                     .left_0()
                     .right_0()
-                    .top(px(-1.0))
-                    .h(px(6.0))
+                    .top(px(-PANEL_GAP))
+                    .h(px(PANEL_GAP))
                     .cursor_row_resize(),
                 DockSide::Top => el
                     .left_0()
                     .right_0()
-                    .bottom(px(-1.0))
-                    .h(px(6.0))
+                    .bottom(px(-PANEL_GAP))
+                    .h(px(PANEL_GAP))
                     .cursor_row_resize(),
                 DockSide::Left => el
                     .top_0()
                     .bottom_0()
-                    .right(px(-1.0))
-                    .w(px(6.0))
+                    .right(px(-PANEL_GAP))
+                    .w(px(PANEL_GAP))
                     .cursor_col_resize(),
                 DockSide::Right => el
                     .top_0()
                     .bottom_0()
-                    .left(px(-1.0))
-                    .w(px(6.0))
+                    .left(px(-PANEL_GAP))
+                    .w(px(PANEL_GAP))
                     .cursor_col_resize(),
             })
-            .when(dragging, |el| el.bg(fg.fill(Fill::Bold)))
-            .when(!dragging, |el| {
-                el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
-            })
+            .child(resize_pill(
+                "terminal-resize",
+                side.is_vertical(),
+                dragging,
+                cx,
+            ))
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
@@ -995,10 +1001,8 @@ impl BenCodeApp {
             .flex_none()
             .items_center()
             .gap_0p5()
-            .px_1p5()
-            .h(px(32.0))
-            .border_b_1()
-            .border_color(colors.border)
+            .px_2()
+            .h(px(34.0))
             .child(
                 div()
                     .id("terminal-tab-strip")
@@ -1085,7 +1089,7 @@ impl BenCodeApp {
             .pl_2()
             .pr_1()
             .max_w(px(200.0))
-            .rounded(px(6.0))
+            .rounded(px(7.0))
             .border_1()
             .border_color(gpui::transparent_black())
             .cursor_pointer()

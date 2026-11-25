@@ -1179,8 +1179,6 @@ impl BenCodeApp {
             .gap_3()
             .h_8()
             .px_3()
-            .border_b_1()
-            .border_color(colors.border)
             .text_size(Text::Base.px())
             .child(div().text_color(fg.ink(Ink::Body)).child(if count == 1 {
                 "1 file".to_string()

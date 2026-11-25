@@ -354,6 +354,7 @@ impl Render for CodeEditor {
             .size_full()
             .flex()
             .flex_col()
+            .rounded(gpui::px(6.0))
             .overflow_hidden()
             .bg(colors.surface)
             .font_family(mono_family)

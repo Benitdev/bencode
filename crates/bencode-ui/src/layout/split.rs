@@ -68,6 +68,52 @@ fn handle(
     }
 }
 
+/// Floating-card resize channel: completely clear at rest, showing a sleek
+/// centered pill indicator on hover or drag (or full-span accent when snapped).
+fn gap_handle(
+    id: impl Into<ElementId>,
+    axis: Axis,
+    gap: Pixels,
+    snapped: bool,
+    cx: &App,
+) -> Stateful<gpui::Div> {
+    let theme = cx.theme();
+    let lit = theme.colors.focus;
+    let hover_pill = theme.colors.fg.opacity(0.22);
+    let horizontal = matches!(axis, Axis::Horizontal);
+    let grip = div()
+        .rounded_full()
+        .map(|el| match (horizontal, snapped) {
+            (true, true) => el.w(gpui::px(2.0)).h_full(),
+            (true, false) => el.w(gpui::px(2.0)).h(gpui::px(40.0)),
+            (false, true) => el.h(gpui::px(2.0)).w_full(),
+            (false, false) => el.h(gpui::px(2.0)).w(gpui::px(40.0)),
+        })
+        .map(|el| {
+            if snapped {
+                el.bg(lit)
+            } else {
+                el.bg(gpui::transparent_black())
+                    .group_hover("resize", move |s| s.bg(hover_pill))
+            }
+        });
+    div()
+        .id(id)
+        .group("resize")
+        .flex_none()
+        .flex()
+        .justify_center()
+        .items_center()
+        .map(|el| {
+            if horizontal {
+                el.w(gap).h_full().cursor(CursorStyle::ResizeLeftRight)
+            } else {
+                el.h(gap).w_full().cursor(CursorStyle::ResizeUpDown)
+            }
+        })
+        .child(grip)
+}
+
 struct DividerDrag {
     owner: EntityId,
     ix: usize,
@@ -158,6 +204,7 @@ pub struct SplitPane {
     panes: Vec<AnyElement>,
     sizes: Option<Vec<f32>>,
     min: Pixels,
+    gap: Option<Pixels>,
     on_resize: Option<OnResize>,
 }
 
@@ -170,8 +217,15 @@ impl SplitPane {
             panes: Vec::new(),
             sizes: None,
             min,
+            gap: None,
             on_resize: None,
         }
+    }
+
+    /// Open channel between floating cards: transparent at rest, pill grip on hover.
+    pub fn gap(mut self, gap: Pixels) -> Self {
+        self.gap = Some(gap);
+        self
     }
 
     pub fn pane(mut self, pane: impl IntoElement) -> Self {
@@ -298,8 +352,12 @@ impl RenderOnce for SplitPane {
                     on_resize.clone(),
                     fractions.clone(),
                 );
+                let divider = match self.gap {
+                    Some(gap) => gap_handle(("divider", ix), axis, gap, lit == Some(ix - 1), cx),
+                    None => handle(("divider", ix), axis, line, lit == Some(ix - 1), cx),
+                };
                 children.push(
-                    handle(("divider", ix), axis, line, lit == Some(ix - 1), cx)
+                    divider
                         .on_drag(drag, |_, _, _, cx| cx.new(|_| EmptyView))
                         // A double-click evens out the two panes.
                         .on_click(move |event, window, cx| {

@@ -379,9 +379,6 @@ pub struct BenCodeApp {
     pub(crate) shown_colors: Option<(crate::ui::appearance::ThemeTint, Option<String>)>,
     /// Appearance › Chat background: the image as drawn behind the panes.
     pub chat_background: chat_background::ChatBackground,
-    /// Each chat pane's place in the pane tree this frame, for the part of
-    /// the background it shows.
-    pub pane_rects: HashMap<String, crate::ui::layout::LayoutRect>,
     pub body_glass: bool,
     /// The window background last set, so the blur toggles only on change.
     pub window_background: Option<gpui::WindowBackgroundAppearance>,
@@ -1538,7 +1535,6 @@ impl BenCodeApp {
             accent_picker: None,
             shown_colors: None,
             chat_background: Default::default(),
-            pane_rects: HashMap::new(),
             body_glass: true,
             window_background: None,
             native_glass: None,
@@ -1803,6 +1799,17 @@ impl BenCodeApp {
         })
         .detach();
     }
+
+    /// Left channel before the floating workspace/surface/bot card: tight
+    /// beside the navigator (which already has horizontal padding), full gap
+    /// against the bare window edge.
+    pub(crate) fn workspace_left_inset(&self) -> gpui::Pixels {
+        if self.is_rail_open || self.compact_rail_active() {
+            crate::ui::scale::px(2.0)
+        } else {
+            crate::ui::scale::px(crate::ui::tokens::PANEL_GAP)
+        }
+    }
 }
 
 /// Whether this launch takes the window's pictures (`app/snapshot.rs`):
@@ -1854,7 +1861,9 @@ impl Render for BenCodeApp {
         self.sync_window_glass(window, cx);
         let glass = self.glass(cx);
         let colors = &cx.theme().colors;
-        let (bg, fg) = (colors.bg, colors.fg);
+        let (sunken, fg) = (colors.sunken, colors.fg);
+        let panel_gap = crate::ui::scale::px(crate::ui::tokens::PANEL_GAP);
+        let left_inset = self.workspace_left_inset();
         // Inbox, Notes and Automations replace everything right of the
         // navigator (MonoCode in-shell views).
         let surface_open = self.surface.is_some();
@@ -1944,12 +1953,17 @@ impl Render for BenCodeApp {
             let titlebar =
                 (!title_bar_above).then(|| region(self, Region::Titlebar, titlebar_style(), cx));
             // Files and Changes, at the right of the workspace under the
-            // title bar: the navigator keeps the threads in view.
+            // title bar: transparent on the window canvas, mirroring the rail.
             let inspector = self.inspector_open.then(|| {
                 let width = crate::ui::scale::px(self.inspector_width);
                 let style = StyleRefinement::default().flex_none().h_full().w(width);
                 region(self, Region::Inspector, style, cx)
             });
+            let right_inset = if self.inspector_open {
+                crate::ui::scale::px(2.0)
+            } else {
+                panel_gap
+            };
             div()
                 .flex()
                 .flex_col()
@@ -1958,19 +1972,21 @@ impl Render for BenCodeApp {
                 .min_w_0()
                 .overflow_hidden()
                 .children(titlebar)
-                // MonoCode `body-glass`: the pane under the title bar.
+                // Floating workspace cards between the navigator and inspector.
                 .child(
                     div()
                         .flex()
                         .flex_1()
                         .min_h_0()
-                        .bg(glass.body(bg))
                         .child(
                             div()
                                 .flex()
                                 .flex_col()
                                 .flex_1()
                                 .min_w_0()
+                                .pl(left_inset)
+                                .pr(right_inset)
+                                .pb(panel_gap)
                                 .child(self.render_workspace_with_dock(window, cx)),
                         )
                         .children(inspector),
@@ -2002,7 +2018,16 @@ impl Render for BenCodeApp {
                 .min_w_0()
                 .overflow_hidden()
                 .child(titlebar)
-                .child(div().flex().flex_1().min_h_0().child(body))
+                .child(
+                    div()
+                        .flex()
+                        .flex_1()
+                        .min_h_0()
+                        .pl(left_inset)
+                        .pr(panel_gap)
+                        .pb(panel_gap)
+                        .child(body),
+                )
         });
         if bot_has_browser {
             drawn.push(Region::FilePane);
@@ -2064,7 +2089,7 @@ impl Render for BenCodeApp {
                     .flex()
                     .flex_col()
                     .size_full()
-                    .bg(glass.root(bg))
+                    .bg(glass.canvas(sunken))
                     .text_color(fg)
                     // MonoCode `compactTitleBar`: above the icon rail.
                     .children(titlebar_above)

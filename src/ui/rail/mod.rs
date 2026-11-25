@@ -135,9 +135,6 @@ impl BenCodeApp {
         let usage = self.render_usage_status(crate::ui::status::UsageChipVariant::Navigator, cx);
         let theme = cx.theme();
         let colors = &theme.colors;
-        // `.sidebar-glass`: the background mixed 10% toward black, plain in
-        // light, tinted at the sidebar opacity over the window's blur.
-        let glass = self.glass(cx).sidebar(colors.bg, theme.is_dark());
         let fg = colors.fg;
         div()
             .id("project-rail")
@@ -147,9 +144,6 @@ impl BenCodeApp {
             .flex_none()
             .w(px(self.rail_width()))
             .h_full()
-            .bg(glass)
-            .border_r_1()
-            .border_color(fg.fill(Fill::Line))
             .text_color(fg)
             .line_height(relative(1.5))
             .on_drag_move::<RailResize>(cx.listener(
@@ -183,7 +177,6 @@ impl BenCodeApp {
 
     /// Settings, then the focused thread's usage (its chip and Refresh).
     fn render_rail_foot(&self, usage: Option<AnyElement>, cx: &Context<Self>) -> impl IntoElement {
-        let fg = cx.theme().colors.fg;
         div()
             .id("navigator-foot")
             .flex()
@@ -191,9 +184,7 @@ impl BenCodeApp {
             .items_center()
             .gap_1()
             .px_2()
-            .py(px(6.0))
-            .border_t_1()
-            .border_color(fg.fill(Fill::Line))
+            .py(px(8.0))
             .child(title_icon_button(
                 "rail-settings",
                 IconName::Settings,

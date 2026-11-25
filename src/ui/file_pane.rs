@@ -6,7 +6,6 @@
 use bencode_ui::layout::SplitPane;
 use bencode_ui::navigation::{EditorTab, EditorTabs};
 use bencode_ui::primitives::IconName;
-use bencode_ui::theme::ActiveTheme;
 use gpui::{
     AnyElement, Axis, Context, IntoElement, ParentElement, SharedString, StyleRefinement, Styled,
     div, prelude::*,
@@ -16,6 +15,8 @@ use crate::app::BenCodeApp;
 use crate::app::file_pane::PaneTab;
 use crate::ui::diff_viewer::DocFocus;
 use crate::ui::region::Region;
+use crate::ui::scale::px;
+use crate::ui::tokens::PANEL_GAP;
 
 impl BenCodeApp {
     /// Whether the keys are the file pane's (⌘W closes its tab, Escape
@@ -214,6 +215,7 @@ impl BenCodeApp {
             [chat_share, pane_share]
         };
         let split = SplitPane::new(split_id, Axis::Horizontal, min)
+            .gap(px(PANEL_GAP))
             .sizes(&sizes)
             .on_resize(move |shares, _window, cx| {
                 let landed = weak.update(cx, |this, _| {
@@ -239,7 +241,6 @@ impl BenCodeApp {
 
     pub(crate) fn render_file_pane(&self, cx: &Context<Self>) -> impl IntoElement {
         let glass = self.glass(cx);
-        let colors = &cx.theme().colors;
         let body = match self.file_pane.active() {
             Some(PaneTab::Browser { id }) => self.render_browser_tab(*id, cx),
             Some(PaneTab::Terminal { id }) => self.render_terminal_tab_page(*id, cx),
@@ -249,21 +250,8 @@ impl BenCodeApp {
             Some(PaneTab::WorkItem { key }) => self.render_work_item_tab(key, cx),
             _ => self.render_editor_file(cx).into_any_element(),
         };
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w_0()
-            .h_full()
-            .bg(glass.fill(colors.bg))
-            .map(|el| {
-                if self.file_pane_left {
-                    el.border_r_1()
-                } else {
-                    el.border_l_1()
-                }
-            })
-            .border_color(colors.border)
+        glass
+            .card(div().flex().flex_col().flex_1().min_w_0().h_full(), cx)
             .child(self.render_pane_tabs(cx))
             .children(
                 self.render_editor_notice(cx)

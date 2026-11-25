@@ -7,7 +7,13 @@
 //! `fg.ink(Ink::Muted)` reads as "muted text"; `fg.opacity(0.45)` does not,
 //! and drifts. Pixel sizes still go through `scale::px`.
 
-use gpui::{Hsla, Pixels, rgb};
+use bencode_ui::theme::ActiveTheme;
+use gpui::{App, BoxShadow, Div, Hsla, Pixels, Styled, div, point, prelude::*, rgb};
+
+/// Corner radius of floating workspace panels (Chat, File/Browser, Terminal, Surface, Bot).
+pub const PANEL_RADIUS: f32 = 10.0;
+/// Open channel between floating workspace panels and window edges.
+pub const PANEL_GAP: f32 = 6.0;
 
 /// Text and icons over `fg`, strongest first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,7 +62,7 @@ impl Fill {
         match self {
             Self::Faint => 0.03,
             Self::Hover => 0.05,
-            Self::Line => 0.07,
+            Self::Line => 0.06,
             Self::Selected => 0.09,
             Self::Strong => 0.1,
             Self::Bold => 0.15,
@@ -131,6 +137,47 @@ pub const RED_400: u32 = 0xf87171;
 pub const SKY_400: u32 = 0x38bdf8;
 /// Tailwind's `sky-300`: a link under the pointer, on dark.
 pub const SKY_300: u32 = 0x7dd3fc;
+
+/// Whisper-soft rim around a floating panel card: keeps rounded corners crisp
+/// on OLED black, custom tints, glass and light themes without reading as a grid border.
+pub fn panel_card_ring(fg: Hsla, dark: bool) -> Hsla {
+    fg.opacity(if dark { 0.045 } else { 0.05 })
+}
+
+/// Ambient lift shadow for floating panel cards in light mode.
+pub fn panel_card_shadow(dark: bool) -> Vec<BoxShadow> {
+    if dark {
+        Vec::new()
+    } else {
+        vec![BoxShadow {
+            color: gpui::black().opacity(0.055),
+            offset: point(crate::ui::scale::px(0.0), crate::ui::scale::px(1.0)),
+            blur_radius: crate::ui::scale::px(4.0),
+            spread_radius: crate::ui::scale::px(0.0),
+            inset: false,
+        }]
+    }
+}
+
+/// Centered resize-sash grip: clear at rest, subtle pill on group hover, accent while dragging.
+pub fn resize_pill(group: &'static str, horizontal: bool, active: bool, cx: &App) -> Div {
+    let colors = &cx.theme().colors;
+    let fill = if active {
+        colors.accent
+    } else {
+        gpui::transparent_black()
+    };
+    let hover_fill = colors.fg.opacity(0.22);
+    let (w, h) = if horizontal { (40.0, 2.0) } else { (2.0, 40.0) };
+    div()
+        .w(crate::ui::scale::px(w))
+        .h(crate::ui::scale::px(h))
+        .rounded_full()
+        .bg(fill)
+        .when(!active, |el| {
+            el.group_hover(group, move |s| s.bg(hover_fill))
+        })
+}
 
 /// A link in agent text and artifacts: MonoCode's `text-sky-400/90` on
 /// dark; the theme's link blue keeps contrast on light.

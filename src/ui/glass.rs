@@ -16,7 +16,7 @@
 //! MonoCode's "Blur radius" slider has no counterpart.
 
 use bencode_ui::theme::ActiveTheme;
-use gpui::{App, Hsla, Window, WindowBackgroundAppearance};
+use gpui::{App, Hsla, Styled, Window, WindowBackgroundAppearance};
 
 use crate::app::BenCodeApp;
 use crate::ui::native_glass::NativeGlass;
@@ -41,46 +41,45 @@ pub struct Glass {
 }
 
 impl Glass {
-    /// The window's own fill: under glass, MonoCode's NSWindow tint, the base
-    /// background at the opacity over the blur.
-    pub fn root(&self, bg: Hsla) -> Hsla {
+    /// The window's outer canvas behind the navigator, title bar and floating
+    /// workspace cards: translucent sunken tint under glass, solid sunken otherwise.
+    pub fn canvas(&self, sunken: Hsla) -> Hsla {
         if self.on {
-            bg.opacity(self.opacity)
+            sunken.opacity(self.opacity)
         } else {
-            bg
+            sunken
         }
     }
 
-    /// `.sidebar-glass` (the project rail): the base background darkened
-    /// 10% in dark mode, or clear over the window's tint.
-    pub fn sidebar(&self, bg: Hsla, dark: bool) -> Hsla {
-        if self.on {
-            gpui::transparent_black()
-        } else if dark {
-            bg.blend(gpui::black().opacity(0.1))
+    /// Surface fill of a floating workspace card (Chat, File/Browser, Terminal,
+    /// Surface, Bot):
+    /// - Light mode: crisp lifted `colors.surface` over the `sunken` canvas.
+    /// - Dark mode with "Main pane glass" on: a soft luminous veil (`fg` at 4%)
+    ///   over the window's glass canvas — gently lifted regardless of what lies
+    ///   behind the window, never compounding dark alpha into a dark pit.
+    /// - Dark mode without main-pane glass: `colors.bg` lifted over `colors.sunken`.
+    pub fn panel(&self, colors: &bencode_ui::theme::Palette, dark: bool) -> Hsla {
+        if !dark {
+            colors.surface
+        } else if self.on && self.body {
+            colors.fg.opacity(0.04)
         } else {
-            bg
+            colors.bg
         }
     }
 
-    /// `.body-glass` (the sidebar and the main pane): the base background,
-    /// or clear over the window's tint when "Main pane glass" is on.
-    pub fn body(&self, bg: Hsla) -> Hsla {
-        if self.on && self.body {
-            gpui::transparent_black()
-        } else {
-            bg
-        }
-    }
-
-    /// A pane inside a glass one: clear while the glass is on, so the tint
-    /// under it is not painted twice.
-    pub fn fill(&self, bg: Hsla) -> Hsla {
-        if self.on {
-            gpui::transparent_black()
-        } else {
-            bg
-        }
+    /// Styles `el` as a floating workspace card: rounded corners, glass-aware
+    /// surface fill, whisper-soft rim, and ambient shadow in light mode.
+    pub fn card<E: Styled>(&self, el: E, cx: &App) -> E {
+        let theme = cx.theme();
+        let colors = &theme.colors;
+        let dark = theme.is_dark();
+        el.rounded(crate::ui::scale::px(crate::ui::tokens::PANEL_RADIUS))
+            .overflow_hidden()
+            .bg(self.panel(colors, dark))
+            .border_1()
+            .border_color(crate::ui::tokens::panel_card_ring(colors.fg, dark))
+            .shadow(crate::ui::tokens::panel_card_shadow(dark))
     }
 }
 
@@ -150,23 +149,22 @@ mod tests {
     }
 
     #[test]
-    fn panes_clear_only_under_glass() {
-        let bg = gpui::white();
+    fn canvas_and_panels_follow_glass_and_mode() {
+        let mut colors = bencode_ui::theme::Palette::dark(false);
+        colors.bg = gpui::white();
+        colors.sunken = gpui::black();
+        colors.surface = gpui::white();
+        colors.fg = gpui::white();
         let off = Glass {
             on: false,
             opacity: 0.5,
             body: true,
         };
-        assert_eq!(off.root(bg), bg);
-        assert_eq!(off.body(bg), bg);
-        assert_eq!(off.fill(bg), bg);
-        // One tint, on the window; the glass panes over it stay clear so it
-        // is not compounded.
         let on = Glass { on: true, ..off };
-        assert_eq!(on.root(bg).a, 0.5);
-        assert_eq!(on.body(bg).a, 0.0);
-        assert_eq!(on.sidebar(bg, true).a, 0.0);
-        assert_eq!(on.fill(bg).a, 0.0);
-        assert_eq!(Glass { body: false, ..on }.body(bg), bg);
+        assert_eq!(off.canvas(colors.sunken), colors.sunken);
+        assert_eq!(on.canvas(colors.sunken).a, 0.5);
+        assert_eq!(off.panel(&colors, false), colors.surface);
+        assert_eq!(Glass { body: false, ..on }.panel(&colors, true), colors.bg);
+        assert_eq!(on.panel(&colors, true), colors.fg.opacity(0.04));
     }
 }

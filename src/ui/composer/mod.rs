@@ -111,8 +111,8 @@ fn composer_chip(
         .max_w(px(max_width))
         .min_w_0()
         .flex_none()
-        .px_1p5()
-        .rounded(px(6.0))
+        .px_2()
+        .rounded(px(8.0))
         .flex()
         .items_center()
         .gap_1()
@@ -147,28 +147,30 @@ fn composer_chip(
         )
 }
 
-/// MonoCode `bg-selection`: the text colour at 10% (6% in light mode).
+/// Soft tonal fill for composer chips: 6% in dark, 5% in light.
 fn selection(cx: &gpui::App) -> gpui::Hsla {
-    let colors = &cx.theme().colors;
-    colors
-        .fg
-        .opacity(if cx.theme().is_dark() { 0.10 } else { 0.06 })
+    let theme = cx.theme();
+    theme.colors.fg.fill(if theme.is_dark() {
+        Fill::Line
+    } else {
+        Fill::Hover
+    })
 }
 
-/// MonoCode `bg-selection-hover`: 15% (10% in light mode).
+/// Hover fill for composer chips: 11% in dark, 9% in light.
 fn selection_hover(cx: &gpui::App) -> gpui::Hsla {
     let colors = &cx.theme().colors;
     colors
         .fg
-        .opacity(if cx.theme().is_dark() { 0.15 } else { 0.10 })
+        .opacity(if cx.theme().is_dark() { 0.11 } else { 0.09 })
 }
 
-/// MonoCode `bg-selection-emphasis`: 20% (14% in light mode).
+/// Emphasis fill for open composer triggers: 15% in dark, 12% in light.
 fn selection_emphasis(cx: &gpui::App) -> gpui::Hsla {
     let colors = &cx.theme().colors;
     colors
         .fg
-        .opacity(if cx.theme().is_dark() { 0.20 } else { 0.14 })
+        .opacity(if cx.theme().is_dark() { 0.15 } else { 0.12 })
 }
 
 /// MonoCode `GitPickerTrigger`: the top bar's 12px workspace and branch
@@ -456,13 +458,20 @@ impl BenCodeApp {
         shell: bool,
         cx: &Context<Self>,
     ) -> gpui::AnyElement {
-        let colors = &cx.theme().colors;
+        let theme = cx.theme();
+        let colors = &theme.colors;
+        let dark = theme.is_dark();
         let running_here = session.is_some_and(|s| self.is_agent_running_in(&s.id));
         let queue = session.and_then(|s| self.render_message_queue(&s.id, cx));
         // MonoCode `fileDrag`: files held over this thread's pane.
         let file_drag =
             session.is_some_and(|s| self.active_file_drop_target.as_deref() == Some(s.id.as_str()));
         let editing = focused && self.is_editing_last_turn();
+        let empty = session.is_none_or(|s| !s.blocks.iter().any(|b| b.role == "user"));
+        let has_bg_image = session
+            .and_then(|s| self.bot_background_for(&s.id))
+            .or_else(|| self.chat_background_for(empty))
+            .is_some();
         let field_pad = if shell { px(16.0) } else { px(12.0) };
         let field = if focused {
             self.render_prompt_field("composer-prompt", px(PROMPT_MAX_HEIGHT))
@@ -511,8 +520,8 @@ impl BenCodeApp {
             .w_full()
             .max_w(px(COMPOSER_MAX_WIDTH))
             .mx_auto()
-            .px(px(6.0))
-            .pb(px(6.0))
+            .px(px(12.0))
+            .pb(px(12.0))
             // MonoCode stacks the question form, then the queue, on the box;
             // the runner runs on top of that stack when there is one.
             .child(
@@ -564,7 +573,7 @@ impl BenCodeApp {
                             }),
                         )
                     })
-                    .rounded(px(8.0))
+                    .rounded(px(14.0))
                     .border_1()
                     // MonoCode `edit-last-turn-composer`: dashed, in the accent.
                     .when(editing && !file_drag, |el| el.border_dashed())
@@ -572,19 +581,31 @@ impl BenCodeApp {
                         colors.accent.opacity(0.6)
                     } else if editing {
                         colors.accent.opacity(0.32)
+                    } else if dark {
+                        colors.fg.opacity(if focused && self.prompt_focused {
+                            if has_bg_image { 0.16 } else { 0.11 }
+                        } else if has_bg_image {
+                            0.09
+                        } else {
+                            0.05
+                        })
                     } else {
-                        colors
-                            .fg
-                            // Only the pane holding the prompt shows its focus.
-                            .opacity(if focused && self.prompt_focused {
-                                0.2
-                            } else {
-                                0.1
-                            })
+                        colors.fg.opacity(if focused && self.prompt_focused {
+                            0.13
+                        } else {
+                            0.07
+                        })
                     })
-                    .bg(colors.fg.fill(Fill::Faint))
-                    // MonoCode light theme: the page colour, lifted by a shadow.
-                    .when(!cx.theme().is_dark(), |el| el.bg(colors.bg).shadow_md())
+                    .bg(if !dark {
+                        colors.surface
+                    } else if has_bg_image {
+                        // Opaque-enough scrim so text & chips stay crisp over photos.
+                        colors.bg.opacity(0.82)
+                    } else {
+                        colors.fg.fill(Fill::Hover)
+                    })
+                    // Light theme: pure lifted card with soft shadow.
+                    .when(!dark, |el| el.shadow_md())
                     .when(focused, |el| {
                         el.children(
                             self.render_mcp_picker(cx)
@@ -605,7 +626,7 @@ impl BenCodeApp {
                         |el, error| {
                             el.child(
                                 div()
-                                    .px_3()
+                                    .px(px(14.0))
                                     .pt_2()
                                     .text_size(Text::Base.px())
                                     .text_color(colors.danger)
@@ -615,7 +636,7 @@ impl BenCodeApp {
                     )
                     .child(
                         div()
-                            .px_3()
+                            .px(px(14.0))
                             .py(field_pad)
                             .max_h(px(PROMPT_MAX_HEIGHT) + field_pad * 2.0)
                             .text_size(Text::Lg.px())
@@ -649,7 +670,7 @@ impl BenCodeApp {
                             div()
                                 .absolute()
                                 .inset_0()
-                                .rounded(px(8.0))
+                                .rounded(px(14.0))
                                 .bg(colors.accent.opacity(0.08))
                                 .flex()
                                 .items_center()
@@ -692,8 +713,8 @@ impl BenCodeApp {
             .items_center()
             .gap_2p5()
             .overflow_hidden()
-            .px_3()
-            .pt_2p5()
+            .px(px(14.0))
+            .pt(px(10.0))
             .when(empty && projectless && !bot, |el| {
                 let project = std::path::Path::new(&self.current_cwd)
                     .file_name()
@@ -961,8 +982,8 @@ impl BenCodeApp {
             .flex()
             .items_center()
             .justify_between()
-            .px_2()
-            .pb_2()
+            .px(px(10.0))
+            .pb(px(10.0))
             .child(
                 // Shrinks before Send: the chips' labels truncate.
                 div()
@@ -997,7 +1018,7 @@ impl BenCodeApp {
                 .id("composer-plus")
                 .size(px(26.0))
                 .flex_none()
-                .rounded(px(6.0))
+                .rounded(px(8.0))
                 .bg(if open { emphasis } else { fill })
                 .flex()
                 .items_center()
@@ -1133,9 +1154,9 @@ impl BenCodeApp {
         };
         div()
             .id("composer-send-btn")
-            .size(px(26.0))
+            .size(px(28.0))
             .flex_none()
-            .rounded(px(6.0))
+            .rounded_full()
             .flex()
             .items_center()
             .justify_center()

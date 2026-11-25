@@ -73,10 +73,6 @@ impl BenCodeApp {
         usage: Option<AnyElement>,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let theme = cx.theme();
-        let colors = &theme.colors;
-        let fg = colors.fg;
-        let glass = self.glass(cx).sidebar(colors.bg, theme.is_dark());
         let title_bar_above = self.compact_title_bar();
         let surface_action =
             |id: &'static str, icon: IconName, label: &'static str, surface: Surface, dot: bool| {
@@ -94,33 +90,13 @@ impl BenCodeApp {
             .w(px(COMPACT_RAIL_WIDTH))
             .h_full()
             .relative()
-            .bg(glass)
-            // MonoCode `data-compact-rail-divider`: the hairline down its
-            // right edge starts under the title bar's height, so the
-            // traffic lights that overhang the rail sit clear of it.
-            .child(
-                div()
-                    .absolute()
-                    .right_0()
-                    .bottom_0()
-                    .top(px(if title_bar_above {
-                        0.0
-                    } else {
-                        TITLEBAR_HEIGHT
-                    }))
-                    .w(gpui::px(1.0))
-                    .bg(fg.fill(Fill::Line)),
-            )
-            // Without the title bar above, its height is held (and drags
-            // the window): `h-10 w-full shrink-0 border-b border-stroke`.
+            // Without the title bar above, its height is held (and drags the window).
             .when(!title_bar_above, |el| {
                 el.child(
                     self.window_drag_region(div(), cx)
                         .flex_none()
                         .w_full()
-                        .h(px(TITLEBAR_HEIGHT))
-                        .border_b_1()
-                        .border_color(fg.fill(Fill::Line)),
+                        .h(px(TITLEBAR_HEIGHT)),
                 )
             })
             .child(

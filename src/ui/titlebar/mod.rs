@@ -731,7 +731,7 @@ impl BenCodeApp {
             .px_2()
             .when(can_close, |el| el.pr(px(28.0)))
             .when(!can_close, |el| el.pr(px(10.0)))
-            .rounded(px(6.0))
+            .rounded(px(8.0))
             // A saved draft dashes the plate, as on the thread's card;
             // overlaid, so the dashes take no room from the content.
             .when(tab.draft, |el| {
@@ -739,7 +739,7 @@ impl BenCodeApp {
                     div()
                         .absolute()
                         .inset_0()
-                        .rounded(px(6.0))
+                        .rounded(px(8.0))
                         .border_1()
                         .border_dashed()
                         .border_color(fg.opacity(if active { 0.30 } else { 0.25 })),
@@ -1035,15 +1035,12 @@ impl BenCodeApp {
                 .h(px(28.0))
                 .min_w(px(32.0))
                 .px(px(8.0))
-                .rounded(px(6.0))
-                .border_1()
+                .rounded(px(8.0))
                 .map(|el| {
                     if active {
                         el.bg(fg.fill(Fill::Selected))
-                            .border_color(fg.fill(Fill::Bold))
                     } else {
-                        el.border_color(fg.fill(Fill::Line))
-                            .hover(move |s| s.bg(hover_bg))
+                        el.bg(fg.fill(Fill::Faint)).hover(move |s| s.bg(hover_bg))
                     }
                 })
                 .tooltip(Tooltip::text(format!("{tooltip}\nPinned")))
@@ -1067,10 +1064,7 @@ impl BenCodeApp {
             .items_center()
             .gap(px(TAB_GAP))
             .pl(px(6.0))
-            .pr(px(4.0))
-            .mr(px(2.0))
-            .border_r_1()
-            .border_color(fg.fill(Fill::Line))
+            .pr(px(6.0))
             .children(cards)
             .into_any_element()
     }
@@ -1177,19 +1171,12 @@ impl BenCodeApp {
         }
         self.sync_title_strip(&all, window);
         let (pins, tabs): (Vec<TitleTab>, Vec<TitleTab>) = all.into_iter().partition(|t| t.pinned);
-        // MonoCode's title bar takes no glass tint: the blur shows bare.
-        let glass = self.glass(cx);
-        let theme = cx.theme();
-        let colors = &theme.colors;
         self.window_drag_region(div(), cx)
             .flex()
             .items_stretch()
             .h(crate::ui::scale::px(crate::ui::sidebar::TITLEBAR_HEIGHT)) // MonoCode `h-10`
             .w_full()
             .flex_none()
-            .border_b_1()
-            .border_color(colors.border)
-            .bg(glass.fill(colors.bg))
             .child(self.render_titlebar_leading(cx))
             .children((!pins.is_empty()).then(|| self.render_pinned_tabs(&pins, cx)))
             .child(self.render_tab_strip(&tabs, cx))
@@ -1245,7 +1232,6 @@ impl BenCodeApp {
     /// The window's status at the right: the browser and terminal toggles,
     /// then what the inspector shows.
     fn render_titlebar_trailing(&self, cx: &Context<Self>) -> impl IntoElement {
-        let fg = cx.theme().colors.fg;
         let projectless = self.current_cwd.trim().is_empty();
         claim_press(div())
             .flex()
@@ -1257,15 +1243,7 @@ impl BenCodeApp {
             .child(self.render_browser_toggle(cx))
             .child(self.render_terminal_status(cx))
             .when(!projectless, |el| {
-                el.child(
-                    div()
-                        .flex_none()
-                        .w(px(1.0))
-                        .h(px(16.0))
-                        .mx(px(6.0))
-                        .bg(fg.fill(Fill::Strong)),
-                )
-                .child(self.render_inspector_toggles(cx))
+                el.child(div().ml(px(6.0)).child(self.render_inspector_toggles(cx)))
             })
     }
 

@@ -122,10 +122,8 @@ impl BenCodeApp {
             .items_center()
             .gap_1()
             .px_3()
-            .pt(px(8.0))
+            .pt(px(12.0))
             .pb(px(4.0))
-            .border_t_1()
-            .border_color(fg.fill(Fill::Line))
             .child(
                 div()
                     .flex_none()

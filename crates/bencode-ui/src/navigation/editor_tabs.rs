@@ -245,6 +245,10 @@ impl RenderOnce for EditorTabs {
                 let reorder = self.on_reorder.clone();
                 let menu = self.on_menu.clone().map(|menu| (menu, tab.id.clone()));
                 let (title, icon, edge) = (tab.title.clone(), tab.icon, colors.focus);
+                let active_fill = colors.fg.opacity(if theme.is_dark() { 0.09 } else { 0.07 });
+                let hover_fill = colors
+                    .fg
+                    .opacity(if theme.is_dark() { 0.05 } else { 0.045 });
                 div()
                     .id(tab.id.clone())
                     .role(Role::Tab)
@@ -257,26 +261,17 @@ impl RenderOnce for EditorTabs {
                     .items_center()
                     .gap_1p5()
                     .max_w(wide)
-                    .h(theme.control_height(ControlSize::Lg))
-                    .pl_3()
+                    .h(gpui::px(26.0))
+                    .pl_2p5()
                     .pr_1()
-                    .border_r_1()
-                    .border_color(colors.border)
+                    .rounded(gpui::px(7.0))
                     .text_size(theme.text_size(TextSize::Sm))
                     .text_color(fg)
                     .map(|el| {
                         if on {
-                            el.bg(colors.bg).child(
-                                div()
-                                    .absolute()
-                                    .top_0()
-                                    .left_0()
-                                    .right_0()
-                                    .h(theme.tab_indicator())
-                                    .bg(colors.accent),
-                            )
+                            el.bg(active_fill).font_weight(gpui::FontWeight::MEDIUM)
                         } else {
-                            el.hover(|style| style.text_color(colors.fg))
+                            el.hover(move |style| style.bg(hover_fill).text_color(colors.fg))
                         }
                     })
                     .when(preview, |el| el.italic())
@@ -305,7 +300,7 @@ impl RenderOnce for EditorTabs {
                         })
                         .drag_over::<TabDrag>(move |style, drag, _, _| {
                             if drag.owner == owner {
-                                style.border_color(edge)
+                                style.border_1().border_color(edge)
                             } else {
                                 style
                             }
@@ -356,15 +351,17 @@ impl RenderOnce for EditorTabs {
             .id(self.id)
             .flex()
             .items_center()
-            .bg(colors.sunken)
-            .border_b_1()
-            .border_color(colors.border)
+            .h(gpui::px(36.0))
+            .px_2()
+            .gap_1()
             .child(
                 div()
                     .id("strip")
                     .flex()
                     .flex_1()
                     .min_w_0()
+                    .items_center()
+                    .gap_1()
                     .overflow_x_scroll()
                     .track_scroll(&scroll)
                     .children(tabs)
@@ -385,6 +382,6 @@ impl RenderOnce for EditorTabs {
                         .absolute()
                     })),
             )
-            .children(overflow.map(|menu| div().flex_none().px_1().child(menu)))
+            .children(overflow.map(|menu| div().flex_none().child(menu)))
     }
 }

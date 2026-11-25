@@ -20,6 +20,7 @@ impl BenCodeApp {
     pub(crate) fn render_notes_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let weak = cx.entity().downgrade();
         let split = SplitPane::new("notes-split", Axis::Horizontal, px(MIN_PANE_WIDTH))
+            .gap(px(crate::ui::tokens::PANEL_GAP))
             .sizes(&self.notes.shares)
             .on_resize(move |shares, _window, cx| {
                 let landed = weak.update(cx, |this, _| {

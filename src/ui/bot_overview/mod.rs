@@ -29,7 +29,7 @@ use crate::app::bot_overview::OverviewTab;
 use crate::bots::{Bot, BotState};
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, PANEL_GAP, Text, Tone as _, resize_pill};
 
 /// `border-stroke`.
 const STROKE: f32 = 0.07;
@@ -89,24 +89,22 @@ impl BenCodeApp {
         shown: Option<(String, AnyElement)>,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let fg = cx.theme().colors.fg;
+        let glass = self.glass(cx);
         let overview = &self.bots.overview;
         let resizing = overview.resizing.is_some();
         let edge = div()
             .id("bot-overview-resize")
+            .group("bot-overview-resize")
             .absolute()
             .top_0()
             .bottom_0()
-            .left(px(-4.0))
-            .w(px(8.0))
+            .left(px(-PANEL_GAP))
+            .w(px(PANEL_GAP))
+            .flex()
+            .items_center()
+            .justify_center()
             .cursor_col_resize()
-            .map(|el| {
-                if resizing {
-                    el.bg(fg.fill(Fill::Bold))
-                } else {
-                    el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
-                }
-            })
+            .child(resize_pill("bot-overview-resize", false, resizing, cx))
             .tooltip(Tooltip::text("Resize overview"))
             .on_mouse_down(
                 MouseButton::Left,
@@ -160,11 +158,13 @@ impl BenCodeApp {
             .w(px(overview.width))
             .h_full()
             .min_h_0()
-            .border_l_1()
-            .border_color(fg.opacity(STROKE))
+            .child(
+                glass
+                    .card(div().flex().flex_col().flex_1().min_h_0(), cx)
+                    .when(!paged, |el| el.child(self.render_bot_overview_header(cx)))
+                    .child(body),
+            )
             .child(edge)
-            .when(!paged, |el| el.child(self.render_bot_overview_header(cx)))
-            .child(body)
             .into_any_element()
     }
 
@@ -191,7 +191,6 @@ impl BenCodeApp {
     /// MonoCode `MonoSidebarHeader` with `OverviewTabs`, the Activity button
     /// and Hide overview.
     fn render_bot_overview_header(&self, cx: &Context<Self>) -> impl IntoElement {
-        let fg = cx.theme().colors.fg;
         let current = self.bots.overview.tab;
         let tabs = TABS.iter().map(|&(tab, label)| {
             let count = self.bot_overview_count(tab);
@@ -206,8 +205,6 @@ impl BenCodeApp {
             .flex_none()
             .items_stretch()
             .h(px(40.0))
-            .border_b_1()
-            .border_color(fg.opacity(STROKE))
             .child(
                 div().flex().flex_1().min_w_0().items_center().pl_4().child(
                     div()

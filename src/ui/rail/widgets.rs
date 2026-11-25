@@ -153,7 +153,7 @@ pub(crate) const UNSELECTED_OPACITY: f32 = 0.65;
 pub(crate) fn nav_row(row: Stateful<Div>, selected: bool, cx: &App) -> Stateful<Div> {
     let fg = cx.theme().colors.fg;
     let (selected_fill, hover) = (fg.fill(Fill::Selected), fg.fill(Fill::Hover));
-    row.h(px(ROW_HEIGHT)).px_2().rounded(px(6.0)).map(|el| {
+    row.h(px(ROW_HEIGHT)).px_2().rounded(px(7.0)).map(|el| {
         if selected {
             el.bg(selected_fill)
         } else {
@@ -226,18 +226,16 @@ pub(super) fn rail_icon_button(
         })
 }
 
-/// MonoCode `RailSearch`: a `RailAction` with `border border-content/8
-/// px-1.5 shadow-sm`.
+/// Borderless tonal search pill in the navigator (`⌘K`).
 pub(super) fn rail_search(active: bool, cx: &Context<BenCodeApp>) -> impl IntoElement {
     let theme = cx.theme();
     let fg = theme.colors.fg;
     let selection = fg.fill(Fill::Selected);
     let id = "rail-search";
     rail_row(id, active, selection, fg)
-        .px(px(6.0))
-        .border_1()
-        .border_color(fg.fill(Fill::Selected))
-        .shadow_sm()
+        .px(px(8.0))
+        .rounded(px(8.0))
+        .when(!active, |el| el.bg(fg.fill(Fill::Hover)))
         .on_click(cx.listener(|this, _, _, cx| this.toggle_search(cx)))
         .child(rail_icon(id, IconName::Search, active, fg))
         .child(rail_label("Search"))

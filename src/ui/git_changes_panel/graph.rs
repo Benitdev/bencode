@@ -63,8 +63,10 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .border_t_1()
-            .border_color(stroke(fg))
+            .mx_1p5()
+            .mb_1p5()
+            .rounded(px(8.0))
+            .bg(fg.fill(Fill::Faint))
             .map(|el| {
                 if open {
                     el.h(px(height))

@@ -17,7 +17,7 @@ use super::model::{self, RailMove, move_item, reorder_subset, resized_rail_width
 use super::state::RailReorder;
 use crate::app::BenCodeApp;
 use crate::ui::motion::cubic_bezier;
-use crate::ui::tokens::{Fill, Text, Tone as _};
+use crate::ui::tokens::{Fill, Text, Tone as _, resize_pill};
 
 /// MonoCode `--motion-reorder-duration`.
 pub(super) const REORDER_MOTION: Duration = Duration::from_millis(160);
@@ -147,24 +147,23 @@ impl BenCodeApp {
         }
     }
 
-    /// MonoCode's resize separator: `absolute inset-y-0 -right-px w-1.5
-    /// cursor-col-resize`, `bg-content/15` held, `hover:bg-content/10`; a
-    /// double click restores the default width.
+    /// Invisible resize channel on the rail's right edge: reveals a centered
+    /// pill grip on hover or drag; a double click restores the default width.
     pub(super) fn render_rail_sash(&self, cx: &Context<Self>) -> impl IntoElement {
-        let fg = cx.theme().colors.fg;
         let dragging = self.rail_ui.drag_width.is_some();
         div()
             .id("rail-resize")
+            .group("rail-resize")
             .absolute()
             .top_0()
             .bottom_0()
-            .right(px(-1.0))
+            .right(px(-3.0))
             .w(px(6.0))
+            .flex()
+            .items_center()
+            .justify_center()
             .cursor_col_resize()
-            .when(dragging, |el| el.bg(fg.fill(Fill::Bold)))
-            .when(!dragging, |el| {
-                el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
-            })
+            .child(resize_pill("rail-resize", false, dragging, cx))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseDownEvent, _, cx| {

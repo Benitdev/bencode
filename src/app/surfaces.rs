@@ -92,9 +92,9 @@ impl BenCodeApp {
             Surface::Notes => self.render_notes_body(cx),
             Surface::Automations => self.render_automations_body(cx),
         };
-        // In MonoCode's `body-glass` column, like the workspace.
         let glass = self.glass(cx);
-        let colors = &cx.theme().colors;
+        let panel_gap = px(crate::ui::tokens::PANEL_GAP);
+        let left_inset = self.workspace_left_inset();
         Some(
             div()
                 .flex()
@@ -102,9 +102,21 @@ impl BenCodeApp {
                 .flex_1()
                 .min_w_0()
                 .h_full()
-                .bg(glass.body(colors.bg))
                 .child(self.render_surface_header(surface, cx))
-                .child(div().flex_1().min_h_0().overflow_hidden().child(body))
+                .child(
+                    div()
+                        .flex()
+                        .flex_1()
+                        .min_h_0()
+                        .pl(left_inset)
+                        .pr(panel_gap)
+                        .pb(panel_gap)
+                        .child(
+                            glass
+                                .card(div().flex().flex_col().flex_1().min_h_0().min_w_0(), cx)
+                                .child(body),
+                        ),
+                )
                 .into_any_element(),
         )
     }
@@ -122,10 +134,8 @@ impl BenCodeApp {
             .flex_none()
             .items_center()
             .gap_2()
-            .h(crate::ui::scale::px(crate::ui::sidebar::TITLEBAR_HEIGHT)) // MonoCode `h-10`
+            .h(px(crate::ui::sidebar::TITLEBAR_HEIGHT)) // MonoCode `h-10`
             .px_3()
-            .border_b_1()
-            .border_color(colors.border)
             // Beside the icon rail only what the traffic lights overhang
             // it by (MonoCode `compactRail`: `w-4`).
             .when(!self.is_rail_open && cfg!(target_os = "macos"), |el| {

@@ -265,12 +265,6 @@ pub(crate) fn status_color(status: &GitFileStatus, diff: DiffColors) -> Hsla {
     }
 }
 
-/// MonoCode `border-stroke`: content at 7% (BenCode's `colors.border` is
-/// 10%).
-fn stroke(fg: Hsla) -> Hsla {
-    fg.fill(Fill::Line)
-}
-
 /// MonoCode `animate-spin` (one turn a second, linear) on `icon`.
 pub(crate) fn spinning_icon(
     id: SharedString,
@@ -392,8 +386,6 @@ impl BenCodeApp {
             .gap_2()
             .h(px(36.0))
             .px_3()
-            .border_b_1()
-            .border_color(stroke(fg))
             .child(
                 div()
                     .text_size(Text::Base.px())
@@ -490,33 +482,39 @@ impl BenCodeApp {
         let sync = &self.git_sync;
         // MonoCode `canEditMessage`: the textarea's `disabled:opacity-40`.
         let can_edit = (!self.git_status.staged.is_empty() || amend) && ui.busy.is_none();
-        // `bg-content` / `bg-content/40`, `text-background-base`.
-        let fill = if can_commit { fg } else { fg.ink(Ink::Muted) };
+        // Primary solid button when ready; light tonal pill when nothing is staged.
+        let (fill, label_ink, split_rule) = if can_commit {
+            (fg, bg, bg.opacity(0.12))
+        } else {
+            (
+                fg.fill(Fill::Hover),
+                fg.ink(Ink::Muted),
+                fg.fill(Fill::Line),
+            )
+        };
         // MonoCode `canOpenMenu`.
         let can_open_menu = sync.branch.is_some() && ui.busy.is_none();
         let wand_hover = fg.opacity(0.20);
         let wand_group = SharedString::from("git-generate-message");
         div()
             .flex_none()
-            .p_2()
-            .border_b_1()
-            .border_color(stroke(fg))
+            .px_2p5()
+            .pt_1()
+            .pb_2()
             .flex()
             .flex_col()
             .gap(px(6.0))
             .child(
                 div()
                     .relative()
-                    // The textarea: `max-h-40 rounded-md bg-content/10 py-1
-                    // pr-8 pl-2 text-[13px] leading-5 text-content`.
                     .child(
                         div()
                             .id("git-commit-message")
-                            .rounded(px(6.0))
-                            .bg(fg.fill(Fill::Strong))
-                            .pl_2()
+                            .rounded(px(8.0))
+                            .bg(fg.fill(Fill::Hover))
+                            .pl_2p5()
                             .pr_8()
-                            .py_1()
+                            .py_1p5()
                             .text_size(Text::Md.px())
                             .line_height(px(20.0))
                             .text_color(fg)
@@ -617,11 +615,11 @@ impl BenCodeApp {
                             .items_center()
                             .justify_center()
                             .gap_1p5()
-                            .rounded_l(px(6.0))
+                            .rounded_l(px(8.0))
                             .bg(fill)
                             .text_size(Text::Base.px())
                             .font_weight(FontWeight::MEDIUM)
-                            .text_color(bg)
+                            .text_color(label_ink)
                             .when(can_commit, |el| {
                                 el.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
                                     this.commit_from_panel(
@@ -635,14 +633,13 @@ impl BenCodeApp {
                                     )
                                 }))
                             })
-                            .child(Icon::new(IconName::Check).size(IconSize::Sm).color(bg))
+                            .child(
+                                Icon::new(IconName::Check)
+                                    .size(IconSize::Sm)
+                                    .color(label_ink),
+                            )
                             .child(if amend { "Amend Commit" } else { "Commit" }),
                     )
-                    // MonoCode's `h-7 w-7 rounded-r-md border-l
-                    // border-background-base/10` arrow: the Commit fill,
-                    // `hover:bg-content/80` (or `hover:bg-content` while
-                    // Commit is off), `aria-expanded:bg-content`, and only
-                    // `pointer-events-none` when disabled.
                     .child(
                         div().w(px(28.0)).flex_none().child(
                             self.git_menu_trigger(
@@ -651,19 +648,27 @@ impl BenCodeApp {
                                     icon: IconName::ChevronDown,
                                     size: IconSize::Sm,
                                     spin: false,
-                                    color: bg,
-                                    hover_color: bg,
+                                    color: label_ink,
+                                    hover_color: if can_commit { bg } else { fg },
                                     fill: Some(fill),
-                                    hover: if can_commit { fg.ink(Ink::Strong) } else { fg },
-                                    open: fg,
+                                    hover: if can_commit {
+                                        fg.ink(Ink::Strong)
+                                    } else {
+                                        fg.fill(Fill::Selected)
+                                    },
+                                    open: if can_commit {
+                                        fg
+                                    } else {
+                                        fg.fill(Fill::Strong)
+                                    },
                                     dim_disabled: false,
                                 },
                                 can_open_menu,
                                 cx,
                             )
-                            .rounded_r(px(6.0))
+                            .rounded_r(px(8.0))
                             .border_l_1()
-                            .border_color(bg.opacity(0.1)),
+                            .border_color(split_rule),
                         ),
                     ),
             )

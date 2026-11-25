@@ -35,8 +35,6 @@ impl BenCodeApp {
         }
         let bot = self.bot_in_view()?.clone();
         let state = self.bot_state(&bot);
-        let glass = self.glass(cx);
-        let bg = cx.theme().colors.bg;
         let chat = match self.bot_view_session().map(str::to_string) {
             Some(session_id) => self.render_session_pane(&session_id, false, cx),
             None => EmptyState::new(
@@ -61,7 +59,6 @@ impl BenCodeApp {
                 .flex_1()
                 .min_w_0()
                 .h_full()
-                .bg(glass.body(bg))
                 // MonoCode `useDragResize`: the drag follows the pointer
                 // anywhere over the view.
                 .when(resizing, |el| {
@@ -96,6 +93,7 @@ impl BenCodeApp {
                         .flex()
                         .flex_1()
                         .min_h_0()
+                        .gap(px(crate::ui::tokens::PANEL_GAP))
                         .child(div().flex_1().min_w_0().h_full().child(chat))
                         .when(self.bots.overview_open, |el| {
                             el.child(self.render_bot_overview(&bot, &state, shown, cx))

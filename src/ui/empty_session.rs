@@ -244,6 +244,7 @@ impl BenCodeApp {
             .left_0()
             .right_0()
             .h(gpui::relative(0.6))
+            .rounded_t(px(crate::ui::tokens::PANEL_RADIUS - 1.0))
             .bg(linear_gradient(
                 180.0,
                 linear_color_stop(tint.opacity(if dark { 0.07 } else { 0.05 }), 0.0),
@@ -270,24 +271,24 @@ impl BenCodeApp {
             (false, true) => 0.20,
             (false, false) => 0.10,
         };
-        // The composer pads its box by 6px on the sides and below.
+        // The composer pads its box by 12px on the sides and below.
         let inset = |el: gpui::Div| {
             el.absolute()
                 .top_0()
-                .left(px(6.0))
-                .right(px(6.0))
-                .bottom(px(6.0))
+                .left(px(12.0))
+                .right(px(12.0))
+                .bottom(px(12.0))
         };
         div()
             .absolute()
             .inset_0()
-            .child(inset(div()).rounded(px(10.0)).shadow(vec![
+            .child(inset(div()).rounded(px(16.0)).shadow(vec![
                 glow(tint.opacity(strength), 40.0, 0.0),
                 glow(tint.opacity(strength * 0.5), 110.0, 12.0),
             ]))
             .child(
                 inset(div())
-                    .rounded(px(8.0))
+                    .rounded(px(14.0))
                     .bg(page.opacity(if dark { 0.9 } else { 1.0 })),
             )
     }

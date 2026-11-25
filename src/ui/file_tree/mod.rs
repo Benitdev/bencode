@@ -504,9 +504,6 @@ impl BenCodeApp {
             .items_center()
             .gap(px(1.0))
             .px_2()
-            .border_b_1()
-            // `border-stroke`: content at 7%.
-            .border_color(fg.fill(Fill::Line))
             .child(
                 button(
                     "tree-toolbar-new-file",

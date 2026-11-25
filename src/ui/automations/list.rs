@@ -85,23 +85,32 @@ impl BenCodeApp {
                     .flex()
                     .flex_none()
                     .items_center()
-                    .gap_2()
-                    .h(px(36.0))
-                    .pl(px(10.0))
-                    .pr_2()
-                    .border_b_1()
-                    .border_color(colors.border)
-                    .child(
-                        Icon::new(IconName::Search)
-                            .size(IconSize::Xs)
-                            .color(colors.fg_muted),
-                    )
+                    .gap_1()
+                    .h(px(40.0))
+                    .px_2()
                     .child(
                         div()
+                            .flex()
                             .flex_1()
                             .min_w_0()
-                            .text_size(Text::Base.px())
-                            .child(self.automations.filter_input.clone()),
+                            .h(px(28.0))
+                            .items_center()
+                            .gap_1p5()
+                            .px_2()
+                            .rounded(px(7.0))
+                            .bg(colors.fg.fill(Fill::Hover))
+                            .child(
+                                Icon::new(IconName::Search)
+                                    .size(IconSize::Xs)
+                                    .color(colors.fg_muted),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_size(Text::Base.px())
+                                    .child(self.automations.filter_input.clone()),
+                            ),
                     )
                     .child(self.render_pause_menu(cx))
                     .child(
@@ -174,9 +183,11 @@ impl BenCodeApp {
                 .items_center()
                 .gap_2()
                 .min_h(px(32.0))
-                .px(px(10.0))
-                .border_b_1()
-                .border_color(colors.border)
+                .mx_2()
+                .mb_1()
+                .px_2()
+                .rounded(px(7.0))
+                .bg(colors.fg.fill(Fill::Hover))
                 .text_size(Text::Sm.px())
                 .child(
                     Icon::new(IconName::Pause)
@@ -218,10 +229,12 @@ impl BenCodeApp {
         Some(
             div()
                 .flex_none()
-                .px(px(10.0))
+                .mx_2()
+                .mb_1()
+                .px_2p5()
                 .py_2()
-                .border_b_1()
-                .border_color(colors.border)
+                .rounded(px(8.0))
+                .bg(colors.fg.fill(Fill::Hover))
                 .text_size(Text::Sm.px())
                 .child(
                     div()

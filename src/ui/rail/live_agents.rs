@@ -167,8 +167,6 @@ impl BenCodeApp {
                 }))
                 .pt_2()
                 .pb_2()
-                .border_t_1()
-                .border_color(fg.fill(Fill::Line))
                 .child(header)
                 .child(crate::ui::scrollbar::Scrolled::new(
                     "live-agents-scrollbar",

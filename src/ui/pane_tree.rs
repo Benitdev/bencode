@@ -11,16 +11,16 @@ use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, Axis, Context, DragMoveEvent, FollowMode, IntoElement, ListState, MouseButton,
-    ObjectFit, ParentElement, SharedString, Stateful, Styled, div, img, list, relative,
+    ObjectFit, ParentElement, SharedString, Stateful, Styled, div, img, list,
 };
 
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
 use crate::harness::catalog;
 use crate::ui::drag_drop::{DraggedFile, DraggedPane, DraggedSession, render_pane_drop_hint};
-use crate::ui::layout::{LayoutNode, SplitDir, layout_leaves, pane_edge_from_point, split_shares};
+use crate::ui::layout::{LayoutNode, SplitDir, pane_edge_from_point, split_shares};
 use crate::ui::scale::px;
-use crate::ui::tokens::{Fill, Ink, Status, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, PANEL_GAP, PANEL_RADIUS, Status, Text, Tone as _};
 
 const UNTITLED: &str = "Untitled thread";
 
@@ -53,27 +53,20 @@ impl BenCodeApp {
         if !cx.has_active_drag() {
             self.clear_drop_hints();
         }
-        let shell = div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .min_w_0()
-            .h_full()
-            .bg(self.glass(cx).fill(cx.theme().colors.bg));
+        let shell = div().flex().flex_col().flex_1().min_w_0().h_full();
 
         // The tree is a handful of ids; cloning it frees `self` for rendering.
         let Some(layout) = self.active_layout().cloned() else {
-            return shell.justify_center().items_center().child(
-                EmptyState::new("no-thread", IconName::MessageSquare, "No thread selected")
-                    .body("Pick a thread in the navigator or start a new one."),
-            );
+            return self
+                .glass(cx)
+                .card(shell, cx)
+                .justify_center()
+                .items_center()
+                .child(
+                    EmptyState::new("no-thread", IconName::MessageSquare, "No thread selected")
+                        .body("Pick a thread in the navigator or start a new one."),
+                );
         };
-        self.pane_rects.clear();
-        if self.appearance.chat_background.path.is_some() {
-            let leaves = layout_leaves(&layout, Default::default());
-            self.pane_rects
-                .extend(leaves.into_iter().map(|leaf| (leaf.id, leaf.rect)));
-        }
         shell.child(self.render_layout_node(&layout, cx))
     }
 
@@ -115,6 +108,7 @@ impl BenCodeApp {
         let weak = cx.entity().downgrade();
         let owned_id = split_id.to_string();
         let mut split = SplitPane::new(SharedString::from(owned_id.clone()), axis, min)
+            .gap(px(PANEL_GAP))
             .sizes(&split_shares(children.len(), sizes))
             .on_resize(move |shares, _window, cx| {
                 if let Err(err) = weak.update(cx, |this, _| this.resize_split(&owned_id, shares)) {
@@ -185,13 +179,16 @@ impl BenCodeApp {
                 .into_any_element()
         };
 
-        let frame = div()
-            .id(SharedString::from(format!("pane-session-{session_id}")))
-            .relative()
-            .flex()
-            .flex_col()
-            .size_full()
-            .min_w_0();
+        let frame = self.glass(cx).card(
+            div()
+                .id(SharedString::from(format!("pane-session-{session_id}")))
+                .relative()
+                .flex()
+                .flex_col()
+                .size_full()
+                .min_w_0(),
+            cx,
+        );
         // A thread with no message yet shows the centred composer.
         let empty = !session.blocks.iter().any(|b| b.role == "user");
         let frame = self
@@ -226,37 +223,23 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    /// MonoCode `.chat-pane-background::before`: the chat background behind
-    /// the pane. One image covers the whole pane tree, so each pane shows
-    /// the part under it (`--chat-background-left` / `-top` / `-width` /
-    /// `-height`).
+    /// The chat background behind the floating pane card, rounded directly on
+    /// the `img` element so GPUI's sprite shader clips all four corners cleanly
+    /// (`overflow_hidden` clips to a rectangle only).
     fn render_chat_background(&self, session_id: &str, session_empty: bool) -> Option<AnyElement> {
         // A Bot's own image covers its chat (MonoCode `monoChatBackground`).
         let own = self.bot_background_for(session_id);
         let (image, opacity) = own
             .clone()
             .or_else(|| self.chat_background_for(session_empty))?;
-        let rect = self
-            .pane_rects
-            .get(session_id)
-            .copied()
-            .filter(|rect| own.is_none() && rect.w > 0.0 && rect.h > 0.0)
-            .unwrap_or_default();
         Some(
-            div()
+            img(image)
                 .absolute()
                 .inset_0()
-                .overflow_hidden()
-                .child(
-                    img(image)
-                        .absolute()
-                        .left(relative(-rect.x / rect.w))
-                        .top(relative(-rect.y / rect.h))
-                        .w(relative(1.0 / rect.w))
-                        .h(relative(1.0 / rect.h))
-                        .object_fit(ObjectFit::Cover)
-                        .opacity(opacity),
-                )
+                .size_full()
+                .rounded(px(PANEL_RADIUS - 1.0))
+                .object_fit(ObjectFit::Cover)
+                .opacity(opacity)
                 .into_any_element(),
         )
     }
@@ -490,10 +473,10 @@ impl BenCodeApp {
             .flex_none()
             .items_center()
             .gap_1p5()
-            .h(px(36.0))
-            .px_2()
-            .border_b_1()
-            .border_color(colors.border)
+            .h(px(34.0))
+            .px_2p5()
+            .rounded_t(px(PANEL_RADIUS - 1.0))
+            .bg(fg.fill(Fill::Faint))
             .cursor_grab()
             .on_drag(
                 DraggedPane {

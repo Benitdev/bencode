@@ -63,6 +63,8 @@ impl BenCodeApp {
             let (down, up) = (file.path.clone(), file.path.clone());
             return div()
                 .size_full()
+                .px_1p5()
+                .pb_1p5()
                 .capture_any_mouse_down(cx.listener(move |this, event: &MouseDownEvent, _, _| {
                     let jump = event.button == MouseButton::Left && event.modifiers.platform;
                     this.definition.jump_on_click = jump.then(|| down.clone());
@@ -139,14 +141,12 @@ impl BenCodeApp {
             .flex()
             .items_center()
             .justify_between()
-            .h(theme.control_height(ControlSize::Lg))
+            .h(px(30.0))
             .w_full()
             .min_w_0()
             .overflow_hidden()
             .px_3()
-            .border_b_1()
-            .border_color(colors.border)
-            .bg(colors.surface)
+            .pb_1()
             .child(
                 div()
                     .flex()

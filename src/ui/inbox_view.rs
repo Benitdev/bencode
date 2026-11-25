@@ -51,7 +51,7 @@ use crate::ui::composer::inbox_card::{CardTask, InboxCard};
 use crate::ui::scale::px;
 use crate::work_items::Provider;
 
-use crate::ui::tokens::{Fill, Ink, Tone as _};
+use crate::ui::tokens::{Ink, Tone as _, resize_pill};
 use crate::work_items::attention::{self, Attention};
 use crate::work_items::tickets::TicketLinks;
 use blocks::Described;
@@ -1400,11 +1400,8 @@ impl BenCodeApp {
     ) -> AnyElement {
         self.sync_backlog_hours(cx);
         let detail_width = self.inbox_detail_width(window, cx);
-        let colors = &cx.theme().colors;
         let width = self.inbox(cx).list_width;
         let resizing = self.inbox(cx).resizing.is_some();
-        let handle_hover = colors.fg.fill(Fill::Strong);
-        let handle_drag = colors.fg.fill(Fill::Bold);
         div()
             .id("inbox")
             .size_full()
@@ -1438,22 +1435,23 @@ impl BenCodeApp {
                     .h_full()
                     .flex()
                     .flex_col()
-                    .border_r_1()
-                    .border_color(colors.border)
                     .child(self.render_inbox_toolbar(cx))
                     .child(div().flex_1().min_h_0().child(self.render_inbox_list(cx)))
                     .children(self.render_inbox_pick_bar(cx))
                     .child(
                         div()
                             .id("inbox-resize")
+                            .group("inbox-resize")
                             .absolute()
                             .top_0()
                             .bottom_0()
                             .right(px(-3.0))
                             .w(px(6.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
                             .cursor_col_resize()
-                            .when(resizing, |el| el.bg(handle_drag))
-                            .when(!resizing, |el| el.hover(move |s| s.bg(handle_hover)))
+                            .child(resize_pill("inbox-resize", false, resizing, cx))
                             .tooltip(Tooltip::text("Resize inbox list"))
                             .on_mouse_down(
                                 MouseButton::Left,

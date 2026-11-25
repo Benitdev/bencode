@@ -68,8 +68,7 @@ impl BenCodeApp {
         let row = || div().flex().items_center().gap_1().h(px(36.0)).px_2();
         div()
             .flex_none()
-            .border_b_1()
-            .border_color(colors.border)
+            .pb_1()
             .child(
                 row()
                     .child(div().flex_1().min_w_0().child(kinds.on_change(cx.listener(
@@ -83,21 +82,31 @@ impl BenCodeApp {
             )
             .child(
                 row()
-                    .border_t_1()
-                    .border_color(colors.border)
-                    .child(
-                        Icon::new(IconName::Search)
-                            .size(IconSize::Xs)
-                            .color(colors.fg.ink(Ink::Secondary)),
-                    )
                     .child(
                         div()
-                            // Esc hands the keyboard back to the list.
-                            .key_context("InboxFilter")
+                            .flex()
                             .flex_1()
                             .min_w_0()
-                            .text_size(Text::Base.px())
-                            .child(self.inbox_search_input.clone()),
+                            .h(px(28.0))
+                            .items_center()
+                            .gap_1p5()
+                            .px_2()
+                            .rounded(px(7.0))
+                            .bg(colors.fg.fill(Fill::Hover))
+                            .child(
+                                Icon::new(IconName::Search)
+                                    .size(IconSize::Xs)
+                                    .color(colors.fg.ink(Ink::Secondary)),
+                            )
+                            .child(
+                                div()
+                                    // Esc hands the keyboard back to the list.
+                                    .key_context("InboxFilter")
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_size(Text::Base.px())
+                                    .child(self.inbox_search_input.clone()),
+                            ),
                     )
                     .child(self.render_inbox_toolbar_button(Menu::Filter, cx))
                     .children(self.render_inbox_toolbar_menu(Menu::Filter, cx))

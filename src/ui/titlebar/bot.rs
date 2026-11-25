@@ -32,16 +32,13 @@ impl BenCodeApp {
             return div().into_any_element();
         };
         let state = self.bot_state(bot);
-        let glass = self.glass(cx);
-        let bg = cx.theme().colors.bg;
         div()
             .w_full()
-            .bg(glass.body(bg))
             .child(self.render_bot_titlebar(bot, &state, cx))
             .into_any_element()
     }
 
-    /// MonoCode `TitleBar` in a Bot's view: `h-10 border-b border-stroke`,
+    /// MonoCode `TitleBar` in a Bot's view: borderless over the window canvas,
     /// laid out as the views' title bar is, so the traffic lights and Back
     /// have the same room.
     pub(crate) fn render_bot_titlebar(
@@ -50,7 +47,6 @@ impl BenCodeApp {
         state: &BotState,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let colors = &cx.theme().colors;
         let compact = self.compact_rail_active();
         let beside_rail = self.is_rail_open || compact;
         self.window_drag_region(div(), cx)
@@ -58,8 +54,6 @@ impl BenCodeApp {
             .flex_none()
             .items_center()
             .h(px(crate::ui::sidebar::TITLEBAR_HEIGHT))
-            .border_b_1()
-            .border_color(colors.border)
             .when(!self.is_rail_open && cfg!(target_os = "macos"), |el| {
                 // MonoCode `pl-[22px]` beside the compact rail.
                 let gap = if compact { 22.0 } else { 72.0 };
