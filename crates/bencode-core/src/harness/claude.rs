@@ -87,6 +87,16 @@ fn build_args(req: &SpawnRequest, shared_mcp: Option<&std::path::Path>) -> Vec<S
         args.push("--mcp-config".into());
         args.extend(configs);
     }
+    if req
+        .mcp_servers
+        .iter()
+        .any(|launch| launch.name == crate::mcp::COMPUTER_SERVER)
+    {
+        // The app asks once per desktop grant. Other MCP tools keep their
+        // existing permission rules.
+        args.push("--allowedTools".into());
+        args.push(format!("mcp__{}__*", crate::mcp::COMPUTER_SERVER));
+    }
 
     // MonoCode `runtimeModeToPermission`: always pass a mode, so the user's
     // `permissions.defaultMode` cannot silently change what the picker says.
@@ -693,6 +703,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
+            computer_turn: None,
             mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,
@@ -720,7 +731,7 @@ mod tests {
         assert!(
             !build_args(&request(PermissionPolicy::Ask), None).contains(&"--mcp-config".into())
         );
-        let req = SpawnRequest {
+        let mut req = SpawnRequest {
             mcp_servers: vec![
                 crate::mcp::McpLaunch {
                     name: "bencode-browser".into(),
@@ -752,6 +763,18 @@ mod tests {
         );
         // The flag takes several values: an option must follow it.
         assert!(args[at + 2].starts_with("--"));
+        assert!(!args.contains(&"--allowedTools".into()));
+
+        req.mcp_servers.push(crate::mcp::McpLaunch {
+            name: crate::mcp::COMPUTER_SERVER.into(),
+            command: "/bin/bencode".into(),
+            args: vec!["--computer-use-mcp".into(), "/tmp/b.sock".into()],
+        });
+        assert!(
+            build_args(&req, None)
+                .windows(2)
+                .any(|pair| { pair == ["--allowedTools", "mcp__bencode-computer__*"] })
+        );
     }
 
     #[test]
@@ -1297,6 +1320,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
+            computer_turn: None,
             mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,

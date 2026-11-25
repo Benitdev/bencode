@@ -130,6 +130,7 @@ impl BenCodeApp {
         self.alerts.sounds = !saved.sounds_off;
         self.alerts.sounds_enabled_at = saved.sounds_enabled_at;
         self.alerts.notifications = saved.notifications;
+        self.computer_use_enabled = saved.computer_use;
         self.sidebar_opacity = saved.sidebar_opacity.map_or(
             crate::ui::glass::OPACITY_DEFAULT,
             crate::ui::glass::clamp_opacity,
@@ -203,6 +204,7 @@ impl BenCodeApp {
             sounds_off: !self.alerts.sounds,
             sounds_enabled_at: self.alerts.sounds_enabled_at,
             notifications: self.alerts.notifications,
+            computer_use: self.computer_use_enabled,
             sidebar_opacity: Some(self.sidebar_opacity)
                 .filter(|o| (o - crate::ui::glass::OPACITY_DEFAULT).abs() > f32::EPSILON),
             body_glass_off: !self.body_glass,

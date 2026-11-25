@@ -144,6 +144,17 @@ fn build_args(req: &SpawnRequest) -> Vec<String> {
             "-c".into(),
             format!("{key}.args={launch_args}"),
         ]);
+        if launch.name == crate::mcp::COMPUTER_SERVER {
+            let name = crate::mcp::COMPUTER_TURN_ENV;
+            // codex exec cannot present its own approval prompt. BenCode
+            // authenticates this server and asks the user before it acts.
+            args.extend([
+                "-c".into(),
+                format!(r#"{key}.env_vars=["{name}"]"#),
+                "-c".into(),
+                format!(r#"{key}.default_tools_approval_mode="approve""#),
+            ]);
+        }
     }
     if let Some(thread) = &req.resume_id {
         args.extend(["resume".into(), thread.clone()]);
@@ -615,6 +626,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
+            computer_turn: None,
             mcp_servers: vec![crate::mcp::McpLaunch {
                 name: "bencode-browser".into(),
                 command: "/Apps/Ben Code/bencode".into(),
@@ -641,6 +653,22 @@ mod tests {
             .unwrap();
         let resume = args.iter().position(|a| a == "resume").unwrap();
         assert!(config < resume);
+        assert!(args.iter().all(|arg| !arg.contains("approval_mode")));
+
+        req.computer_turn = Some("synthetic-credential".into());
+        req.mcp_servers.push(crate::mcp::McpLaunch {
+            name: crate::mcp::COMPUTER_SERVER.into(),
+            command: "/Apps/Ben Code/bencode".into(),
+            args: vec!["--computer-use-mcp".into(), "/tmp/b.sock".into()],
+        });
+        let args = build_args(&req);
+        assert!(args.iter().any(|arg| {
+            arg == r#"mcp_servers.bencode-computer.env_vars=["BENCODE_COMPUTER_TURN"]"#
+        }));
+        assert!(args.iter().any(|arg| {
+            arg == r#"mcp_servers.bencode-computer.default_tools_approval_mode="approve""#
+        }));
+        assert!(!args.iter().any(|arg| arg.contains("synthetic-credential")));
     }
 
     #[test]
@@ -658,6 +686,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
+            computer_turn: None,
             mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,
@@ -688,6 +717,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
+            computer_turn: None,
             mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,

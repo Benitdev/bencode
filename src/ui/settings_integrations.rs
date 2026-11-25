@@ -32,9 +32,10 @@ const AUTOMATIC: &str = ":automatic";
 
 impl BenCodeApp {
     pub(crate) fn render_settings_integrations(&self, cx: &Context<Self>) -> SettingsPage {
-        let page = SettingsTab::Integrations
-            .page()
-            .group(self.render_github_accounts(cx));
+        let page = SettingsTab::Integrations.page();
+        #[cfg(target_os = "macos")]
+        let page = page.group(self.render_computer_use_settings(cx));
+        let page = page.group(self.render_github_accounts(cx));
         let page = match self.render_github_projects(cx) {
             Some(group) => page.group(group),
             None => page,

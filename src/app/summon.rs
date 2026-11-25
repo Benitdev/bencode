@@ -71,7 +71,7 @@ impl BenCodeApp {
     /// Listens for the shortcut and registers the saved one. Once, at
     /// launch.
     pub fn listen_for_summon(&mut self, main: AnyWindowHandle, cx: &mut Context<Self>) {
-        let Some(mut presses) = hotkey::listen() else {
+        let Some(mut presses) = hotkey::listen(hotkey::Shortcut::Summon) else {
             return;
         };
         self.summon.main = Some(main);
@@ -93,14 +93,14 @@ impl BenCodeApp {
         }
         let key = summon_key(self.settings.summon_key.as_deref()).filter(|_| self.bots_enabled());
         self.summon.error = match key {
-            Some(key) => hotkey::register(key.code, key.modifiers)
+            Some(key) => hotkey::register(hotkey::Shortcut::Summon, key.code, key.modifiers)
                 .err()
                 .map(|status| {
                     log::warn!("could not register {}: OSStatus {status}", key.label);
                     format!("{} is taken by another app. Pick another.", key.label)
                 }),
             None => {
-                hotkey::unregister();
+                hotkey::unregister(hotkey::Shortcut::Summon);
                 None
             }
         };

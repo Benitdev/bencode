@@ -1241,13 +1241,24 @@ impl BenCodeApp {
     /// then what the inspector shows.
     fn render_titlebar_trailing(&self, cx: &Context<Self>) -> impl IntoElement {
         let projectless = self.current_cwd.trim().is_empty();
-        claim_press(div())
+        let controls = claim_press(div())
             .flex()
             .flex_none()
             .items_center()
             .gap(px(2.0))
             .pl_2()
-            .pr(px(8.0))
+            .pr(px(8.0));
+        #[cfg(target_os = "macos")]
+        let controls = controls.when_some(self.computer_use.active_label(), |el, label| {
+            el.child(
+                IconButton::new("titlebar-stop-computer-use", IconName::CircleStop)
+                    .variant(ButtonVariant::Danger)
+                    .size(ControlSize::Sm)
+                    .tooltip(format!("Stop Computer Use (⌘⌥.) · {label}"))
+                    .on_click(cx.listener(|this, _, _, cx| this.stop_computer_use(cx))),
+            )
+        });
+        controls
             .child(self.render_browser_toggle(cx))
             .child(self.render_terminal_status(cx))
             .when(!projectless, |el| {

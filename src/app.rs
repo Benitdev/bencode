@@ -30,6 +30,8 @@ pub mod cli_import;
 pub mod command_catalog;
 pub mod commands;
 mod composer_input;
+#[cfg(target_os = "macos")]
+mod computer_use;
 pub mod file_pane;
 pub mod frame_bench;
 pub mod git_actions;
@@ -193,6 +195,9 @@ pub struct BenCodeApp {
     pub file_pane_left: bool,
     /// The in-app browser's tabs and the agents' way to them.
     pub browser: browser::BrowserState,
+    #[cfg(target_os = "macos")]
+    pub(crate) computer_use: computer_use::ComputerUse,
+    pub(crate) computer_use_enabled: bool,
     /// `bencode app`: its socket and the credentials turns carry.
     pub app_access: app_calls::AppAccessState,
     /// Bots' habits: the runs in flight and the scheduler's queue.
@@ -1433,6 +1438,9 @@ impl BenCodeApp {
             file_pane_shares: [1.0, 1.0],
             file_pane_left: false,
             browser,
+            #[cfg(target_os = "macos")]
+            computer_use: Default::default(),
+            computer_use_enabled: false,
             app_access,
             habits: Default::default(),
             bot_sessions: Default::default(),
@@ -1919,6 +1927,8 @@ impl Render for BenCodeApp {
             any_elements(self.render_bot_background_dialog(cx)),
             any_elements(self.render_project_theme_dialog(cx)),
             any_elements(self.render_artifact_delete(cx)),
+            #[cfg(target_os = "macos")]
+            any_elements(self.render_computer_use_prompt(cx)),
         ]
         .into_iter()
         .flatten()

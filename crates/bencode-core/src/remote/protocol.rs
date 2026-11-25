@@ -119,6 +119,7 @@ impl SpawnWire {
             compact: self.compact,
             settings: self.settings,
             account: None,
+            computer_turn: None,
             mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,

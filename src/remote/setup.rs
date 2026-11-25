@@ -602,6 +602,7 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"hi","sessi
             compact: false,
             settings: Default::default(),
             account: None,
+            computer_turn: None,
             mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,

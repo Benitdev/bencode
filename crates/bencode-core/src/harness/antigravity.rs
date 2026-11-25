@@ -707,6 +707,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
+            computer_turn: None,
             mcp_servers: vec![crate::mcp::McpLaunch {
                 name: "bencode-backlog".into(),
                 command: "/bin/bencode".into(),
@@ -834,6 +835,7 @@ mod tests {
         let req = SpawnRequest {
             resume_id: Some("a60b1698".into()),
             model: None,
+            computer_turn: None,
             mcp_servers: Vec::new(),
             ..acp_request(PermissionPolicy::Ask)
         };
@@ -1018,6 +1020,7 @@ mod tests {
                 cwd: dir.to_string_lossy().into_owned(),
                 prompt: prompt.into(),
                 resume_id,
+                computer_turn: None,
                 mcp_servers: Vec::new(),
                 ..acp_request(PermissionPolicy::AutoApprove)
             };

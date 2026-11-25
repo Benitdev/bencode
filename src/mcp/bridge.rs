@@ -1,6 +1,6 @@
-//! The app's end of the browser tools: a Unix socket the MCP server
-//! (`mcp.rs`) connects to, one connection per tool call. A call is one line
-//! of JSON each way; the app answers it on the UI thread (`app/browser.rs`).
+//! The app's end of the browser and desktop MCP servers: a Unix socket,
+//! one connection and one line of JSON each way per call. The app picks
+//! up calls on the UI thread and hands desktop actions to a worker.
 //!
 //! The socket sits in the user's temporary folder (private to them), named
 //! for this process, so two BenCodes never answer each other's agents.
@@ -22,10 +22,12 @@ pub const CALL_TIMEOUT: Duration = Duration::from_secs(90);
 /// Cap on one tool call's JSON line (matches `app_cli::server::MAX_REQUEST`).
 const MAX_REQUEST: usize = 262_144;
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct ToolRequest {
     #[serde(default)]
     pub token: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub computer_turn: Option<String>,
     pub tool: String,
     #[serde(default)]
     pub args: Value,
@@ -67,12 +69,12 @@ pub struct ToolCall {
 impl ToolCall {
     pub fn answer(self, reply: ToolReply) {
         if self.reply.send(reply).is_err() {
-            log::debug!("browser tool answered after its caller left");
+            log::debug!("MCP tool answered after its caller left");
         }
     }
 }
 
-const SOCKET_PREFIX: &str = "bencode-browser-";
+const SOCKET_PREFIX: &str = "bencode-tools-";
 const SOCKET_SUFFIX: &str = ".sock";
 const TOKEN_SUFFIX: &str = ".token";
 
@@ -114,7 +116,7 @@ fn write_token(path: &Path, token: &str) -> Result<()> {
 }
 
 /// Constant-time comparison so the token is not leaked by timing.
-fn token_matches(expected: &str, given: &str) -> bool {
+pub(crate) fn token_matches(expected: &str, given: &str) -> bool {
     let (a, b) = (expected.as_bytes(), given.as_bytes());
     if a.len() != b.len() {
         return false;
@@ -157,7 +159,7 @@ pub fn listen(calls: mpsc::UnboundedSender<ToolCall>) -> Result<PathBuf> {
     if path.exists()
         && let Err(err) = std::fs::remove_file(&path)
     {
-        log::warn!("browser: could not remove {}: {err}", path.display());
+        log::warn!("MCP bridge: could not remove {}: {err}", path.display());
     }
     let token = crate::app_cli::random_hex(32);
     let token_file = token_path(&path);
@@ -165,10 +167,10 @@ pub fn listen(calls: mpsc::UnboundedSender<ToolCall>) -> Result<PathBuf> {
     let listener = UnixListener::bind(&path)
         .with_context(|| format!("could not listen on {}", path.display()))?;
     if let Err(err) = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)) {
-        log::warn!("browser: could not restrict {}: {err}", path.display());
+        log::warn!("MCP bridge: could not restrict {}: {err}", path.display());
     }
     std::thread::Builder::new()
-        .name("browser-bridge".into())
+        .name("mcp-bridge".into())
         .spawn(move || {
             sweep_stale();
             for stream in listener.incoming() {
@@ -176,22 +178,23 @@ pub fn listen(calls: mpsc::UnboundedSender<ToolCall>) -> Result<PathBuf> {
                     Ok(stream) => {
                         let calls = calls.clone();
                         let token = token.clone();
-                        let spawned = std::thread::Builder::new()
-                            .name("browser-call".into())
-                            .spawn(move || {
-                                if let Err(err) = serve(stream, &calls, &token) {
-                                    log::warn!("browser tool call failed: {err:#}");
-                                }
-                            });
+                        let spawned =
+                            std::thread::Builder::new()
+                                .name("mcp-call".into())
+                                .spawn(move || {
+                                    if let Err(err) = serve(stream, &calls, &token) {
+                                        log::warn!("MCP bridge call failed: {err:#}");
+                                    }
+                                });
                         if let Err(err) = spawned {
-                            log::error!("browser: no thread for a tool call: {err}");
+                            log::error!("MCP bridge: no thread for a tool call: {err}");
                         }
                     }
-                    Err(err) => log::warn!("browser: connection refused: {err}"),
+                    Err(err) => log::warn!("MCP bridge: connection refused: {err}"),
                 }
             }
         })
-        .context("could not start the browser bridge")?;
+        .context("could not start the MCP bridge")?;
     Ok(path)
 }
 
@@ -201,7 +204,7 @@ pub fn remove(path: &Path) {
         if let Err(err) = std::fs::remove_file(&target)
             && err.kind() != std::io::ErrorKind::NotFound
         {
-            log::debug!("browser: could not remove {}: {err}", target.display());
+            log::debug!("MCP bridge: could not remove {}: {err}", target.display());
         }
     }
 }
@@ -222,7 +225,7 @@ fn serve(
     } else {
         let request: ToolRequest = serde_json::from_str(&line).context("unreadable tool call")?;
         if !token_matches(expected_token, &request.token) {
-            ToolReply::error("Unauthorized browser tool call.")
+            ToolReply::error("Unauthorized MCP tool call.")
         } else {
             let (tx, rx) = std::sync::mpsc::channel();
             if calls.send(ToolCall { request, reply: tx }).is_err() {
@@ -230,9 +233,9 @@ fn serve(
             } else {
                 rx.recv_timeout(CALL_TIMEOUT)
                     .unwrap_or_else(|err| match err {
-                        RecvTimeoutError::Timeout => ToolReply::error(
-                            "BenCode did not answer the browser tool call in time.",
-                        ),
+                        RecvTimeoutError::Timeout => {
+                            ToolReply::error("BenCode did not answer the tool call in time.")
+                        }
                         RecvTimeoutError::Disconnected => {
                             ToolReply::error("BenCode dropped the call.")
                         }
@@ -249,16 +252,17 @@ fn serve(
 /// The MCP server's side: one call over a fresh connection. Blocking.
 pub fn call(socket: &Path, request: &ToolRequest) -> Result<ToolReply> {
     let stream = UnixStream::connect(socket)
-        .context("BenCode's browser is not reachable; is BenCode still open?")?;
+        .context("BenCode's MCP bridge is not reachable. Is BenCode still open?")?;
     stream.set_read_timeout(Some(CALL_TIMEOUT))?;
     let mut authed = ToolRequest {
         token: request.token.clone(),
+        computer_turn: request.computer_turn.clone(),
         tool: request.tool.clone(),
         args: request.args.clone(),
     };
     if authed.token.is_empty() {
         authed.token = std::fs::read_to_string(token_path(socket))
-            .context("could not read BenCode browser bridge token")?
+            .context("could not read the BenCode MCP bridge token")?
             .trim()
             .to_string();
     }
@@ -278,9 +282,9 @@ mod tests {
     fn sockets_are_named_for_their_process() {
         let name = socket_path().file_name().unwrap().to_owned();
         assert_eq!(socket_pid(name.to_str().unwrap()), Some(std::process::id()));
-        assert_eq!(socket_pid("bencode-browser-41.sock"), Some(41));
-        assert_eq!(socket_pid("bencode-browser-41.sock.token"), Some(41));
-        assert_eq!(socket_pid("bencode-browser-x.sock"), None);
+        assert_eq!(socket_pid("bencode-tools-41.sock"), Some(41));
+        assert_eq!(socket_pid("bencode-tools-41.sock.token"), Some(41));
+        assert_eq!(socket_pid("bencode-tools-x.sock"), None);
         assert_eq!(socket_pid("pty.sock"), None);
         assert!(is_running(std::process::id()));
     }
@@ -303,6 +307,7 @@ mod tests {
             &path,
             &ToolRequest {
                 token: "wrong-token".into(),
+                computer_turn: None,
                 tool: "browser_snapshot".into(),
                 args: Value::Null,
             },
@@ -316,6 +321,7 @@ mod tests {
             &path,
             &ToolRequest {
                 token: String::new(),
+                computer_turn: None,
                 tool: "browser_evaluate".into(),
                 args: Value::String("x".repeat(MAX_REQUEST + 10)),
             },
@@ -334,6 +340,7 @@ mod tests {
             &path,
             &ToolRequest {
                 token: String::new(),
+                computer_turn: None,
                 tool: "browser_snapshot".into(),
                 args: Value::Null,
             },

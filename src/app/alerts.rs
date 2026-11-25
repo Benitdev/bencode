@@ -96,6 +96,8 @@ pub fn should_notify(
 pub enum Event<'a> {
     Finished,
     Input(&'a PermissionRequest),
+    #[cfg(target_os = "macos")]
+    ComputerUse,
 }
 
 /// MonoCode `NotificationText`: the app, then the thread, then the reply.
@@ -131,6 +133,8 @@ pub fn notification_text(session: &SessionRow, event: &Event) -> Text {
                 format!("Approve: {what}")
             }
         }
+        #[cfg(target_os = "macos")]
+        Event::ComputerUse => "Approve desktop access".into(),
         Event::Finished => session
             .blocks
             .iter()
@@ -358,6 +362,12 @@ impl BenCodeApp {
             None => session_id.to_string(),
         };
         self.notify_session(&session_id, Event::Input(request), Category::AgentInput, cx)
+            .detach();
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(super) fn announce_computer_use(&self, session_id: &str, cx: &mut Context<Self>) {
+        self.notify_session(session_id, Event::ComputerUse, Category::AgentInput, cx)
             .detach();
     }
 

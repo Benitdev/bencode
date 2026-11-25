@@ -4,6 +4,8 @@ mod backlog;
 mod bot_menu_bar;
 mod bots;
 mod browser;
+#[cfg(target_os = "macos")]
+mod computer_use;
 mod db;
 pub mod external_editor;
 mod git;
@@ -46,9 +48,12 @@ fn main() {
     if let Some(code) = pty_host::run_from_args() {
         std::process::exit(code);
     }
-    // So are the MCP servers that give agents the in-app browser and the
-    // connected Backlog space.
+    // So are the local MCP tool servers that BenCode offers agents.
     if let Some(code) = browser::run_from_args() {
+        std::process::exit(code);
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(code) = computer_use::run_from_args() {
         std::process::exit(code);
     }
     if let Some(code) = backlog::mcp::run_from_args() {

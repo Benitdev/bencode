@@ -24,7 +24,8 @@ use crate::harness::{EventRx, PermissionPolicy, SpawnRequest, str_field};
 
 pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
     let program = HarnessResolver::resolve_opencode().unwrap_or_else(|| "opencode".into());
-    let args = if is_v2(&program) {
+    let v2 = is_v2(&program);
+    let args = if v2 {
         build_args_v2(req)
     } else {
         build_args(req)
@@ -41,7 +42,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         // process' folder: BenCode's own would put the turn in the wrong one.
         env: [("PWD".to_string(), req.cwd.clone())]
             .into_iter()
-            .chain(inline_config(req))
+            .chain(inline_config(req, v2))
             .chain(super::app_env(req))
             .collect(),
     };
@@ -50,7 +51,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
 
 /// The MCP servers BenCode offers as OpenCode's inline config, which it
 /// merges over the user's own.
-fn inline_config(req: &SpawnRequest) -> Option<(String, String)> {
+fn inline_config(req: &SpawnRequest, v2: bool) -> Option<(String, String)> {
     if req.mcp_servers.is_empty() {
         return None;
     }
@@ -59,12 +60,29 @@ fn inline_config(req: &SpawnRequest) -> Option<(String, String)> {
             let command: Vec<&str> = std::iter::once(launch.command.as_str())
                 .chain(launch.args.iter().map(String::as_str))
                 .collect();
-            let server =
-                serde_json::json!({ "type": "local", "command": command, "enabled": true });
+            let mut server = serde_json::json!({ "type": "local", "command": command });
+            if !v2 {
+                server["enabled"] = Value::Bool(true);
+            }
+            if launch.name == crate::mcp::COMPUTER_SERVER {
+                let name = crate::mcp::COMPUTER_TURN_ENV;
+                server["environment"] = serde_json::json!({ (name): format!("{{env:{name}}}") });
+                if v2 {
+                    // Expose screenshot image content directly to the model.
+                    server["codemode"] = Value::Bool(false);
+                } else {
+                    // The first desktop call can wait for a person to approve.
+                    server["timeout"] = serde_json::json!(90_000);
+                }
+            }
             (launch.name.clone(), server)
         })
         .collect();
-    let config = serde_json::json!({ "mcp": servers });
+    let config = if v2 {
+        serde_json::json!({ "mcp": { "servers": servers } })
+    } else {
+        serde_json::json!({ "mcp": servers })
+    };
     Some(("OPENCODE_CONFIG_CONTENT".into(), config.to_string()))
 }
 
@@ -243,7 +261,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn an_open_browser_tab_goes_in_the_inline_config() {
+    fn app_tools_follow_the_opencode_versions_config_shape() {
         let mut req = SpawnRequest {
             harness: crate::harness::HarnessKind::OpenCode,
             cwd: "/tmp".into(),
@@ -257,22 +275,40 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
+            computer_turn: None,
             mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,
         };
-        assert!(inline_config(&req).is_none());
+        assert!(inline_config(&req, false).is_none());
         req.mcp_servers = vec![crate::mcp::McpLaunch {
             name: "bencode-browser".into(),
             command: "/bin/bencode".into(),
             args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
         }];
-        let (key, value) = inline_config(&req).unwrap();
+        let (key, value) = inline_config(&req, false).unwrap();
         assert_eq!(key, "OPENCODE_CONFIG_CONTENT");
         let config: serde_json::Value = serde_json::from_str(&value).unwrap();
         assert_eq!(
             config["mcp"]["bencode-browser"],
             json!({ "type": "local", "command": ["/bin/bencode", "--browser-mcp", "/tmp/b.sock"], "enabled": true })
+        );
+        req.mcp_servers.push(crate::mcp::McpLaunch {
+            name: crate::mcp::COMPUTER_SERVER.into(),
+            command: "/bin/bencode".into(),
+            args: vec!["--computer-use-mcp".into(), "/tmp/b.sock".into()],
+        });
+        let (_, value) = inline_config(&req, true).unwrap();
+        let config: Value = serde_json::from_str(&value).unwrap();
+        assert_eq!(config["mcp"]["servers"]["bencode-browser"]["type"], "local");
+        assert_eq!(
+            config["mcp"]["servers"]["bencode-computer"],
+            json!({
+                "type": "local",
+                "command": ["/bin/bencode", "--computer-use-mcp", "/tmp/b.sock"],
+                "codemode": false,
+                "environment": { "BENCODE_COMPUTER_TURN": "{env:BENCODE_COMPUTER_TURN}" }
+            })
         );
     }
 
@@ -293,6 +329,7 @@ mod tests {
                 .into_iter()
                 .collect(),
             account: None,
+            computer_turn: None,
             mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,

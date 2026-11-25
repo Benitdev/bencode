@@ -417,6 +417,7 @@ mod tests {
             compact: false,
             settings: [("effort".to_string(), "high".to_string())].into(),
             account: None,
+            computer_turn: None,
             mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,
@@ -557,7 +558,7 @@ mod tests {
             command: "/Applications/BenCode.app/Contents/MacOS/bencode".into(),
             args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
         };
-        let servers = mcp_servers(&[launch]);
+        let servers = mcp_servers(&[launch.clone()], None);
         assert_eq!(
             servers,
             json!([{
@@ -571,7 +572,18 @@ mod tests {
             session_new_params("/repo", PermissionPolicy::Ask, false, &servers)["mcpServers"],
             servers
         );
-        assert_eq!(mcp_servers(&[]), json!([]));
+        assert_eq!(mcp_servers(&[], None), json!([]));
+        let computer = crate::mcp::McpLaunch {
+            name: crate::mcp::COMPUTER_SERVER.into(),
+            args: vec!["--computer-use-mcp".into(), "/tmp/b.sock".into()],
+            command: launch.command.clone(),
+        };
+        let servers = mcp_servers(&[launch, computer], Some("synthetic-turn"));
+        assert_eq!(servers[0]["env"], json!([]));
+        assert_eq!(
+            servers[1]["env"],
+            json!([{ "name": "BENCODE_COMPUTER_TURN", "value": "synthetic-turn" }])
+        );
     }
 
     #[test]

@@ -155,6 +155,11 @@ Agent của riêng bạn, có soul và bộ nhớ, trông coi các project. Giao
 **Và còn nữa:**
 
 - **Trình duyệt tích hợp (⇧⌘O):** trang web trong một tab cạnh khung chat. Chọn một phần tử hoặc chụp màn hình đưa vào ô soạn prompt, và agent có thể điều khiển trang qua một MCP server khi tab đang mở.
+- **Computer Use trên macOS.** Bật trong Settings → Integrations, cấp quyền
+  Screen Recording và Accessibility, rồi cho phép một lượt chạy local. Agent
+  có thể quản lý cửa sổ, chụp riêng cửa sổ, dùng các điều khiển Accessibility,
+  giữ và nhả phím hoặc nút chuột và kéo giữa các màn hình. Dừng bằng ⌘⌥. khi
+  phím tắt toàn hệ thống đang hoạt động, hoặc dùng nút Stop trên thanh tiêu đề.
 - **Máy từ xa:** chạy agent trên máy Mac hoặc Linux khác qua SSH, thread, file, git và terminal của máy đó nằm ngay trong cùng cửa sổ. Lượt chạy vẫn tiếp tục khi mất kết nối hay khi thoát BenCode ([tài liệu, tiếng Anh](../remote-access.md)).
 - **Thêm cho Inbox:** checks, bình luận, merge và nhờ agent sửa CI trên GitHub, mỗi project dùng tài khoản `gh` riêng; sửa trường, trạng thái và bình luận ngay tại chỗ trên Backlog.
 - **Tài khoản và mức dùng:** nhiều tài khoản Claude Code và Codex, mỗi thread gắn với một tài khoản, mức dùng 5 giờ, tuần và tháng hiện ở chân navigator. Thread bị dừng vì hết hạn mức có thể chạy tiếp bằng tài khoản khác. Chuyển qua lại giữa các lần đăng nhập Antigravity đã lưu.

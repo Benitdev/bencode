@@ -1,12 +1,12 @@
 //! `bencode --browser-mcp <socket>`: the MCP server the agent CLIs start
 //! (stdio, `mcp/server.rs`). It knows the tools; each call goes to the app
-//! over `socket` (`bridge.rs`) and acts on the open browser tabs.
+//! over `socket` and acts on the open browser tabs.
 
 use std::path::Path;
 
 use serde_json::{Value, json};
 
-use super::bridge::{self, ToolRequest};
+use crate::mcp::bridge::{self, ToolRequest};
 use crate::mcp::server::{self, Reply, Server};
 
 pub fn run(socket: &Path) -> i32 {
@@ -41,6 +41,7 @@ impl Server for Browser<'_> {
     fn call(&self, tool: &str, args: &Value) -> Reply {
         let request = ToolRequest {
             token: String::new(),
+            computer_turn: None,
             tool: tool.to_string(),
             args: args.clone(),
         };

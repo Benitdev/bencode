@@ -6,6 +6,11 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+- Local agents can use the macOS desktop after you enable Computer Use in
+  Settings and approve their turn. They can capture displays and windows,
+  manage windows and native controls, drag across displays, and hold and
+  release keys and mouse buttons. Press ⌘⌥. to revoke access across apps.
+
 ## [0.1.63] - 2026-11-25
 
 - Model catalogs for Codex and Claude are now discovered and cached per

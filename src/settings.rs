@@ -68,6 +68,8 @@ pub struct AppSettings {
     pub sounds_enabled_at: Option<i64>,
     /// MonoCode `monocode.notifications`. Off until the user opts in.
     pub notifications: bool,
+    /// Let a local agent request desktop access for its current turn.
+    pub computer_use: bool,
     /// MonoCode `monocode.sidebarOpacity` (0.15–1); `None` is the default.
     pub sidebar_opacity: Option<f32>,
     /// MonoCode `monocode.bodyGlass` switched off. On by default.
@@ -304,6 +306,7 @@ mod tests {
             sounds_off: true,
             sounds_enabled_at: Some(42),
             notifications: true,
+            computer_use: true,
             sidebar_opacity: Some(0.6),
             body_glass_off: true,
             inbox_seen: std::collections::BTreeMap::from([("o/r:issue:1".to_string(), 5)]),

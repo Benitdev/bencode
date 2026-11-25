@@ -47,6 +47,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Computer Use lets a local BenCode agent see the screen you allow it to control.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>A command run from BenCode wants to control another app.</string>
 	<key>NSCameraUsageDescription</key>

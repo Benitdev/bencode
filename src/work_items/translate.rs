@@ -115,6 +115,7 @@ fn ask(model: &str, prompt: &str) -> Result<String, String> {
         compact: false,
         settings: catalog::resolved_settings(model, None),
         account: None,
+        computer_turn: None,
         mcp_servers: Vec::new(),
         app: None,
         system_prompt: None,

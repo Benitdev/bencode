@@ -94,16 +94,21 @@ pub fn initialize_params() -> Value {
 
 /// The MCP servers a session gets, in ACP's stdio shape: those BenCode
 /// offers this turn (`SpawnRequest::mcp_servers`), maybe none.
-pub fn mcp_servers(offered: &[crate::mcp::McpLaunch]) -> Value {
+pub fn mcp_servers(offered: &[crate::mcp::McpLaunch], computer_turn: Option<&str>) -> Value {
     Value::Array(
         offered
             .iter()
             .map(|launch| {
+                let env: Vec<_> = computer_turn
+                    .filter(|_| launch.name == crate::mcp::COMPUTER_SERVER)
+                    .map(|token| json!({ "name": crate::mcp::COMPUTER_TURN_ENV, "value": token }))
+                    .into_iter()
+                    .collect();
                 json!({
                     "name": launch.name,
                     "command": launch.command,
                     "args": launch.args,
-                    "env": [],
+                    "env": env,
                 })
             })
             .collect(),
@@ -177,7 +182,7 @@ impl AcpParser {
         Self {
             dialect,
             cwd: req.cwd.clone(),
-            mcp_servers: mcp_servers(&req.mcp_servers),
+            mcp_servers: mcp_servers(&req.mcp_servers, req.computer_turn.as_deref()),
             prompt: crate::harness::attachments::acp_prompt_blocks(&req.prompt, &req.attachments),
             resume_id: req.resume_id.clone().filter(|id| !id.trim().is_empty()),
             model: req.model.clone(),

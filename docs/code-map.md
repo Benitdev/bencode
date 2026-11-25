@@ -47,7 +47,8 @@ bencode/
     ├── backlog/images.rs     the pictures an issue attaches, saved and drawn inline
     ├── backlog/fields.rs     an issue's editable fields, their choices, and changing them
     ├── backlog/mcp/          the agents' MCP server for the connected space (`--backlog-mcp`: space, projects, issues, wikis, documents, git/PRs, notifications, watchings)
-    ├── browser/              the in-app browser: the WKWebView (wry), its scripts (`scripts.rs`, `scripts_ext.rs`), the agents' MCP server (`--browser-mcp`) and its socket
+    ├── computer_use/         macOS desktop capture and input, through `bencode --computer-use-mcp`
+    ├── browser/              the in-app browser: the WKWebView (wry), its scripts (`scripts.rs`, `scripts_ext.rs`), the agents' MCP server (`--browser-mcp`) and the shared MCP bridge (`mcp/bridge.rs`)
     ├── work_items.rs         the Inbox's items, whichever tracker they come from
     ├── work_items/attention.rs  "Needs you": the trackers' notifications to the user, by item key, and the rule
     ├── work_items/tickets.rs  the Backlog tickets a pull request is named after, both ways

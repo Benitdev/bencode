@@ -136,7 +136,7 @@ impl SettingsTab {
             Self::Archive => "Projects you have archived from the navigator.",
             Self::Worktrees => "Manage additional worktrees for each project.",
             Self::Integrations => {
-                "Where the Inbox reads from: GitHub through its CLI, and a Nulab Backlog space."
+                "Connected services and local desktop access for agents."
             }
         }
     }

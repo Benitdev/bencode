@@ -136,6 +136,8 @@ pub struct SpawnRequest {
     /// (`app/browser.rs`), Backlog's while it is connected
     /// (`app/backlog.rs`).
     pub mcp_servers: Vec<crate::mcp::McpLaunch>,
+    /// A local Computer Use MCP client proves it belongs to this turn.
+    pub computer_turn: Option<String>,
     /// BenCode's `app` CLI for this turn (MonoCode's `MONOCODE_APP_*`):
     /// a Mono's turns reach the app through it (`bencode app …`).
     pub app: Option<AppAccess>,
@@ -156,7 +158,7 @@ pub struct AppAccess {
 pub const APP_SOCKET_ENV: &str = "BENCODE_APP_SOCKET";
 pub const APP_TOKEN_ENV: &str = "BENCODE_APP_TOKEN";
 
-/// The child's environment for `req.app`.
+/// The child's environment for tools that reach the BenCode app.
 pub(crate) fn app_env(req: &SpawnRequest) -> Vec<(String, String)> {
     req.app
         .iter()
@@ -166,6 +168,11 @@ pub(crate) fn app_env(req: &SpawnRequest) -> Vec<(String, String)> {
                 (APP_TOKEN_ENV.to_string(), app.token.clone()),
             ]
         })
+        .chain(
+            req.computer_turn
+                .iter()
+                .map(|token| (crate::mcp::COMPUTER_TURN_ENV.into(), token.clone())),
+        )
         .collect()
 }
 
@@ -280,6 +287,7 @@ mod tests {
             compact: false,
             settings: Default::default(),
             account: None,
+            computer_turn: None,
             mcp_servers: Vec::new(),
             app: None,
             system_prompt: None,

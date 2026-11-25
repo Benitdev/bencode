@@ -18,6 +18,7 @@ actions!(
     [
         Quit,
         OpenSettings,
+        StopComputerUse,
         Search,
         NewThread,
         CloseActive,
@@ -143,6 +144,8 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
     let mut keys = vec![
         KeyBinding::new("cmd-q", Quit, None),
         KeyBinding::new("cmd-,", OpenSettings, None),
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("cmd-alt-.", StopComputerUse, None),
         KeyBinding::new("cmd-k", Search, None),
         KeyBinding::new("cmd-t", NewThread, None),
         KeyBinding::new("cmd-w", CloseActive, None),
@@ -583,6 +586,10 @@ impl BenCodeApp {
     pub fn bind_commands(root: Stateful<Div>, cx: &Context<Self>) -> Stateful<Div> {
         root.on_action(cx.listener(|this, _: &OpenSettings, _, cx| {
             this.open_settings(cx);
+        }))
+        .on_action(cx.listener(|_this, _: &StopComputerUse, _, _cx| {
+            #[cfg(target_os = "macos")]
+            _this.stop_computer_use(_cx);
         }))
         .on_action(cx.listener(|this, _: &Quit, _, cx| this.request_quit(cx)))
         .on_action(

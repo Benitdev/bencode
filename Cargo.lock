@@ -535,6 +535,8 @@ dependencies = [
  "bencode-core",
  "bencode-ui",
  "block",
+ "core-foundation 0.10.1",
+ "core-graphics 0.24.0",
  "env_logger",
  "gpui-pre",
  "gpui-pre-apple",

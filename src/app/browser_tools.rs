@@ -17,7 +17,7 @@ use super::browser::{
     ZOOM_DEFAULT, cropped_to_rect, load_failure, outline_text, scaled_png, script_reply,
 };
 use super::file_pane::PaneTab;
-use crate::browser::bridge::{ToolCall, ToolReply, ToolRequest};
+use crate::mcp::bridge::{ToolCall, ToolReply, ToolRequest};
 use crate::browser::page::NO_RESULT;
 use crate::browser::{agent_may_open, normalize_url, scripts, scripts_ext};
 

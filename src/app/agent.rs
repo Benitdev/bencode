@@ -64,6 +64,7 @@ pub struct AgentRun {
     pub id: u64,
     pub handle: HarnessProcessHandle,
     pub pending_permission: Option<PermissionRequest>,
+    pub computer_turn: Option<String>,
     /// How the turn ended, once the harness reports `Done`.
     pub outcome: Option<DoneStatus>,
     /// The automation run this turn carries out, closed when it ends.
@@ -1017,6 +1018,14 @@ impl BenCodeApp {
         let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
             return;
         };
+        let remote = crate::remote::is_remote(session.work_dir());
+        #[cfg(target_os = "macos")]
+        let computer = (request.purpose == RunPurpose::Turn && !request.plan && !remote)
+            .then(|| self.computer_use_launch())
+            .flatten();
+        #[cfg(not(target_os = "macos"))]
+        let computer: Option<(bencode_core::mcp::McpLaunch, String)> = None;
+        let computer_turn = computer.as_ref().map(|(_, token)| token.clone());
         let spawn = pinned
             .and_then(|()| {
                 spawn_request(session, &request.prompt, mode, self.claude_hooks_disabled)
@@ -1025,15 +1034,13 @@ impl BenCodeApp {
                 attachments: request.attachments.clone(),
                 plan: request.plan,
                 compact: request.purpose == RunPurpose::Compact,
-                // The browser, Backlog and Jira connections are on this
-                // computer, out of a machine's reach.
-                mcp_servers: if request.purpose == RunPurpose::Turn
-                    && !crate::remote::is_remote(&session.cwd)
-                {
+                // The app's tools and connections live on this computer.
+                mcp_servers: if request.purpose == RunPurpose::Turn && !remote {
                     [
                         self.browser_mcp_launch(),
                         self.backlog_mcp_launch(),
                         self.jira_mcp_launch(),
+                        computer.map(|(launch, _)| launch),
                     ]
                     .into_iter()
                     .flatten()
@@ -1041,11 +1048,11 @@ impl BenCodeApp {
                 } else {
                     Vec::new()
                 },
+                computer_turn: computer_turn.clone(),
                 app,
                 system_prompt,
                 ..spawn
             });
-        let remote = crate::remote::is_remote(session.work_dir());
         // The baseline is queued before the agent can edit anything. A
         // machine's checkout is not snapshotted here (MonoCode's remote
         // sessions have no review either).
@@ -1078,6 +1085,7 @@ impl BenCodeApp {
                 let steers = handle.can_steer();
                 self.track_run(session_id.to_string(), handle, events, auto_approve, cx);
                 if let Some(run) = self.runs.get_mut(session_id) {
+                    run.computer_turn = computer_turn;
                     run.can_steer = steers && request.purpose == RunPurpose::Turn;
                     run.purpose = request.purpose;
                     run.remote = remote.clone();
@@ -1125,6 +1133,7 @@ impl BenCodeApp {
                 id: run_id,
                 handle,
                 pending_permission: None,
+                computer_turn: None,
                 outcome: None,
                 automation: None,
                 auto_approve,
@@ -1161,6 +1170,13 @@ impl BenCodeApp {
                         }
                     }
                     if !streaming {
+                        #[cfg(target_os = "macos")]
+                        if app
+                            .current_run(&session_id, run_id)
+                            .is_some_and(|run| run.outcome.is_some())
+                        {
+                            app.end_computer_use(run_id, cx);
+                        }
                         cx.notify();
                         return None;
                     }
@@ -1286,6 +1302,8 @@ impl BenCodeApp {
         let Some(run) = self.runs.remove(session_id) else {
             return;
         };
+        #[cfg(target_os = "macos")]
+        self.end_computer_use(run.id, cx);
         if run.remote.is_some() {
             self.forget_remote_run(session_id, cx);
         }
@@ -1387,6 +1405,8 @@ impl BenCodeApp {
         let Some(run) = self.runs.remove(session_id) else {
             return;
         };
+        #[cfg(target_os = "macos")]
+        self.end_computer_use(run.id, cx);
         run.handle.cancel();
         self.sync_in_flight();
         self.forget_remote_run(session_id, cx);
@@ -1438,6 +1458,8 @@ impl BenCodeApp {
     /// it is, for the next launch to resume. Needs no `cx`: it also runs
     /// from `on_release`.
     pub(crate) fn interrupt_runs_for_quit(&mut self) {
+        #[cfg(target_os = "macos")]
+        self.computer_use.revoke();
         let runs: Vec<(String, AgentRun)> = self.runs.drain().collect();
         for (session_id, run) in &runs {
             // A machine's turn goes on there; the next launch follows it
@@ -1599,6 +1621,7 @@ fn spawn_request(
         } else {
             AccountProfile::resolve(&session.harness, session.provider_account_id.as_deref())
         },
+        computer_turn: None,
         mcp_servers: Vec::new(),
         app: None,
         system_prompt: None,

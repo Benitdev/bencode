@@ -5,6 +5,9 @@
 /// The in-app browser's server, as the agents list its tools
 /// (`mcp__bencode-browser__…`).
 pub const BROWSER_SERVER: &str = "bencode-browser";
+/// Local desktop control, scoped to the turn that receives it.
+pub const COMPUTER_SERVER: &str = "bencode-computer";
+pub const COMPUTER_TURN_ENV: &str = "BENCODE_COMPUTER_TURN";
 /// The connected Backlog space's server.
 pub const BACKLOG_SERVER: &str = "bencode-backlog";
 /// The connected Jira site's server.

@@ -71,6 +71,8 @@ mod settings_agy_accounts;
 pub mod settings_appearance;
 mod settings_bots;
 pub mod settings_connections;
+#[cfg(target_os = "macos")]
+mod computer_use;
 pub mod settings_integrations;
 pub mod settings_modal;
 pub mod settings_parts;

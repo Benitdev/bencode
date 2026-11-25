@@ -1,7 +1,7 @@
 //! The in-app browser (BenCode's own, after Codex desktop's; MonoCode has
 //! none): a WKWebView, through wry, laid over a file-pane tab. Agents reach
 //! it through `bencode --browser-mcp`, an MCP server over stdio that relays
-//! each tool call to the app over a Unix socket (`bridge.rs`).
+//! each tool call to the app over a Unix socket (`mcp/bridge.rs`).
 //!
 //! The page is a native view: it draws above everything GPUI paints and
 //! GPUI's clipping does not reach it, so the app hides it while a dialog is
@@ -10,7 +10,6 @@
 pub mod artifact;
 #[cfg(target_os = "macos")]
 mod auth;
-pub mod bridge;
 #[cfg(target_os = "macos")]
 mod container;
 pub mod mcp;

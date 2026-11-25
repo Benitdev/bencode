@@ -9,6 +9,7 @@
 //! the servers BenCode itself offers agents. Codex (`~/.codex/config.toml`)
 //! is not read: BenCode has no direct TOML dependency.
 
+pub mod bridge;
 pub mod server;
 
 use std::collections::HashMap;

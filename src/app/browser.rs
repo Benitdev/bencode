@@ -16,7 +16,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use super::BenCodeApp;
 use super::file_pane::PaneTab;
-use crate::browser::bridge::{self, ToolCall, ToolReply};
+use crate::mcp::bridge::{self, ToolCall, ToolReply};
 use crate::browser::page::{Page, PageEvent, PageEvents};
 use crate::browser::{McpLaunch, is_web_url, mcp_launch, normalize_url, scripts};
 
@@ -170,13 +170,17 @@ impl BrowserState {
         let socket = match bridge::listen(calls) {
             Ok(path) => Some(path),
             Err(err) => {
-                log::error!("browser tools are off: {err:#}");
+                log::error!("browser and desktop tools are off: {err:#}");
                 None
             }
         };
         cx.spawn_in(window, async move |this, cx| {
             while let Some(call) = call_rx.recv().await {
                 let landed = this.update_in(cx, |this, window, cx| {
+                    #[cfg(target_os = "macos")]
+                    if call.request.computer_turn.is_some() {
+                        return this.handle_computer_call(call, cx);
+                    }
                     this.handle_tool_call(call, window, cx)
                 });
                 if landed.is_err() {
@@ -979,6 +983,12 @@ impl BenCodeApp {
             }
         }
         cx.notify();
+    }
+
+    /// Where the MCP subprocesses reach the app.
+    #[cfg(target_os = "macos")]
+    pub(super) fn tool_bridge_socket(&self) -> Option<&std::path::Path> {
+        self.browser.socket.as_deref()
     }
 
     /// How a turn's agent reaches the browser: only while a browser tab is

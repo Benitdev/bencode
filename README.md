@@ -155,6 +155,14 @@ Agents of your own that keep a soul and a memory and look after your projects. H
 **Also in the box:**
 
 - **In-app browser (⇧⌘O):** a page in a tab beside the chat. Pick an element or take a screenshot for the composer, and agents can drive the page through an MCP server while a tab is open.
+- **Computer Use on macOS.** Enable it in Settings → Integrations, grant Screen
+  Recording and Accessibility, then approve a new local turn's desktop request.
+  Claude Code, Codex, Grok Build, OpenCode and Antigravity (agy 1.5.1 or later)
+  can open apps, capture displays or windows, drag between displays, scroll,
+  type, and hold and release mouse buttons and keys. They can also manage windows
+  and act on native controls exposed through Accessibility. One turn holds access
+  at a time. Press ⌘⌥. to revoke access from any app while the shortcut is
+  registered. The title bar and Settings also have a Stop button.
 - **Machines:** run agents on another Mac or Linux machine over SSH, with its threads, files, git and terminal in the same window. A turn goes on when the connection drops or BenCode quits ([remote access](docs/remote-access.md)).
 - **Inbox extras:** checks, comments, merge and asking an agent to fix CI on GitHub, each project with its own `gh` account; fields, status and comments edited in place on Backlog.
 - **Accounts and usage:** several Claude Code and Codex accounts, each thread pinned to one, with 5-hour, weekly and monthly usage at the foot of the navigator. A thread stopped by a usage limit can carry on as another account. Switch between saved Antigravity sign-ins.

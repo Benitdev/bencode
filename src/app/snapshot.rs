@@ -393,6 +393,31 @@ const SCENES: &[(&str, SetUp)] = &[
         app.close_surface(cx);
         app.open_settings(cx);
     }),
+    #[cfg(target_os = "macos")]
+    ("computer-use-settings", |app, _, cx| {
+        app.computer_use_enabled = true;
+        app.open_settings_tab(crate::ui::settings_modal::SettingsTab::Integrations, cx);
+    }),
+    #[cfg(target_os = "macos")]
+    ("computer-use-approval", |app, _, cx| {
+        let mut run = staged_run(0, None);
+        run.computer_turn = Some("snapshot-turn".into());
+        app.runs.insert("snapshot-computer-use".into(), run);
+        app.computer_use_enabled = true;
+        let (reply, _) = std::sync::mpsc::channel();
+        app.handle_computer_call(
+            crate::mcp::bridge::ToolCall {
+                request: crate::mcp::bridge::ToolRequest {
+                    computer_turn: Some("snapshot-turn".into()),
+                    tool: "computer_displays".into(),
+                    args: serde_json::json!({}),
+                    ..Default::default()
+                },
+                reply,
+            },
+            cx,
+        );
+    }),
     // The first bot's view: its figure and status in the title bar, its
     // digest of the staged threads over the composer.
     ("bot", |app, _, cx| {
@@ -1715,6 +1740,7 @@ fn staged_run(id: u64, pending: Option<PermissionRequest>) -> AgentRun {
         id: u64::MAX - id,
         handle: HarnessProcessHandle::new(stdin_tx, cancel_tx, None, None, Default::default()),
         pending_permission: pending,
+        computer_turn: None,
         outcome: None,
         automation: None,
         auto_approve: false,
