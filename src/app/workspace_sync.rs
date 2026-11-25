@@ -15,6 +15,10 @@ use crate::git::{self, GitDetailedStatus, GitFileChange};
 
 /// MonoCode re-reads git state this often (`GIT_POLL_MS`).
 const GIT_POLL_INTERVAL: Duration = Duration::from_secs(2);
+/// While another app has focus, one poll in this many ticks (10s): agent
+/// edits still show, without three `git`s every two seconds in the
+/// background. The first tick after focus returns polls.
+const GIT_POLL_INACTIVE_EVERY: u32 = 5;
 /// VS Code's `git.autofetchPeriod` (180s): how stale a directory's remote
 /// refs may get before the background fetch runs again.
 const AUTO_FETCH_INTERVAL: Duration = Duration::from_secs(180);
@@ -421,13 +425,26 @@ impl BenCodeApp {
     /// changed outside BenCode (terminal commits, checkouts, agent edits).
     pub fn start_git_poll(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
+            let mut idle_ticks = 0u32;
             loop {
                 cx.background_executor().timer(GIT_POLL_INTERVAL).await;
                 // Three git commands a tick: none while nobody can see the
-                // result. The next tick after the window shows catches up.
+                // result, fewer while the window is in the background. The
+                // next tick after the window shows or focuses catches up.
                 let Ok(cwd) = this.update(cx, |app, cx| {
                     let cache = app.workspace(cx);
-                    (!cache.hidden).then(|| cache.cwd.clone())
+                    if cache.hidden {
+                        return None;
+                    }
+                    if app.alerts.window_active {
+                        idle_ticks = 0;
+                    } else {
+                        idle_ticks += 1;
+                        if idle_ticks % GIT_POLL_INACTIVE_EVERY != 0 {
+                            return None;
+                        }
+                    }
+                    Some(cache.cwd.clone())
                 }) else {
                     return; // app dropped
                 };

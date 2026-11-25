@@ -60,10 +60,14 @@ impl BenCodeApp {
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(STATS_TTL).await;
-                if this
-                    .update(cx, |app, cx| app.refresh_project_stats(cx))
-                    .is_err()
-                {
+                // Up to twenty `git diff`s a tick: none while nobody can see
+                // the rail. Focusing the window reads what went stale.
+                let tick = this.update(cx, |app, cx| {
+                    if !app.workspace(cx).hidden {
+                        app.refresh_project_stats(cx);
+                    }
+                });
+                if tick.is_err() {
                     return; // app dropped
                 }
             }
@@ -109,7 +113,8 @@ impl BenCodeApp {
                     changed || before.is_none_or(|entry| entry.stats != value)
                 });
                 if changed {
-                    cx.notify();
+                    // Only the rail's project cards show them.
+                    app.redraw_regions(&[crate::ui::region::Region::Rail], cx);
                 }
             });
             if let Err(err) = applied {

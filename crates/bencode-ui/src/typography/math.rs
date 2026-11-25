@@ -162,7 +162,14 @@ fn guarded<T>(lay: impl FnOnce() -> T) -> Result<T, MathError> {
 
 /// `svg` reframed around its ink and layout box.
 fn framed(svg: &str, width: f32, height: f32) -> Result<(String, Size<Pixels>), MathError> {
-    let tree = usvg::Tree::from_data(svg.as_bytes(), &crate::documents::svg_options())
+    // RaTeX embeds KaTeX's glyphs as paths, which measure with no font; only
+    // a glyph its fonts lack (CJK in `\text`) stays `<text>`. Otherwise the
+    // system's fonts would load, and stay, for the first formula.
+    let options = match svg.contains("<text") {
+        true => crate::documents::svg_options(),
+        false => usvg::Options::default(),
+    };
+    let tree = usvg::Tree::from_data(svg.as_bytes(), &options)
         .map_err(|error| MathError::said(format!("{error}")))?;
     let ink = tree.root().abs_stroke_bounding_box();
     let left = ink.left().min(0.0);

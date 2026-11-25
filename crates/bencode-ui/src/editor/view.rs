@@ -25,6 +25,8 @@ pub(crate) struct Frame {
     pub line: Pixels,
     pub matched: Option<(usize, usize)>,
     pub occurrences: Vec<Range<usize>>,
+    /// The text `occurrences` are of; `None` while nothing is highlighted.
+    pub needle: Option<String>,
     /// The buffer stamp these offsets were found in.
     pub stamp: u64,
     /// The minimap's box, from its last paint.
@@ -245,15 +247,26 @@ impl Render for CodeEditor {
             }
         };
         let line = (pixels * LEADING).round();
-        let found = folds(&self.buffer);
+        // Folds, brackets and occurrences scan the whole text: a render with
+        // the same text (a blink, a caret move, a scroll) keeps the last ones.
+        let stamp = self.buffer.stamp();
+        let same_text = self.frame.stamp == stamp;
+        let (found, found_brackets) = match same_text {
+            true => (
+                std::mem::take(&mut self.frame.folds),
+                std::mem::take(&mut self.frame.brackets),
+            ),
+            false => (folds(&self.buffer), brackets(&self.buffer)),
+        };
         let hide = hidden(self.buffer.lines(), &found, &self.folded);
-        let found_brackets = brackets(&self.buffer);
         let matched = syntax::matched(&found_brackets, self.primary().head);
-        let occurrences = match self.needle() {
-            Some(needle) if self.focus.is_focused(window) => {
-                syntax::occurrences(&self.buffer, &needle, 0..self.buffer.lines())
+        let needle = self.needle().filter(|_| self.focus.is_focused(window));
+        let occurrences = match &needle {
+            Some(text) if same_text && self.frame.needle.as_ref() == Some(text) => {
+                std::mem::take(&mut self.frame.occurrences)
             }
-            _ => Vec::new(),
+            Some(text) => syntax::occurrences(&self.buffer, text, 0..self.buffer.lines()),
+            None => Vec::new(),
         };
         let minimap = self.frame.minimap;
         // Half a view of room rows: the ends center too.
@@ -272,7 +285,8 @@ impl Render for CodeEditor {
             line,
             matched,
             occurrences,
-            stamp: self.buffer.stamp(),
+            needle,
+            stamp,
             minimap,
         };
         self.metrics.advance = advance;

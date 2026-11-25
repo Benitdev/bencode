@@ -452,12 +452,19 @@ fn lay_out(inline: &Inline, base: Hsla, italic: bool, fade: f32, look: &Look) ->
 /// Ramps the last `FADE_TAIL` graphemes from full ink down to a quarter at
 /// full `strength`, splitting runs where the ramp crosses them.
 fn fade_tail(laid: &mut Laid, strength: f32) {
-    let starts: Vec<usize> = laid.text.grapheme_indices(true).map(|(at, _)| at).collect();
-    let count = starts.len().min(FADE_TAIL);
-    if count == 0 {
+    // From the end: a paragraph is walked once a frame while it reveals.
+    let mut starts: Vec<usize> = laid
+        .text
+        .grapheme_indices(true)
+        .rev()
+        .take(FADE_TAIL)
+        .map(|(at, _)| at)
+        .collect();
+    starts.reverse();
+    let count = starts.len();
+    let Some(&from) = starts.first() else {
         return;
-    }
-    let from = starts[starts.len() - count];
+    };
     let mut runs = Vec::with_capacity(laid.runs.len() + count);
     let mut at = 0;
     for run in laid.runs.drain(..) {
@@ -484,8 +491,7 @@ fn fade_tail(laid: &mut Laid, strength: f32) {
                 .copied()
                 .unwrap_or(laid.text.len())
                 .min(end);
-            let step = ix + count - starts.len();
-            let alpha = 1.0 - 0.75 * strength * (step + 1) as f32 / count as f32;
+            let alpha = 1.0 - 0.75 * strength * (ix + 1) as f32 / count as f32;
             runs.push(TextRun {
                 len: next - g,
                 color: run.color.opacity(run.color.a * alpha),
@@ -1303,6 +1309,58 @@ impl RenderOnce for AgentMarkdown {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fade_tail_ramps_the_last_graphemes_across_runs() {
+        let run = |len, color| TextRun {
+            len,
+            font: gpui::font("Sans"),
+            color,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        // 30 graphemes, the last a two-char emoji, over two runs.
+        let text = format!("{}{}👋🏽", "a".repeat(20), "b".repeat(9));
+        let mut laid = Laid {
+            runs: vec![run(20, gpui::red()), run(text.len() - 20, gpui::blue())],
+            text,
+            targets: Vec::new(),
+        };
+        fade_tail(&mut laid, 1.0);
+        let lens: Vec<usize> = laid.runs.iter().map(|run| run.len).collect();
+        // Two graphemes untouched, then one run per faded grapheme.
+        assert_eq!(lens[0], 2);
+        assert_eq!(lens.len(), 1 + FADE_TAIL);
+        assert_eq!(lens.iter().sum::<usize>(), laid.text.len());
+        assert_eq!(*lens.last().unwrap(), "👋🏽".len());
+        let alphas: Vec<f32> = laid.runs.iter().map(|run| run.color.a).collect();
+        assert!(alphas.windows(2).all(|pair| pair[1] < pair[0]));
+        assert!((alphas.last().unwrap() - 0.25).abs() < 1e-5);
+        assert_eq!(
+            laid.runs[18].color,
+            gpui::red().opacity(1.0 - 0.75 * 18.0 / 28.0)
+        );
+    }
+
+    #[test]
+    fn fade_tail_of_short_text_fades_all_of_it() {
+        let mut laid = Laid {
+            text: "hi".into(),
+            runs: vec![TextRun {
+                len: 2,
+                font: gpui::font("Sans"),
+                color: gpui::black(),
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            }],
+            targets: Vec::new(),
+        };
+        fade_tail(&mut laid, 1.0);
+        let alphas: Vec<f32> = laid.runs.iter().map(|run| run.color.a).collect();
+        assert_eq!(alphas, [1.0 - 0.75 / 2.0, 0.25]);
+    }
 
     #[test]
     fn code_runs_cover_the_text_in_one_pass() {
