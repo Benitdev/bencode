@@ -12,13 +12,18 @@ tagging (`docs/releasing.md`).
   provider account profile (`CODEX_HOME` / `CLAUDE_CONFIG_DIR`), and refresh
   automatically when switching, adding or reconnecting an account (and on
   Antigravity account switches), so switching to another plan immediately
-  loads its accessible models in the model picker.
+  loads its accessible models in the model picker. Bot launches, handoffs
+  and `models.list` use the catalog of the account the new thread runs on,
+  never another account's models, and the picker notes when built-in models
+  stand in while an account's first list loads.
 - Reduced idle CPU and per-frame work: project git stats pause while the
   window is hidden and redraw only the rail, git polling backs off to 10s
   while another app has focus, LaTeX skips scanning system fonts when a
   formula has no `<text>` glyphs, streaming markdown tail fading scans only
   the last graphemes, and the code editor caches folds, brackets and
   occurrences across renders of the same buffer state.
+- The title bar's tab strip lines up with the floating workspace card, and
+  the diff viewer's header and file rows are lighter to match it.
 
 ## [0.1.62] - 2026-11-25
 
