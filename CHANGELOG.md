@@ -6,6 +6,28 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+## [0.1.62] - 2026-11-25
+
+- Redesigned the workspace around borderless floating cards over a unified
+  window canvas: Chat, File/Browser, Terminal dock, Bot views and in-shell
+  surfaces (Inbox, Notes, Automations) sit as softly rounded cards separated by
+  open channels with hover-only pill resize handles, while the navigator,
+  title bar and right Inspector (Changes / Explorer) sit cleanly on the
+  window's canvas without 1px grid dividers.
+- Refined dark glass translucency (`Glass::panel`) so floating cards lift
+  softly over the window's Liquid Glass canvas without compounding into a dark
+  pit against bright windows behind BenCode, and rounded chat background
+  photos, the code editor, the terminal grid and the composer cleanly (with a
+  darker scrim behind the composer when a chat photo is active).
+- Antigravity (`agy acp`) now advertises ACP `elicitation.form` and renders
+  interactive `ask_question` prompts (single-select, multi-select and custom
+  Other answers) directly in the composer question form, preserving structured
+  option selections without losing commas or mixed answers.
+- Fixed confirmation dialogs that cleared their pending state on close before
+  running the confirmed action: Inbox pull-request actions (merge, close,
+  draft), artifact deletion, discarding automation drafts and closing running
+  terminals now execute reliably when confirmed.
+
 ## [0.1.61] - 2026-11-24
 
 - GitHub issues and pull requests in the Inbox are edited in place:
