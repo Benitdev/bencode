@@ -9,7 +9,10 @@ use bencode_ui::primitives::{Icon, IconName};
 use bencode_ui::selection::{Document, TextSelection};
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, Div, SharedString, Stateful, canvas, deferred, div, point};
+use gpui::{
+    Anchor, AnyElement, Bounds, Context, Div, Pixels, Point, SharedString, Stateful, canvas,
+    deferred, div, point,
+};
 
 use crate::ui::scale::px;
 use crate::ui::selection_area::{self, SelectionArea};
@@ -23,8 +26,31 @@ use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
 /// MonoCode `MAX_TITLE` for notes.
 const NOTE_TITLE_CHARS: usize = 200;
-/// The gap between the selection and the menu above it.
+/// The gap between the selection and its action menu.
 const MENU_GAP: f32 = 6.0;
+const MENU_ROW_HEIGHT: f32 = 32.0;
+const MENU_ROW_GAP: f32 = 2.0;
+/// Vertical padding (`p_1` = 4px × 2) + 1px border top & bottom.
+const MENU_CHROME_HEIGHT: f32 = 10.0;
+/// Extra vertical room when the inline note-save error is shown.
+const MENU_ERROR_HEIGHT: f32 = 36.0;
+
+/// Places the selection menu above `line` when it clears `top_clearance` (the
+/// title bar), else flips it below `line` so `snap_to_window` never pushes the
+/// popover down onto the selected text.
+fn selection_menu_placement(
+    line: Bounds<Pixels>,
+    menu_height: Pixels,
+    top_clearance: Pixels,
+    gap: Pixels,
+) -> (Anchor, Point<Pixels>) {
+    let x = line.center().x;
+    if line.top() - gap - menu_height >= top_clearance {
+        (Anchor::BottomCenter, point(x, line.top() - gap))
+    } else {
+        (Anchor::TopCenter, point(x, line.bottom() + gap))
+    }
+}
 
 /// `[text](target)` at the start of `s`: the text and the length taken.
 /// As MonoCode's `\[([^\]]*)]\([^)]*\)`, the text holds no `]` and the
@@ -276,7 +302,7 @@ impl BenCodeApp {
             div()
                 .id(id)
                 .flex()
-                .h(px(32.0))
+                .h(px(MENU_ROW_HEIGHT))
                 .w_full()
                 .items_center()
                 .gap_2()
@@ -298,6 +324,15 @@ impl BenCodeApp {
             .filter(|_| self.bots_enabled() && !self.is_bot_session(session_id))
             .and_then(|session| self.bot_for_project(&session.cwd))
             .map(|bot| bot.display_name());
+        let row_count = 2 + usize::from(ask.is_some());
+        let menu_height = px(MENU_CHROME_HEIGHT
+            + row_count as f32 * MENU_ROW_HEIGHT
+            + (row_count - 1) as f32 * MENU_ROW_GAP
+            + if error.is_some() {
+                MENU_ERROR_HEIGHT
+            } else {
+                0.0
+            });
         let (ask_text, ask_sid) = (text.clone(), session_id.to_string());
         let (chat_text, note_text, sid) = (text.clone(), text, session_id.to_string());
         let menu = popover_frame(cx)
@@ -309,7 +344,7 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .items_stretch()
-            .gap(px(2.0))
+            .gap(px(MENU_ROW_GAP))
             .child(
                 action(
                     "selection-add-to-chat",
@@ -362,11 +397,12 @@ impl BenCodeApp {
                 .left_0()
                 .size_full(),
             );
-        let at = point(line.center().x, line.top() - px(MENU_GAP));
+        let top_clearance = px(crate::ui::sidebar::TITLEBAR_HEIGHT + 4.0);
+        let (anchor, at) = selection_menu_placement(line, menu_height, top_clearance, px(MENU_GAP));
         Some(
             deferred(
                 gpui::anchored()
-                    .anchor(gpui::Anchor::BottomCenter)
+                    .anchor(anchor)
                     .position(at)
                     .snap_to_window()
                     .child(menu),
@@ -397,5 +433,26 @@ mod tests {
     fn link_text_stops_at_its_bracket() {
         assert_eq!(unwrap_markdown("[a] and [b](c)"), "[a] and b");
         assert_eq!(unwrap_markdown("see ![](x.png)[]() [ok](y)"), "see []() ok");
+    }
+
+    #[test]
+    fn selection_menu_flips_below_when_near_top() {
+        let near_top = Bounds::new(
+            point(gpui::px(200.0), gpui::px(60.0)),
+            gpui::size(gpui::px(80.0), gpui::px(22.0)),
+        );
+        let (anchor, pos) =
+            selection_menu_placement(near_top, gpui::px(110.0), gpui::px(44.0), gpui::px(6.0));
+        assert_eq!(anchor, Anchor::TopCenter);
+        assert_eq!(pos, point(gpui::px(240.0), gpui::px(88.0)));
+
+        let mid = Bounds::new(
+            point(gpui::px(200.0), gpui::px(240.0)),
+            gpui::size(gpui::px(80.0), gpui::px(22.0)),
+        );
+        let (anchor, pos) =
+            selection_menu_placement(mid, gpui::px(110.0), gpui::px(44.0), gpui::px(6.0));
+        assert_eq!(anchor, Anchor::BottomCenter);
+        assert_eq!(pos, point(gpui::px(240.0), gpui::px(234.0)));
     }
 }
