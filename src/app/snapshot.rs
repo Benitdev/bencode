@@ -1742,6 +1742,7 @@ fn staged_run(id: u64, pending: Option<PermissionRequest>) -> AgentRun {
         handle: HarnessProcessHandle::new(stdin_tx, cancel_tx, None, None, Default::default()),
         pending_permission: pending,
         computer_turn: None,
+        unattended: false,
         outcome: None,
         automation: None,
         auto_approve: false,

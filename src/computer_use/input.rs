@@ -240,6 +240,26 @@ impl Mouse {
             None => mouse(MouseButton::Left, EventType::MouseMoved, where_to, 0),
         };
 
+        let drag_target = match &self.action {
+            MouseAction::Click { button, .. } => {
+                check_button_free(&held.buttons, *button)?;
+                None
+            }
+            MouseAction::Drag {
+                button,
+                to_screenshot_id,
+                to_x,
+                to_y,
+            } => {
+                check_button_free(&held.buttons, *button)?;
+                let id = to_screenshot_id
+                    .or(self.screenshot_id)
+                    .expect("validated drag source");
+                Some(frames.point(turn, id, *to_x, *to_y)?)
+            }
+            _ => None,
+        };
+
         grant.check()?;
         // Hover first, as a hand would: tracking areas, menus and web views
         // ignore a press at a point the pointer never reached.
@@ -267,7 +287,6 @@ impl Mouse {
                 held.buttons.retain(|held| *held != button);
             }
             MouseAction::Click { button, count } => {
-                check_button_free(&held.buttons, button)?;
                 let (_, down, up, _) = button.events();
                 let count = count.unwrap_or(1);
                 for click in 1..=count {
@@ -281,17 +300,8 @@ impl Mouse {
                     }
                 }
             }
-            MouseAction::Drag {
-                button,
-                to_screenshot_id,
-                to_x,
-                to_y,
-            } => {
-                check_button_free(&held.buttons, button)?;
-                let id = to_screenshot_id
-                    .or(self.screenshot_id)
-                    .expect("validated drag source");
-                let target = frames.point(turn, id, to_x, to_y)?;
+            MouseAction::Drag { button, .. } => {
+                let target = drag_target.expect("validated drag target");
                 drag(position, target, button, mouse, grant)?;
                 held.last_pointer = Some(target);
                 return Ok(());

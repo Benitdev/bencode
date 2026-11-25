@@ -67,12 +67,11 @@ fn inline_config(req: &SpawnRequest, v2: bool) -> Option<(String, String)> {
             if launch.name == crate::mcp::COMPUTER_SERVER {
                 let name = crate::mcp::COMPUTER_TURN_ENV;
                 server["environment"] = serde_json::json!({ (name): format!("{{env:{name}}}") });
+                // The first desktop call can wait for a person to approve.
+                server["timeout"] = serde_json::json!(90_000);
                 if v2 {
                     // Expose screenshot image content directly to the model.
                     server["codemode"] = Value::Bool(false);
-                } else {
-                    // The first desktop call can wait for a person to approve.
-                    server["timeout"] = serde_json::json!(90_000);
                 }
             }
             (launch.name.clone(), server)
@@ -307,6 +306,7 @@ mod tests {
                 "type": "local",
                 "command": ["/bin/bencode", "--computer-use-mcp", "/tmp/b.sock"],
                 "codemode": false,
+                "timeout": 90_000,
                 "environment": { "BENCODE_COMPUTER_TURN": "{env:BENCODE_COMPUTER_TURN}" }
             })
         );

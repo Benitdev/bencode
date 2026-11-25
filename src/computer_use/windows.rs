@@ -132,14 +132,29 @@ impl Window {
                     .is_some_and(|title| title.chars().take(250).eq(self.title.chars()));
             candidates.push((position_match, title_match, window));
         }
-        // An app with one window needs no match: its title may be hidden
-        // (no Screen Recording) and a minimized window's frame may differ.
-        let index = (candidates.len() == 1)
-            .then_some(0)
-            .or_else(|| match_window(candidates.iter().map(|(bounds, title, _)| (*bounds, *title))))
+        let matches: Vec<(bool, bool)> = candidates
+            .iter()
+            .map(|(bounds, title, _)| (*bounds, *title))
+            .collect();
+        // Only take a lone Accessibility window without a match when Window
+        // Server confirms the app owns no other normal window (e.g. on another
+        // Space or already closed), otherwise we could act on the wrong one.
+        let index = resolve_window(&matches, || sole_window_for_pid(self.pid, self.id))
             .context("Could not uniquely match this window to an Accessibility window. Refresh computer_windows or use display coordinates.")?;
         Ok((app, candidates.swap_remove(index).2))
     }
+}
+
+fn sole_window_for_pid(pid: i32, id: u32) -> bool {
+    read(true).is_ok_and(|windows| {
+        let mut owned = windows.into_iter().filter(|window| window.pid == pid);
+        owned.next().is_some_and(|window| window.id == id) && owned.next().is_none()
+    })
+}
+
+fn resolve_window(matches: &[(bool, bool)], sole_app_window: impl FnOnce() -> bool) -> Option<usize> {
+    match_window(matches.iter().copied())
+        .or_else(|| (matches.len() == 1 && sole_app_window()).then_some(0))
 }
 
 fn close_bounds(a: CGRect, b: CGRect) -> bool {
@@ -315,6 +330,10 @@ mod tests {
         assert_eq!(match_window([(true, true), (true, true)].into_iter()), None);
         assert_eq!(match_window([(false, false)].into_iter()), None);
         assert_eq!(match_window([(false, true)].into_iter()), Some(0));
+        // A lone AX window falls back only when the app has no other window.
+        assert_eq!(resolve_window(&[(false, false)], || true), Some(0));
+        assert_eq!(resolve_window(&[(false, false)], || false), None);
+        assert_eq!(resolve_window(&[(false, true)], || false), Some(0));
     }
 
     #[test]

@@ -471,8 +471,12 @@ impl BenCodeApp {
                 TurnInput {
                     text: plan.prompt.clone(),
                     extra,
-                    // A habit's launch has nobody to approve the desktop.
-                    unattended: !caller.own,
+                    // A habit's or unattended bot turn's launch has nobody to approve the desktop.
+                    unattended: !caller.own
+                        || self
+                            .runs
+                            .get(&caller.session)
+                            .is_some_and(|run| run.unattended),
                     ..Default::default()
                 },
                 cx,

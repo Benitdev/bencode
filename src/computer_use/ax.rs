@@ -245,7 +245,13 @@ impl Element {
 
     /// What the control holds (a field's text, a checkbox's state, a
     /// slider's number); never a secure field's.
-    fn value(&self) -> Option<Value> {
+    fn value(&self, role: &str) -> Option<Value> {
+        if matches!(
+            role,
+            "AXWindow" | "AXScrollArea" | "AXSplitGroup" | "AXToolbar"
+        ) {
+            return None;
+        }
         if self.text("AXSubrole").as_deref() == Some("AXSecureTextField") {
             return None;
         }
@@ -257,10 +263,11 @@ impl Element {
         if let Some(flag) = value.downcast::<CFBoolean>() {
             return Some(Value::Bool(flag.into()));
         }
-        value
-            .downcast::<CFNumber>()
-            .and_then(|number| number.to_f64())
-            .map(|number| json!(number))
+        let number = value.downcast::<CFNumber>()?;
+        if let Some(int) = number.to_i64() {
+            return Some(json!(int));
+        }
+        number.to_f64().map(|float| json!(float))
     }
 
     fn description(&self) -> Description {
@@ -354,7 +361,7 @@ impl Outline<'_> {
             "label": label,
             "enabled": element.boolean("AXEnabled"),
         });
-        if let Some(value) = element.value() {
+        if let Some(value) = element.value(&desc.role) {
             node["value"] = value;
         }
         self.nodes.push(node);

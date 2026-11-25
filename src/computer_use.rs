@@ -295,7 +295,9 @@ impl Action {
                     || !bundle_id.contains('.')
                     || !bundle_id.split('.').all(|part| {
                         part.starts_with(|c: char| c.is_ascii_alphanumeric())
-                            && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                            && part
+                                .bytes()
+                                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
                     })
                 {
                     bail!("Provide a macOS bundle identifier, for example com.apple.calculator.");
@@ -375,7 +377,7 @@ impl Desktop {
         // LaunchServices outside the lock.
         if let Action::OpenApp(bundle_id) = action {
             grant.check()?;
-            open_app(&bundle_id)?;
+            open_app(&bundle_id, grant)?;
             grant.check()?;
             return Ok(ToolReply::text(format!(
                 "Opened {bundle_id}. Take a screenshot to check its window."
@@ -421,7 +423,7 @@ impl Desktop {
 /// How long `open -b` may take before the call gives up on it.
 const OPEN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
-fn open_app(bundle_id: &str) -> Result<()> {
+fn open_app(bundle_id: &str, grant: &Grant) -> Result<()> {
     let mut child = std::process::Command::new("/usr/bin/open")
         .args(["-b", bundle_id])
         .stdout(std::process::Stdio::null())
@@ -429,17 +431,24 @@ fn open_app(bundle_id: &str) -> Result<()> {
         .spawn()
         .context("Could not open the app.")?;
     let deadline = std::time::Instant::now() + OPEN_TIMEOUT;
+    let stop_child = |child: &mut std::process::Child| {
+        if let Err(err) = child.kill() {
+            log::warn!("Computer Use: could not stop a stuck open: {err}");
+        }
+        if let Err(err) = child.wait() {
+            log::warn!("Computer Use: could not reap a stuck open: {err}");
+        }
+    };
     let status = loop {
         if let Some(status) = child.try_wait().context("Could not open the app.")? {
             break status;
         }
+        if let Err(err) = grant.check() {
+            stop_child(&mut child);
+            return Err(err);
+        }
         if std::time::Instant::now() >= deadline {
-            if let Err(err) = child.kill() {
-                log::warn!("Computer Use: could not stop a stuck open: {err}");
-            }
-            if let Err(err) = child.wait() {
-                log::warn!("Computer Use: could not reap a stuck open: {err}");
-            }
+            stop_child(&mut child);
             bail!(
                 "macOS did not open {bundle_id} in time. Take a screenshot: it may be asking for confirmation."
             );
@@ -497,6 +506,14 @@ mod tests {
                 json!({"bundleId": "com.apple.calculator"})
             )
             .follows_focus()
+        );
+        // Apple's own Image Capture uses an underscore in its bundle ID.
+        assert!(
+            Action::parse(
+                "computer_open_app",
+                json!({"bundleId": "com.apple.Image_Capture"})
+            )
+            .is_ok()
         );
         assert!(parse("computer_type", json!({"text": "hi"})).follows_focus());
         assert!(parse("computer_key", json!({"key": "Return"})).follows_focus());

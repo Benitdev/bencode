@@ -192,7 +192,9 @@ impl BenCodeApp {
         });
         self.announce_computer_use(session, cx);
         // With notifications off, the Dock still says someone must answer.
-        window.request_attention();
+        if !super::frame_bench::enabled() && !super::snapshots_enabled() {
+            window.request_attention();
+        }
         cx.notify();
 
         cx.spawn(async move |this, cx| {

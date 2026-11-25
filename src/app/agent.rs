@@ -68,6 +68,8 @@ pub struct AgentRun {
     pub handle: HarnessProcessHandle,
     pub pending_permission: Option<PermissionRequest>,
     pub computer_turn: Option<String>,
+    /// Started without the user waiting on it (automation, habit, bot report).
+    pub unattended: bool,
     /// How the turn ended, once the harness reports `Done`.
     pub outcome: Option<DoneStatus>,
     /// The automation run this turn carries out, closed when it ends.
@@ -1098,6 +1100,7 @@ impl BenCodeApp {
                 self.track_run(session_id.to_string(), handle, events, auto_approve, cx);
                 if let Some(run) = self.runs.get_mut(session_id) {
                     run.computer_turn = computer_turn;
+                    run.unattended = request.unattended;
                     run.can_steer = steers && request.purpose == RunPurpose::Turn;
                     run.purpose = request.purpose;
                     run.remote = remote.clone();
@@ -1146,6 +1149,7 @@ impl BenCodeApp {
                 handle,
                 pending_permission: None,
                 computer_turn: None,
+                unattended: false,
                 outcome: None,
                 automation: None,
                 auto_approve,
