@@ -312,6 +312,9 @@ pub struct BenCodeApp {
     /// Model catalog probes per `(harness, account_id)`: `None` while one
     /// runs, else when the next one may.
     pub catalog_probes: HashMap<(crate::harness::HarnessKind, String), Option<std::time::Instant>>,
+    /// Running probes whose answer is out of date before it lands (the
+    /// sign-in or the CLI changed meanwhile): dropped, and asked again.
+    pub catalog_stale: std::collections::HashSet<(crate::harness::HarnessKind, String)>,
     /// The Providers page's rescan of PATH for agent CLIs is running.
     pub harness_rescan: bool,
     /// Each provider's last "Import sessions" (`app/cli_import.rs`).
@@ -1501,6 +1504,7 @@ impl BenCodeApp {
             recent_models: Vec::new(),
             last_model_settings: Default::default(),
             catalog_probes: Default::default(),
+            catalog_stale: Default::default(),
             harness_rescan: false,
             cli_imports: Default::default(),
             harness_updates: Default::default(),

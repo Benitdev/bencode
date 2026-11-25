@@ -259,9 +259,52 @@ fn seeds(harness: HarnessKind) -> Vec<ModelOption> {
 }
 
 type SeedCatalog = HashMap<HarnessKind, Arc<[ModelOption]>>;
-type LiveCatalog = HashMap<(HarnessKind, String), Arc<[ModelOption]>>;
 
-static LIVE: LazyLock<RwLock<LiveCatalog>> = LazyLock::new(Default::default);
+/// The catalogs the CLIs reported, one per `(harness, account)`.
+#[derive(Default)]
+struct Live {
+    accounts: HashMap<(HarnessKind, String), Arc<[ModelOption]>>,
+    /// Every account's models of a harness, the default profile's first, then
+    /// by account id; each key once. Rebuilt when a catalog lands or goes,
+    /// so lookups that draw (labels on every thread row) only clone an `Arc`.
+    merged: HashMap<HarnessKind, Arc<[ModelOption]>>,
+}
+
+impl Live {
+    fn remerge(&mut self, harness: HarnessKind) {
+        let default_id = crate::harness::accounts::DEFAULT_ACCOUNT_ID;
+        let mut lists: Vec<(&str, &Arc<[ModelOption]>)> = self
+            .accounts
+            .iter()
+            .filter(|((kind, _), _)| *kind == harness)
+            .map(|((_, id), models)| (id.as_str(), models))
+            .collect();
+        if lists.is_empty() {
+            self.merged.remove(&harness);
+            return;
+        }
+        lists.sort_by(|(a, _), (b, _)| {
+            (*a != default_id)
+                .cmp(&(*b != default_id))
+                .then_with(|| a.cmp(b))
+        });
+        let merged: Arc<[ModelOption]> = match lists.as_slice() {
+            [(_, only)] => Arc::clone(only),
+            _ => {
+                let mut seen = std::collections::HashSet::new();
+                lists
+                    .iter()
+                    .flat_map(|(_, models)| models.iter())
+                    .filter(|model| seen.insert(model.key.as_str()))
+                    .cloned()
+                    .collect()
+            }
+        };
+        self.merged.insert(harness, merged);
+    }
+}
+
+static LIVE: LazyLock<RwLock<Live>> = LazyLock::new(Default::default);
 static SEEDS: LazyLock<SeedCatalog> = LazyLock::new(|| {
     crate::harness::ALL_HARNESSES
         .iter()
@@ -304,7 +347,9 @@ pub fn set_account_models(
     }
     match LIVE.write() {
         Ok(mut live) => {
-            live.insert(account_key(harness, account_id), Arc::from(models));
+            live.accounts
+                .insert(account_key(harness, account_id), Arc::from(models));
+            live.remerge(harness);
         }
         Err(err) => log::error!("model catalog lock poisoned: {err}"),
     }
@@ -314,7 +359,9 @@ pub fn set_account_models(
 pub fn forget_account_models(harness: HarnessKind, account_id: &str) {
     match LIVE.write() {
         Ok(mut live) => {
-            live.remove(&account_key(harness, Some(account_id)));
+            live.accounts
+                .remove(&account_key(harness, Some(account_id)));
+            live.remerge(harness);
         }
         Err(err) => log::error!("model catalog lock poisoned: {err}"),
     }
@@ -325,7 +372,8 @@ pub fn has_account_models(harness: HarnessKind, account_id: Option<&str>) -> boo
     LIVE.read()
         .ok()
         .and_then(|live| {
-            live.get(&account_key(harness, account_id))
+            live.accounts
+                .get(&account_key(harness, account_id))
                 .map(|m| !m.is_empty())
         })
         .unwrap_or(false)
@@ -333,58 +381,28 @@ pub fn has_account_models(harness: HarnessKind, account_id: Option<&str>) -> boo
 
 /// The live catalog for `(harness, account_id)`, else `harness`' built-in list.
 pub fn models_for_account(harness: HarnessKind, account_id: Option<&str>) -> Arc<[ModelOption]> {
-    let live = LIVE
+    let live = LIVE.read().ok().and_then(|live| {
+        live.accounts
+            .get(&account_key(harness, account_id))
+            .cloned()
+    });
+    live.unwrap_or_else(|| seed_models(harness))
+}
+
+/// The default profile's live catalog, else the harness' built-in list.
+/// Anything that starts or checks a thread asks `models_for_account`.
+pub fn models_for(harness: HarnessKind) -> Arc<[ModelOption]> {
+    models_for_account(harness, None)
+}
+
+/// Every account's live models for `harness` (default profile first), else
+/// its built-in seeds.
+fn all_models_for(harness: HarnessKind) -> Arc<[ModelOption]> {
+    let merged = LIVE
         .read()
         .ok()
-        .and_then(|live| live.get(&account_key(harness, account_id)).cloned());
-    live.unwrap_or_else(|| seed_models(harness))
-}
-
-/// The harness' live catalog (default profile first, else any loaded account),
-/// else its built-in list.
-pub fn models_for(harness: HarnessKind) -> Arc<[ModelOption]> {
-    let live = LIVE.read().ok().and_then(|live| {
-        if let Some(default) = live.get(&account_key(harness, None)) {
-            return Some(default.clone());
-        }
-        live.iter()
-            .filter(|((kind, _), _)| *kind == harness)
-            .min_by(|((_, a), _), ((_, b), _)| a.cmp(b))
-            .map(|(_, models)| models.clone())
-    });
-    live.unwrap_or_else(|| seed_models(harness))
-}
-
-/// All live models known for `harness` across accounts (default profile first),
-/// else its built-in seeds.
-fn all_models_for(harness: HarnessKind) -> Vec<ModelOption> {
-    let Ok(live) = LIVE.read() else {
-        return seed_models(harness).to_vec();
-    };
-    let mut entries: Vec<(&str, &Arc<[ModelOption]>)> = live
-        .iter()
-        .filter(|((kind, _), _)| *kind == harness)
-        .map(|((_, id), models)| (id.as_str(), models))
-        .collect();
-    if entries.is_empty() {
-        return seed_models(harness).to_vec();
-    }
-    let default_id = crate::harness::accounts::DEFAULT_ACCOUNT_ID;
-    entries.sort_by(|(a, _), (b, _)| {
-        (*a != default_id)
-            .cmp(&(*b != default_id))
-            .then_with(|| a.cmp(b))
-    });
-    let mut seen = std::collections::HashSet::new();
-    let mut combined = Vec::new();
-    for (_, models) in entries {
-        for model in models.iter() {
-            if seen.insert(model.key.clone()) {
-                combined.push(model.clone());
-            }
-        }
-    }
-    combined
+        .and_then(|live| live.merged.get(&harness).cloned());
+    merged.unwrap_or_else(|| seed_models(harness))
 }
 
 /// The harness named by a `harness:model` key, whether or not the live
@@ -406,28 +424,14 @@ pub fn is_model_key(key: &str) -> bool {
 pub fn find_for_account(key: &str, account_id: Option<&str>) -> Option<ModelOption> {
     let harness = harness_of(key)?;
     if let Ok(live) = LIVE.read() {
-        let preferred = account_key(harness, account_id);
-        if let Some(found) = live
-            .get(&preferred)
-            .and_then(|models| models.iter().find(|m| m.key == key))
-        {
+        let found = live
+            .accounts
+            .get(&account_key(harness, account_id))
+            .into_iter()
+            .chain(live.merged.get(&harness))
+            .find_map(|models| models.iter().find(|m| m.key == key));
+        if let Some(found) = found {
             return Some(found.clone());
-        }
-        let default_id = crate::harness::accounts::DEFAULT_ACCOUNT_ID;
-        let mut others: Vec<(&str, &Arc<[ModelOption]>)> = live
-            .iter()
-            .filter(|((kind, id), _)| *kind == harness && id != &preferred.1)
-            .map(|((_, id), models)| (id.as_str(), models))
-            .collect();
-        others.sort_by(|(a, _), (b, _)| {
-            (*a != default_id)
-                .cmp(&(*b != default_id))
-                .then_with(|| a.cmp(b))
-        });
-        for (_, models) in others {
-            if let Some(found) = models.iter().find(|m| m.key == key) {
-                return Some(found.clone());
-            }
         }
     }
     SEEDS.get(&harness)?.iter().find(|m| m.key == key).cloned()
@@ -776,6 +780,7 @@ mod tests {
 
     #[test]
     fn card_labels_follow_monocode_resolve_model() {
+        let _catalog = live_catalog_lock();
         assert_eq!(
             display_label("antigravity", "antigravity:gemini-3.8-flash-high"),
             "Gemini 3.8 Flash (High)"
@@ -802,6 +807,14 @@ mod tests {
     }
 
     use super::*;
+
+    /// Tests that load live models, and those whose answers change when
+    /// some are loaded, take turns: the catalog is one for the process.
+    fn live_catalog_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 
     #[test]
     fn effort_values_carry_over_through_their_alias() {
@@ -915,8 +928,20 @@ mod tests {
 
     #[test]
     fn account_catalogs_stay_isolated_while_lookups_find_account_models() {
+        let _catalog = live_catalog_lock();
         let free = "test-codex-free";
         let plus = "test-codex-plus";
+        // The catalog is shared by tests running at once: forgotten even
+        // when an assert fails first.
+        struct Forget(&'static [&'static str]);
+        impl Drop for Forget {
+            fn drop(&mut self) {
+                for id in self.0 {
+                    forget_account_models(HarnessKind::Codex, id);
+                }
+            }
+        }
+        let _forget = Forget(&["test-codex-free", "test-codex-plus"]);
         set_account_models(
             HarnessKind::Codex,
             Some(free),
@@ -1005,8 +1030,11 @@ mod tests {
         );
 
         forget_account_models(HarnessKind::Codex, free);
-        forget_account_models(HarnessKind::Codex, plus);
         assert!(!has_account_models(HarnessKind::Codex, Some(free)));
+        // The merged list follows: the Plus account's alone is left.
+        assert_eq!(label_for("codex:test-plus-only"), "Test Plus Model");
+        forget_account_models(HarnessKind::Codex, plus);
         assert!(!has_account_models(HarnessKind::Codex, Some(plus)));
+        assert_eq!(label_for("codex:test-plus-only"), "test-plus-only");
     }
 }

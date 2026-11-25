@@ -47,23 +47,24 @@ impl BenCodeApp {
         if self.models_for_automation()
             && let Some(draft) = self.automations.draft.as_ref()
         {
-            let project = normalize_project_path(&draft.cwd);
-            return accounts::selected_account_id(
-                &self.settings.provider_account_selections,
-                &project,
-                kind.id(),
-                &self.provider_accounts(kind.id()),
-            );
+            return self.project_account_id(kind, &draft.cwd);
         }
         if let Some(session) = self.selected_session()
             && session.harness == kind.id()
         {
             return self.session_account_id(session);
         }
-        let project = self.account_project_key(self.selected_session());
+        self.project_account_id(kind, &self.account_project_key(self.selected_session()))
+    }
+
+    /// The account a new `kind` thread in `cwd` runs on: the project's choice.
+    pub(crate) fn project_account_id(&self, kind: HarnessKind, cwd: &str) -> String {
+        if !supports_accounts(kind.id()) {
+            return DEFAULT_ACCOUNT_ID.into();
+        }
         accounts::selected_account_id(
             &self.settings.provider_account_selections,
-            &project,
+            &normalize_project_path(cwd),
             kind.id(),
             &self.provider_accounts(kind.id()),
         )
@@ -130,6 +131,13 @@ impl BenCodeApp {
     /// cooldown for `kind` and probes the active account, so the picker gets
     /// the new version's models.
     pub fn force_refresh_model_catalog(&mut self, kind: HarnessKind, cx: &mut Context<Self>) {
+        // A probe still running answers for the CLI or sign-in that was.
+        self.catalog_stale.extend(
+            self.catalog_probes
+                .iter()
+                .filter(|((k, _), state)| *k == kind && state.is_none())
+                .map(|(key, _)| key.clone()),
+        );
         self.catalog_probes
             .retain(|(k, _), state| *k != kind || state.is_none());
         self.refresh_model_catalog(kind, cx);
@@ -145,8 +153,14 @@ impl BenCodeApp {
     ) {
         let account_id = normalized_account_id(kind, account_id);
         let key = (kind, account_id.clone());
-        if let Some(Some(_)) = self.catalog_probes.get(&key) {
-            self.catalog_probes.remove(&key);
+        match self.catalog_probes.get(&key) {
+            Some(Some(_)) => {
+                self.catalog_probes.remove(&key);
+            }
+            Some(None) => {
+                self.catalog_stale.insert(key);
+            }
+            None => {}
         }
         self.refresh_model_catalog_for(kind, &account_id, cx);
     }
@@ -171,8 +185,10 @@ impl BenCodeApp {
     /// Drops a removed account's cached models and probe cooldown.
     pub fn forget_account_catalog(&mut self, kind: HarnessKind, account_id: &str) {
         let account_id = normalized_account_id(kind, account_id);
-        self.catalog_probes.remove(&(kind, account_id.clone()));
-        catalog::forget_account_models(kind, &account_id);
+        let key = (kind, account_id);
+        self.catalog_probes.remove(&key);
+        self.catalog_stale.remove(&key);
+        catalog::forget_account_models(kind, &key.1);
     }
 
     /// Replaces `kind`'s active account models with what its CLI reports; a
@@ -228,7 +244,17 @@ impl BenCodeApp {
                 }
                 if supports_accounts(kind.id()) && !app.account_exists(kind.id(), &account_id) {
                     app.catalog_probes.remove(&key);
+                    app.catalog_stale.remove(&key);
                     cx.notify();
+                    return;
+                }
+                if app.catalog_stale.remove(&key) {
+                    log::info!(
+                        "{} ({account_id}) model catalog changed while probing; asking again",
+                        kind.label()
+                    );
+                    app.catalog_probes.remove(&key);
+                    app.refresh_model_catalog_for(kind, &account_id, cx);
                     return;
                 }
                 // A failed probe tries again soon, whatever the harness.

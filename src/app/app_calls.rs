@@ -160,7 +160,18 @@ impl BenCodeApp {
             }
             "soul" | "memory" => self.bot_file_call(caller, &action, input, call, cx),
             "notes" => self.notes_call(caller, &action, &input, call, cx),
-            "models" => call.answer(models_listing(&self.harnesses)),
+            "models" => {
+                // What a thread it starts would list: its project's accounts.
+                let cwd = self
+                    .sessions
+                    .iter()
+                    .find(|s| s.id == caller.session)
+                    .map(|s| s.cwd.clone())
+                    .unwrap_or_default();
+                call.answer(models_listing(&self.harnesses, |kind| {
+                    self.project_account_id(kind, &cwd)
+                }))
+            }
             "habits" if !caller.own => {
                 call.fail("Only a bot's own conversation can manage its habits", true)
             }
@@ -274,8 +285,11 @@ impl BenCodeApp {
 }
 
 /// MonoCode `models.list`: the permission modes and every harness's
-/// models with their settings.
-fn models_listing(installed: &[bencode_core::harness::HarnessInfo]) -> Value {
+/// models with their settings, from the catalog of `account_for`'s account.
+fn models_listing(
+    installed: &[bencode_core::harness::HarnessInfo],
+    account_for: impl Fn(HarnessKind) -> String,
+) -> Value {
     let modes: Vec<Value> = crate::ui::composer::permission_modes()
         .iter()
         .map(|(mode, label, hint, _)| json!({ "id": mode.id(), "label": label, "description": hint }))
@@ -286,7 +300,8 @@ fn models_listing(installed: &[bencode_core::harness::HarnessInfo]) -> Value {
             let available = installed
                 .iter()
                 .any(|info| info.id == kind.id() && info.available);
-            let models: Vec<Value> = catalog::models_for(*kind)
+            let account = account_for(*kind);
+            let models: Vec<Value> = catalog::models_for_account(*kind, Some(&account))
                 .iter()
                 .map(|model| {
                     let settings: Vec<Value> = model

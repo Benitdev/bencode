@@ -264,13 +264,13 @@ impl BenCodeApp {
         self.handoff_targets(turn_harness(session, menu.user))
             .into_iter()
             .map(|kind| {
-                let account = self.catalog_account_id(kind);
-                let model = catalog::models_for_account(kind, Some(&account))
-                    .first()
-                    .cloned()
-                    .or_else(|| catalog::models_for(kind).first().cloned())
-                    .map(|m| m.label);
-                MenuEntry::Item(MenuAction::new(kind.id(), kind.label()).description(model))
+                // The new thread opens in this project, on its account.
+                let account = self.project_account_id(kind, &session.cwd);
+                let model = match catalog::models_for_account(kind, Some(&account)).first() {
+                    Some(model) => model.label.clone(),
+                    None => "Loading models…".into(),
+                };
+                MenuEntry::Item(MenuAction::new(kind.id(), kind.label()).description(Some(model)))
             })
             .collect()
     }
@@ -291,6 +291,16 @@ impl BenCodeApp {
             position,
             active: 0,
         };
+        // A target whose account has listed nothing yet is asked now.
+        if let Some(session) = self.sessions.iter().find(|s| s.id == session_id) {
+            let cwd = session.cwd.clone();
+            for kind in self.handoff_targets(turn_harness(session, user)) {
+                let account = self.project_account_id(kind, &cwd);
+                if !catalog::has_account_models(kind, Some(&account)) {
+                    self.refresh_model_catalog_for(kind, &account, cx);
+                }
+            }
+        }
         menu.active = explorer_menu::first_item(&self.handoff_entries(&menu));
         self.composer_menus.handoff = Some(menu);
         self.focus_composer_menu(cx);
@@ -363,14 +373,14 @@ impl BenCodeApp {
             .and_then(|b| b.text.as_deref())
             .unwrap_or("");
         let card = HandoffCard::new(from, to, through, request);
-        let account = self.catalog_account_id(to);
+        // Never another account's model: this one may not offer it.
+        let account = self.project_account_id(to, &source.cwd);
         let Some(model) = catalog::models_for_account(to, Some(&account))
             .first()
-            .cloned()
-            .or_else(|| catalog::models_for(to).first().cloned())
-            .map(|m| m.key)
+            .map(|m| m.key.clone())
         else {
-            log::warn!("handoff: no models known for {}", to.id());
+            log::warn!("handoff: {} ({account}) has listed no models yet", to.id());
+            self.refresh_model_catalog_for(to, &account, cx);
             return;
         };
         let settings = self.preferred_model_settings(&model, None);

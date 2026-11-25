@@ -265,14 +265,18 @@ impl BenCodeApp {
         {
             return Err(format!("{harness} is not available in BenCode"));
         }
+        // The new thread runs on the project's account for `kind`: its
+        // catalog is the one the model must be in.
+        let account = self.project_account_id(kind, &cwd);
+        let models = catalog::models_for_account(kind, Some(&account));
         let model = match optional(input.get("model"), "model", 512)? {
-            Some(model) => catalog::models_for(kind)
+            Some(model) => models
                 .iter()
                 .find(|m| m.key == model)
                 .map(|m| m.key.clone())
                 .ok_or_else(|| "Unknown model; run models.list for exact model IDs".to_string())?,
             None if harness == source.harness => source.model.clone(),
-            None => catalog::models_for(kind)
+            None => models
                 .first()
                 .map(|m| m.key.clone())
                 .ok_or_else(|| "Unknown model; run models.list for exact model IDs".to_string())?,
@@ -290,11 +294,11 @@ impl BenCodeApp {
             settings.extend(raw.iter().map(|(k, v)| (k.clone(), v.clone())));
         }
         if let Some(effort) = input.get("effort") {
-            let setting = catalog::effort_setting(&model)
+            let setting = catalog::effort_setting_for(&model, Some(&account))
                 .ok_or_else(|| format!("{model} does not expose an effort setting"))?;
             settings.insert(setting.id, json!(required(Some(effort), "effort", 128)?));
         }
-        let known = catalog::find(&model)
+        let known = catalog::find_for_account(&model, Some(&account))
             .map(|m| m.settings)
             .unwrap_or_default();
         for (key, value) in &settings {
@@ -315,7 +319,7 @@ impl BenCodeApp {
                 ));
             }
         }
-        let settings = catalog::merge_settings(&model, Some(&settings));
+        let settings = catalog::merge_settings_for(&model, Some(&account), Some(&settings));
         let runtime_mode = match input.get("runtimeMode") {
             None => source
                 .runtime_mode

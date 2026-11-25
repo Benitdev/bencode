@@ -953,11 +953,23 @@ impl BenCodeApp {
                     .text_size(Text::Md.px())
                     .child(self.model_search_input.clone()),
             );
+        let query = self.model_query(cx);
+        let loading = query.trim().is_empty()
+            && self.composer_machine_id().is_none()
+            && matches!(tab, ModelTab::Harness(kind) if self.is_catalog_loading(kind));
+        // Built-in models show while an account's first list loads: said
+        // so below them, as the list may still change.
+        let first_load = matches!(tab, ModelTab::Harness(kind)
+            if !catalog::has_account_models(kind, Some(&self.catalog_account_id(kind))));
+        let still_loading = (loading && first_load && !models.is_empty()).then(|| {
+            div()
+                .px_2()
+                .py_2()
+                .text_size(Text::Sm.px())
+                .text_color(colors.fg.ink(Ink::Muted))
+                .child("Loading this account's models…")
+        });
         let empty = if models.is_empty() {
-            let query = self.model_query(cx);
-            let loading = query.trim().is_empty()
-                && self.composer_machine_id().is_none()
-                && matches!(tab, ModelTab::Harness(kind) if self.is_catalog_loading(kind));
             Some(
                 div()
                     .px_2()
@@ -1085,6 +1097,7 @@ impl BenCodeApp {
             .overflow_y_scroll()
             .p_1()
             .children(rows)
+            .children(still_loading)
             .children(empty);
         div()
             .id("model-flyout")
@@ -1250,6 +1263,17 @@ mod tests {
     fn filtered_models_reads_the_selected_accounts_catalog() {
         let free = "picker-test-free";
         let plus = "picker-test-plus";
+        // The catalog is shared by tests running at once: forgotten even
+        // when an assert fails first.
+        struct Forget;
+        impl Drop for Forget {
+            fn drop(&mut self) {
+                for id in ["picker-test-free", "picker-test-plus"] {
+                    catalog::forget_account_models(HarnessKind::Codex, id);
+                }
+            }
+        }
+        let _forget = Forget;
         catalog::set_account_models(
             HarnessKind::Codex,
             Some(free),
@@ -1291,8 +1315,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["codex:picker-plus-pro"]
         );
-        catalog::forget_account_models(HarnessKind::Codex, free);
-        catalog::forget_account_models(HarnessKind::Codex, plus);
     }
 
     #[test]

@@ -481,11 +481,6 @@ impl BenCodeApp {
             };
             let account = self.catalog_account_id(kind);
             let list = catalog::models_for_account(kind, Some(&account));
-            let list = if list.is_empty() {
-                catalog::models_for(kind)
-            } else {
-                list
-            };
             models.extend(
                 list.iter()
                     .map(|m| Choice::new(m.key.clone(), m.label.clone()).note(kind.label())),
