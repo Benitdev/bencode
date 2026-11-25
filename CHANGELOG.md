@@ -6,12 +6,21 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-25
+
 - Local agents can use the macOS desktop after you enable Computer Use in
   Settings and approve their turn. They can capture displays and windows,
   manage windows and native controls, drag across displays, and hold and
   release keys and mouse buttons. Press ⌘⌥. to revoke access across apps.
-  Automations and bot habits are not offered the desktop, since nobody is
-  there to approve it.
+  Automations, bot habits and unattended bot launches are not offered the
+  desktop, since nobody is there to approve it.
+- Codex now reads per-request context usage and model context window sizes
+  from its rollout JSONL logs so the context meter reflects the active model
+  accurately.
+- Polished UI details across the workspace: tonal search fields show clearer
+  hover and focus feedback, the transcript selection menu flips below text
+  near the top edge, activity fold/step icons sit centered on their rows, and
+  the macOS title bar balances top and bottom tab gaps.
 
 ## [0.1.63] - 2026-11-25
 
