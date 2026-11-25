@@ -558,7 +558,7 @@ mod tests {
             command: "/Applications/BenCode.app/Contents/MacOS/bencode".into(),
             args: vec!["--browser-mcp".into(), "/tmp/b.sock".into()],
         };
-        let servers = mcp_servers(&[launch.clone()], None);
+        let servers = mcp_servers(std::slice::from_ref(&launch), None);
         assert_eq!(
             servers,
             json!([{

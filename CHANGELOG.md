@@ -10,6 +10,8 @@ tagging (`docs/releasing.md`).
   Settings and approve their turn. They can capture displays and windows,
   manage windows and native controls, drag across displays, and hold and
   release keys and mouse buttons. Press ⌘⌥. to revoke access across apps.
+  Automations and bot habits are not offered the desktop, since nobody is
+  there to approve it.
 
 ## [0.1.63] - 2026-11-25
 

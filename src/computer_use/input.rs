@@ -21,9 +21,12 @@ unsafe extern "C" {
     fn CGRequestPostEventAccess() -> bool;
 }
 
+/// Asks for event posting unless BenCode already may post.
 pub fn request_permission() {
-    // SAFETY: prompts for the calling app's event-posting permission.
-    unsafe { CGRequestPostEventAccess() };
+    // SAFETY: checks, then prompts for, the calling app's event posting.
+    if !unsafe { CGPreflightPostEventAccess() } {
+        unsafe { CGRequestPostEventAccess() };
+    }
 }
 
 fn event_source() -> Result<CGEventSource> {

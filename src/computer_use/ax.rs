@@ -7,6 +7,7 @@ use anyhow::{Context as _, Result, bail};
 use core_foundation::array::CFArray;
 use core_foundation::base::{CFType, CFTypeRef, TCFType};
 use core_foundation::boolean::CFBoolean;
+use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::{CFString, CFStringRef};
 use core_graphics::geometry::{CGPoint, CGRect, CGSize};
 use serde_json::{Value, json};
@@ -16,6 +17,8 @@ use super::Grant;
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
     fn AXIsProcessTrusted() -> u8;
+    fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> u8;
+    static kAXTrustedCheckOptionPrompt: CFStringRef;
     fn AXUIElementCreateApplication(pid: i32) -> CFTypeRef;
     fn AXUIElementGetTypeID() -> usize;
     fn AXUIElementSetMessagingTimeout(element: CFTypeRef, seconds: f32) -> i32;
@@ -38,6 +41,17 @@ const ELEMENT_TIMEOUT: f32 = 0.4;
 const MAX_DEPTH: usize = 10;
 const MAX_NODES: usize = 100;
 const MAX_WALK: Duration = Duration::from_secs(5);
+
+/// Asks for the Accessibility grant the window and control tools need
+/// (`AXIsProcessTrusted`); true when BenCode already has it.
+pub fn request_permission() -> bool {
+    // SAFETY: Apple's constant key, borrowed for the dictionary's life.
+    let key = unsafe { CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt) };
+    let options = CFDictionary::from_CFType_pairs(&[(key, CFBoolean::true_value())]);
+    // SAFETY: the options dictionary lives through the call; macOS shows
+    // its prompt asynchronously.
+    unsafe { AXIsProcessTrustedWithOptions(options.as_CFTypeRef()) != 0 }
+}
 
 pub struct Element(CFType);
 

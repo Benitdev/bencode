@@ -302,7 +302,12 @@ impl BenCodeApp {
         run_id: &str,
         cx: &mut Context<Self>,
     ) {
+        // Nobody waits to approve desktop access for a scheduled run.
+        #[cfg(target_os = "macos")]
+        self.computer_use.starting_unattended(Some(session_id));
         self.send_prompt(session_id, &auto.prompt, cx);
+        #[cfg(target_os = "macos")]
+        self.computer_use.starting_unattended(None);
         let (run, thread) = (run_id.to_string(), session_id.to_string());
         if !self.is_agent_running_in(session_id) {
             // send_prompt already explains the failure inside the thread.

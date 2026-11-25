@@ -36,7 +36,7 @@ impl BenCodeApp {
                 )
                 .row(
                     SettingsRow::new("Accessibility")
-                        .description("Allows the agent to send mouse and keyboard input.")
+                        .description("Allows the agent to manage windows, press controls, and send mouse and keyboard input.")
                         .control(
                             Button::new("computer-use-accessibility", "Grant access")
                                 .size(ControlSize::Sm)

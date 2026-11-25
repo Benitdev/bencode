@@ -1020,9 +1020,12 @@ impl BenCodeApp {
         };
         let remote = crate::remote::is_remote(session.work_dir());
         #[cfg(target_os = "macos")]
-        let computer = (request.purpose == RunPurpose::Turn && !request.plan && !remote)
-            .then(|| self.computer_use_launch())
-            .flatten();
+        let computer = (request.purpose == RunPurpose::Turn
+            && !request.plan
+            && !remote
+            && !self.runs_unattended(session_id))
+        .then(|| self.computer_use_launch())
+        .flatten();
         #[cfg(not(target_os = "macos"))]
         let computer: Option<(bencode_core::mcp::McpLaunch, String)> = None;
         let computer_turn = computer.as_ref().map(|(_, token)| token.clone());

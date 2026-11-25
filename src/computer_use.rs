@@ -240,6 +240,12 @@ pub enum Action {
 }
 
 impl Action {
+    /// Whether the action goes to whatever is in front (or under the
+    /// pointer) rather than to a display, window or element it names.
+    pub fn follows_focus(&self) -> bool {
+        matches!(self, Self::Mouse(_) | Self::Key(_) | Self::Type(_))
+    }
+
     pub fn parse(tool: &str, args: Value) -> Result<Self> {
         Ok(match tool {
             "computer_displays" => Self::Displays,
@@ -419,8 +425,13 @@ pub fn request_screen_permission() {
     screen::request_permission();
 }
 
+/// The Accessibility grant covers both the Accessibility API (windows and
+/// controls) and posting input; macOS tracks them as separate services, so
+/// ask for each, one prompt at a time: event posting once the API is trusted.
 pub fn request_input_permission() {
-    input::request_permission();
+    if ax::request_permission() {
+        input::request_permission();
+    }
 }
 
 #[cfg(test)]
@@ -442,6 +453,20 @@ mod tests {
                 .any(|tool| { tool["name"] == "computer_screenshot" })
         );
         assert!(!server.call("computer_displays", &json!({})).ok);
+
+        // What waits on the approval is replayed only if focus cannot misdirect it.
+        let parse = |tool, args| Action::parse(tool, args).unwrap();
+        assert!(!parse("computer_displays", json!({})).follows_focus());
+        assert!(!parse("computer_screenshot", json!({})).follows_focus());
+        assert!(
+            !parse(
+                "computer_open_app",
+                json!({"bundleId": "com.apple.calculator"})
+            )
+            .follows_focus()
+        );
+        assert!(parse("computer_type", json!({"text": "hi"})).follows_focus());
+        assert!(parse("computer_key", json!({"key": "Return"})).follows_focus());
 
         let grant = Grant::default();
         grant.revoke();

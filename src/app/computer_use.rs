@@ -21,6 +21,8 @@ pub(crate) struct ComputerUse {
     desktop: Arc<Desktop>,
     stop_listening: bool,
     stop_registered: bool,
+    /// The thread an automation is starting a turn in, while it does.
+    unattended: Option<String>,
 }
 
 struct Approval {
@@ -53,6 +55,10 @@ impl ComputerUse {
         self.active.as_ref().map(|access| access.label.as_str())
     }
 
+    pub(super) fn starting_unattended(&mut self, session_id: Option<&str>) {
+        self.unattended = session_id.map(str::to_owned);
+    }
+
     pub(super) fn revoke(&mut self) {
         if std::mem::take(&mut self.stop_registered) {
             hotkey::unregister(Shortcut::StopComputerUse);
@@ -81,6 +87,12 @@ impl BenCodeApp {
                 None
             }
         }
+    }
+
+    /// A turn nobody is there to approve: an automation's or a bot's
+    /// habit. It is not offered the desktop.
+    pub(super) fn runs_unattended(&self, session_id: &str) -> bool {
+        self.computer_use.unattended.as_deref() == Some(session_id) || self.is_habit_run(session_id)
     }
 
     pub(crate) fn set_computer_use(&mut self, enabled: bool, cx: &mut Context<Self>) {
@@ -209,8 +221,18 @@ impl BenCodeApp {
         self.register_desktop_stop(cx);
         cx.notify();
 
+        // Clicking Allow left BenCode in front: keys, text and clicks
+        // would land in BenCode, not where the agent meant them.
+        if request.action.follows_focus() {
+            request.call.answer(ToolReply::error(
+                "Desktop access was approved for this turn, but this action was not run because \
+                 BenCode is in front after the approval. Bring the intended app forward \
+                 (computer_open_app or computer_window focus), take a new screenshot, then retry.",
+            ));
+            return;
+        }
         // Let the permission dialog leave the window before the agent takes
-        // its first screenshot or sends a pointer event.
+        // its first screenshot.
         cx.spawn(async move |entity, cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(120))
