@@ -317,17 +317,18 @@ pub(crate) fn permission_entry(mode: PermissionMode) -> (&'static str, IconName)
 /// then how to reach the recent models.
 fn model_chip_tooltip(
     key: &str,
+    account_id: Option<&str>,
     values: Option<&serde_json::Map<String, serde_json::Value>>,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
-    if let Some(model) = catalog::find(key) {
+    if let Some(model) = catalog::find_for_account(key, account_id) {
         parts.push(model.harness.label().to_string());
         parts.extend(model.provider.clone());
     } else if let Some(harness) = catalog::harness_of(key) {
         parts.push(harness.label().to_string());
     }
     parts.push(catalog::label_for(key));
-    if let Some(effort) = catalog::effort_setting(key) {
+    if let Some(effort) = catalog::effort_setting_for(key, account_id) {
         parts.push(effort.value_label(values).to_string());
     }
     format!("{} · Recent models: right-click or ⌘.", parts.join(" · "))
@@ -893,12 +894,13 @@ impl BenCodeApp {
         let values = session.map_or(Some(&self.last_model_settings), |s| {
             s.model_settings.as_ref()
         });
-        let model_tip = model_chip_tooltip(key, values);
+        let account = catalog::harness_of(key).map(|h| self.catalog_account_id(h));
+        let model_tip = model_chip_tooltip(key, account.as_deref(), values);
         let model = composer_chip(
             "composer-model-chip",
             HarnessIcon::new(&harness).size(px(16.0)).into_any_element(),
             catalog::label_for(key),
-            catalog::effort_setting(key).map(|effort| {
+            catalog::effort_setting_for(key, account.as_deref()).map(|effort| {
                 effort
                     .value_label(session.map_or(Some(&self.last_model_settings), |s| {
                         s.model_settings.as_ref()

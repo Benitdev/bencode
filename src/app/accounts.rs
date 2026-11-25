@@ -163,7 +163,7 @@ impl BenCodeApp {
     }
 
     /// The key a project's account choice is saved under.
-    fn account_project_key(&self, session: Option<&SessionRow>) -> String {
+    pub(crate) fn account_project_key(&self, session: Option<&SessionRow>) -> String {
         normalize_project_path(session.map_or(self.current_cwd.as_str(), |s| s.cwd.as_str()))
     }
 
@@ -312,6 +312,9 @@ impl BenCodeApp {
             },
             cx,
         );
+        if let Some(kind) = HarnessKind::from_id(provider) {
+            self.refresh_account_catalog_on_switch(kind, account_id, cx);
+        }
         let Some(active) = self.selected_session().filter(|s| s.harness == provider) else {
             return;
         };
@@ -507,6 +510,7 @@ impl BenCodeApp {
                             .insert((account.provider.clone(), account.id.clone()));
                         app.load_account_identities(&account.provider, cx);
                         app.load_rate_limits(provider, &account.id, false, cx);
+                        app.force_refresh_model_catalog_for(kind, &account.id, cx);
                         match form {
                             AccountForm::Popover => {
                                 app.select_provider_account(&account.provider, &account.id, cx);
@@ -719,6 +723,9 @@ impl BenCodeApp {
             self.usage_data
                 .update(cx, |data, _| data.forget(provider, &account.id));
         }
+        if let Some(kind) = HarnessKind::from_id(&account.provider) {
+            self.forget_account_catalog(kind, &account.id);
+        }
         if self
             .accounts
             .editor
@@ -761,6 +768,7 @@ impl BenCodeApp {
                         app.usage.sign_in = SignIn::Complete;
                         app.load_rate_limits(target.provider, &target.account_id, true, cx);
                         app.load_account_identities(target.provider.id(), cx);
+                        app.force_refresh_model_catalog_for(kind, &target.account_id, cx);
                     }
                     Err(error) if error == login::CANCELLED => app.usage.sign_in = SignIn::Idle,
                     Err(error) => app.usage.sign_in = SignIn::Failed(error),

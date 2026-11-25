@@ -264,7 +264,12 @@ impl BenCodeApp {
         self.handoff_targets(turn_harness(session, menu.user))
             .into_iter()
             .map(|kind| {
-                let model = catalog::models_for(kind).first().map(|m| m.label.clone());
+                let account = self.catalog_account_id(kind);
+                let model = catalog::models_for_account(kind, Some(&account))
+                    .first()
+                    .cloned()
+                    .or_else(|| catalog::models_for(kind).first().cloned())
+                    .map(|m| m.label);
                 MenuEntry::Item(MenuAction::new(kind.id(), kind.label()).description(model))
             })
             .collect()
@@ -358,7 +363,13 @@ impl BenCodeApp {
             .and_then(|b| b.text.as_deref())
             .unwrap_or("");
         let card = HandoffCard::new(from, to, through, request);
-        let Some(model) = catalog::models_for(to).first().map(|m| m.key.clone()) else {
+        let account = self.catalog_account_id(to);
+        let Some(model) = catalog::models_for_account(to, Some(&account))
+            .first()
+            .cloned()
+            .or_else(|| catalog::models_for(to).first().cloned())
+            .map(|m| m.key)
+        else {
             log::warn!("handoff: no models known for {}", to.id());
             return;
         };

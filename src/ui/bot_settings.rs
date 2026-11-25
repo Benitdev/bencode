@@ -479,9 +479,15 @@ impl BenCodeApp {
             let Some(kind) = HarnessKind::from_id(info.id) else {
                 continue;
             };
-            models.extend(
+            let account = self.catalog_account_id(kind);
+            let list = catalog::models_for_account(kind, Some(&account));
+            let list = if list.is_empty() {
                 catalog::models_for(kind)
-                    .iter()
+            } else {
+                list
+            };
+            models.extend(
+                list.iter()
                     .map(|m| Choice::new(m.key.clone(), m.label.clone()).note(kind.label())),
             );
         }

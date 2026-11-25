@@ -756,8 +756,13 @@ impl BenCodeApp {
         if !self.account_exists(&session.harness, account_id) {
             return;
         }
+        let harness = session.harness.clone();
         let same = self.session_account_id(session) == account_id;
-        if same && session.provider_account_id.is_some() {
+        let pinned = session.provider_account_id.is_some();
+        if let Some(kind) = crate::harness::HarnessKind::from_id(&harness) {
+            self.refresh_account_catalog_on_switch(kind, account_id, cx);
+        }
+        if same && pinned {
             return;
         }
         if same {

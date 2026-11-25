@@ -378,6 +378,7 @@ impl BenCodeApp {
             text_control("bot-model".into(), open, fg)
                 .tooltip(Tooltip::text(super::model_chip_tooltip(
                     &session.model,
+                    Some(&self.session_account_id(session)),
                     session.model_settings.as_ref(),
                 )))
                 .on_click(cx.listener(|this, _, _, cx| {
@@ -467,8 +468,9 @@ impl BenCodeApp {
     ) -> Vec<(String, AnyElement)> {
         use bencode_ui::forms::{Choice, Select, Switch};
         let values = session.model_settings.as_ref();
+        let account = self.session_account_id(session);
         let weak = cx.entity().downgrade();
-        catalog::picker_settings(&session.model)
+        catalog::picker_settings_for(&session.model, Some(&account))
             .into_iter()
             .map(|setting| {
                 let id = SharedString::from(format!("bot-settings-{}", setting.id));
@@ -520,7 +522,8 @@ impl BenCodeApp {
     ) -> Vec<AnyElement> {
         let fg = cx.theme().colors.fg;
         let values = session.model_settings.as_ref();
-        let settings = catalog::picker_settings(&session.model);
+        let account = self.session_account_id(session);
+        let settings = catalog::picker_settings_for(&session.model, Some(&account));
         control_pills(&settings)
             .into_iter()
             .map(|(setting, menu)| {

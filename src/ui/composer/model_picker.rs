@@ -80,12 +80,14 @@ fn model_menu_height() -> f32 {
 }
 
 /// Models of `tab` matching `query` against name and provider. In a
-/// project on a machine, `machine` holds the models its CLIs listed.
+/// project on a machine, `machine` holds the models its CLIs listed;
+/// locally, `account_for` picks the active account profile for each harness.
 pub fn filtered_models(
     tab: ModelTab,
     favorites: &[String],
     query: &str,
     machine: Option<&crate::app::remote::MachineCatalog>,
+    account_for: impl Fn(HarnessKind) -> Option<String>,
 ) -> Vec<ModelOption> {
     let query = query.trim().to_lowercase();
     let listed = |kind: HarnessKind| -> Vec<ModelOption> {
@@ -93,17 +95,21 @@ pub fn filtered_models(
             .and_then(|m| m.models.get(&kind))
             .filter(|models| !models.is_empty())
             .cloned()
-            .unwrap_or_else(|| catalog::models_for(kind).to_vec())
+            .unwrap_or_else(|| {
+                let account = account_for(kind);
+                catalog::models_for_account(kind, account.as_deref()).to_vec()
+            })
     };
     let pool: Vec<ModelOption> = match tab {
         ModelTab::Favorites => favorites
             .iter()
             .filter_map(|k| {
                 let kind = catalog::harness_of(k)?;
+                let account = account_for(kind);
                 listed(kind)
                     .into_iter()
                     .find(|m| &m.key == k)
-                    .or_else(|| catalog::find(k))
+                    .or_else(|| catalog::find_for_account(k, account.as_deref()))
             })
             .collect(),
         ModelTab::Harness(kind) => listed(kind),
@@ -192,6 +198,7 @@ impl BenCodeApp {
             &favorites,
             &self.model_query(cx),
             self.composer_machine().and_then(|(_, catalog)| catalog),
+            |kind| Some(self.catalog_account_id(kind)),
         )
     }
 
@@ -392,7 +399,9 @@ impl BenCodeApp {
 
     fn select_model_tab(&mut self, tab: ModelTab, cx: &mut Context<Self>) {
         self.composer_menus.model_tab = tab;
-        if let ModelTab::Harness(kind) = tab {
+        if let ModelTab::Harness(kind) = tab
+            && self.composer_machine_id().is_none()
+        {
             self.refresh_model_catalog(kind, cx);
         }
         self.model_search_input
@@ -401,11 +410,17 @@ impl BenCodeApp {
         cx.notify();
     }
 
+    fn model_account_for(&self, key: &str) -> Option<String> {
+        catalog::harness_of(key).map(|harness| self.catalog_account_id(harness))
+    }
+
     /// MonoCode `onModelSettingsChange`: the focused thread's settings take
     /// `value`, and it is remembered for threads to come.
     pub(super) fn set_model_setting(&mut self, id: &str, value: &str, cx: &mut Context<Self>) {
+        let key = self.current_model_key(cx);
+        let account = self.model_account_for(&key);
         let mut next =
-            catalog::merge_settings(&self.current_model_key(cx), self.current_model_values());
+            catalog::merge_settings_for(&key, account.as_deref(), self.current_model_values());
         next.insert(id.to_string(), Value::String(value.to_string()));
         self.save_last_model_settings(&next, false, cx);
         if let Some(session) = self.selected_session_mut() {
@@ -432,7 +447,9 @@ impl BenCodeApp {
     /// MonoCode `showEntrySubmenu`: a select or the Model row opens its
     /// flyout on the current value; a toggle has none.
     fn show_entry_submenu(&mut self, entry: usize, cx: &mut Context<Self>) {
-        let settings = catalog::picker_settings(&self.current_model_key(cx));
+        let key = self.current_model_key(cx);
+        let account = self.model_account_for(&key);
+        let settings = catalog::picker_settings_for(&key, account.as_deref());
         self.composer_menus.model_submenu = match settings.get(entry) {
             Some(setting) if setting.kind == SettingKind::Select => {
                 let value = setting.value(self.current_model_values());
@@ -456,7 +473,9 @@ impl BenCodeApp {
 
     /// MonoCode `onMenuKey` for the model menu.
     pub(super) fn model_menu_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
-        let settings = catalog::picker_settings(&self.current_model_key(cx));
+        let model_key = self.current_model_key(cx);
+        let account = self.model_account_for(&model_key);
+        let settings = catalog::picker_settings_for(&model_key, account.as_deref());
         let entries = settings.len() + 1;
         let submenu = self.composer_menus.model_submenu;
         // The models alone have no menu to go back to.
@@ -532,7 +551,8 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
         let colors = &cx.theme().colors;
-        let settings = catalog::picker_settings(current_key);
+        let account = self.model_account_for(current_key);
+        let settings = catalog::picker_settings_for(current_key, account.as_deref());
         let values = self.current_model_values();
         let active = self.composer_menus.model_entry;
         let row = |ix: usize, id: SharedString| {
@@ -935,6 +955,9 @@ impl BenCodeApp {
             );
         let empty = if models.is_empty() {
             let query = self.model_query(cx);
+            let loading = query.trim().is_empty()
+                && self.composer_machine_id().is_none()
+                && matches!(tab, ModelTab::Harness(kind) if self.is_catalog_loading(kind));
             Some(
                 div()
                     .px_2()
@@ -943,6 +966,8 @@ impl BenCodeApp {
                     .text_color(colors.fg.ink(Ink::Secondary))
                     .child(if tab == ModelTab::Favorites && query.trim().is_empty() {
                         "No favorite models"
+                    } else if loading {
+                        "Loading models…"
                     } else {
                         "No matching models"
                     }),
@@ -1203,15 +1228,71 @@ mod tests {
     #[test]
     fn search_matches_name_or_provider_within_the_tab() {
         let claude = ModelTab::Harness(HarnessKind::Claude);
-        assert_eq!(filtered_models(claude, &[], "", None).len(), 3);
-        assert_eq!(filtered_models(claude, &[], "opus", None).len(), 1);
-        assert_eq!(filtered_models(claude, &[], "claude code", None).len(), 3);
-        assert!(filtered_models(claude, &[], "zzzz-none", None).is_empty());
+        let no_account = |_| None;
+        assert_eq!(filtered_models(claude, &[], "", None, no_account).len(), 3);
+        assert_eq!(
+            filtered_models(claude, &[], "opus", None, no_account).len(),
+            1
+        );
+        assert_eq!(
+            filtered_models(claude, &[], "claude code", None, no_account).len(),
+            3
+        );
+        assert!(filtered_models(claude, &[], "zzzz-none", None, no_account).is_empty());
         let gemini = "antigravity:gemini-3.1-pro-high".to_string();
         let favorites = [gemini.clone(), "gone:model".to_string()];
-        let starred = filtered_models(ModelTab::Favorites, &favorites, "", None);
+        let starred = filtered_models(ModelTab::Favorites, &favorites, "", None, no_account);
         assert_eq!(starred.len(), 1);
         assert_eq!(starred[0].key, gemini);
+    }
+
+    #[test]
+    fn filtered_models_reads_the_selected_accounts_catalog() {
+        let free = "picker-test-free";
+        let plus = "picker-test-plus";
+        catalog::set_account_models(
+            HarnessKind::Codex,
+            Some(free),
+            vec![ModelOption {
+                key: "codex:picker-free-mini".into(),
+                label: "GPT-Free-Mini".into(),
+                harness: HarnessKind::Codex,
+                native: "picker-free-mini".into(),
+                provider: None,
+                settings: Vec::new(),
+            }],
+        );
+        catalog::set_account_models(
+            HarnessKind::Codex,
+            Some(plus),
+            vec![ModelOption {
+                key: "codex:picker-plus-pro".into(),
+                label: "GPT-Plus-Pro".into(),
+                harness: HarnessKind::Codex,
+                native: "picker-plus-pro".into(),
+                provider: None,
+                settings: Vec::new(),
+            }],
+        );
+        let codex = ModelTab::Harness(HarnessKind::Codex);
+        let free_models = filtered_models(codex, &[], "", None, |_| Some(free.into()));
+        let plus_models = filtered_models(codex, &[], "", None, |_| Some(plus.into()));
+        assert_eq!(
+            free_models
+                .iter()
+                .map(|m| m.key.as_str())
+                .collect::<Vec<_>>(),
+            ["codex:picker-free-mini"]
+        );
+        assert_eq!(
+            plus_models
+                .iter()
+                .map(|m| m.key.as_str())
+                .collect::<Vec<_>>(),
+            ["codex:picker-plus-pro"]
+        );
+        catalog::forget_account_models(HarnessKind::Codex, free);
+        catalog::forget_account_models(HarnessKind::Codex, plus);
     }
 
     #[test]

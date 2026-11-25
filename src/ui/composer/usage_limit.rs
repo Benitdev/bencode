@@ -477,6 +477,9 @@ impl BenCodeApp {
         {
             return;
         }
+        if let Some(kind) = HarnessKind::from_id(&session.harness) {
+            self.refresh_account_catalog_on_switch(kind, account_id, cx);
+        }
         let (sid, account) = (session_id.to_string(), account_id.to_string());
         self.carry_session_to_account(session_id, account_id, cx, move |app, carried, cx| {
             app.resume_on_account(&sid, &account, carried, cx)

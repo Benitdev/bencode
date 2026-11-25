@@ -170,8 +170,12 @@ impl BenCodeApp {
     fn land_agy_snapshot(&mut self, snapshot: Snapshot, cx: &mut Context<Self>) {
         self.agy_accounts.profiles = snapshot.profiles;
         if self.agy_accounts.live_email != snapshot.live_email {
+            let switched = self.agy_accounts.live_email.is_some();
             self.agy_accounts.live_email = snapshot.live_email;
             self.reload_antigravity_usage(cx);
+            if switched {
+                self.force_refresh_model_catalog(crate::harness::HarnessKind::Antigravity, cx);
+            }
         }
         if !snapshot.imported.is_empty() {
             // The script profiles keep the names their folders had.

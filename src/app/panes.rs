@@ -101,6 +101,21 @@ impl BenCodeApp {
         }
         self.selected_session_id = focused;
         self.sync_prompt_placeholder(cx);
+        if let Some((kind, account_id)) = self.selected_session().and_then(|session| {
+            if crate::remote::route(&session.cwd).is_some()
+                || !crate::harness::accounts::supports_accounts(&session.harness)
+            {
+                return None;
+            }
+            let kind = HarnessKind::from_id(&session.harness)?;
+            let account_id = self.session_account_id(session);
+            (!self
+                .catalog_probes
+                .contains_key(&(kind, account_id.clone())))
+            .then_some((kind, account_id))
+        }) {
+            self.refresh_model_catalog_for(kind, &account_id, cx);
+        }
         if in_bot {
             // It belongs to no project, tab or dock: those stay as they were.
             cx.notify();

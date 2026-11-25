@@ -19,6 +19,7 @@ use std::time::Duration;
 use anyhow::{Context as _, Result};
 use serde_json::{Value, json};
 
+use crate::harness::accounts::AccountProfile;
 use crate::harness::catalog::{self, ModelOption, ModelSetting, SettingKind};
 use crate::harness::probe::{AppServer, LineProbe, run_to_end};
 use crate::harness::resolver::HarnessResolver;
@@ -27,11 +28,20 @@ use crate::harness::{HarnessKind, grok};
 /// MonoCode `DISCOVERY_TIMEOUT_MS`.
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// Asks `harness`' CLI for its models. Blocking.
+/// Asks `harness`' CLI for its models under the default profile. Blocking.
 pub fn discover(harness: HarnessKind) -> Result<Vec<ModelOption>> {
+    discover_for(harness, None)
+}
+
+/// Asks `harness`' CLI for its models, under `account` when given (the
+/// default profile otherwise). Blocking.
+pub fn discover_for(
+    harness: HarnessKind,
+    account: Option<&AccountProfile>,
+) -> Result<Vec<ModelOption>> {
     match harness {
-        HarnessKind::Claude => discover_claude(),
-        HarnessKind::Codex => discover_codex(),
+        HarnessKind::Claude => discover_claude(account),
+        HarnessKind::Codex => discover_codex(account),
         HarnessKind::Antigravity => discover_antigravity(),
         HarnessKind::Grok => discover_grok(),
         HarnessKind::OpenCode => discover_opencode(),
@@ -51,22 +61,31 @@ fn str_field<'a>(rec: &'a Value, key: &str) -> Option<&'a str> {
 const CLAUDE_INIT_ID: &str = "bencode_init";
 const CLAUDE_LIST_ID: &str = "bencode_list_models";
 
-fn discover_claude() -> Result<Vec<ModelOption>> {
+fn discover_claude(account: Option<&AccountProfile>) -> Result<Vec<ModelOption>> {
+    if let Some(account) = account
+        && !account.dir.is_dir()
+    {
+        anyhow::bail!(
+            "Claude account profile {} is missing",
+            account.dir.display()
+        );
+    }
     let program = HarnessResolver::resolve_claude().context("Claude Code is not installed")?;
-    let mut probe = LineProbe::spawn(
-        Command::new(program).args([
-            "-p",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--input-format",
-            "stream-json",
-            "--settings",
-            r#"{"disableAllHooks":true}"#,
-        ]),
-        &home(),
-        DISCOVERY_TIMEOUT,
-    )?;
+    let mut command = Command::new(program);
+    command.args([
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--input-format",
+        "stream-json",
+        "--settings",
+        r#"{"disableAllHooks":true}"#,
+    ]);
+    if let Some(account) = account {
+        account.apply(&mut command);
+    }
+    let mut probe = LineProbe::spawn(&mut command, &home(), DISCOVERY_TIMEOUT)?;
     let request = |id: &str, subtype: &str| json!({ "type": "control_request", "request_id": id, "request": { "subtype": subtype } });
     probe.send(&request(CLAUDE_INIT_ID, "initialize"))?;
     let mut asked = false;
@@ -276,9 +295,14 @@ fn qualify_alias_name(name: &str, resolved: &str) -> String {
 
 // ---- Codex -----------------------------------------------------------------
 
-fn discover_codex() -> Result<Vec<ModelOption>> {
+fn discover_codex(account: Option<&AccountProfile>) -> Result<Vec<ModelOption>> {
+    if let Some(account) = account
+        && !account.dir.is_dir()
+    {
+        anyhow::bail!("Codex account profile {} is missing", account.dir.display());
+    }
     let program = HarnessResolver::resolve_codex().context("Codex is not installed")?;
-    let mut server = AppServer::open(&program, &home(), DISCOVERY_TIMEOUT, None)?;
+    let mut server = AppServer::open(&program, &home(), DISCOVERY_TIMEOUT, account)?;
     let mut rows = Vec::new();
     let mut cursor: Option<String> = None;
     loop {

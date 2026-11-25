@@ -309,9 +309,9 @@ pub struct BenCodeApp {
     pub session_folders: std::collections::BTreeMap<String, Vec<session_folders::SessionFolder>>,
     pub recent_models: Vec<String>,
     pub last_model_settings: serde_json::Map<String, serde_json::Value>,
-    /// Model catalog probes per harness: `None` while one runs, else when
-    /// the next one may.
-    pub catalog_probes: HashMap<crate::harness::HarnessKind, Option<std::time::Instant>>,
+    /// Model catalog probes per `(harness, account_id)`: `None` while one
+    /// runs, else when the next one may.
+    pub catalog_probes: HashMap<(crate::harness::HarnessKind, String), Option<std::time::Instant>>,
     /// The Providers page's rescan of PATH for agent CLIs is running.
     pub harness_rescan: bool,
     /// Each provider's last "Import sessions" (`app/cli_import.rs`).

@@ -258,41 +258,133 @@ fn seeds(harness: HarnessKind) -> Vec<ModelOption> {
     }
 }
 
-type Catalog = HashMap<HarnessKind, Arc<[ModelOption]>>;
+type SeedCatalog = HashMap<HarnessKind, Arc<[ModelOption]>>;
+type LiveCatalog = HashMap<(HarnessKind, String), Arc<[ModelOption]>>;
 
-static LIVE: LazyLock<RwLock<Catalog>> = LazyLock::new(Default::default);
-static SEEDS: LazyLock<Catalog> = LazyLock::new(|| {
+static LIVE: LazyLock<RwLock<LiveCatalog>> = LazyLock::new(Default::default);
+static SEEDS: LazyLock<SeedCatalog> = LazyLock::new(|| {
     crate::harness::ALL_HARNESSES
         .iter()
         .map(|&kind| (kind, Arc::from(seeds(kind))))
         .collect()
 });
 
+fn account_key(harness: HarnessKind, account_id: Option<&str>) -> (HarnessKind, String) {
+    let account = if crate::harness::accounts::supports_accounts(harness.id()) {
+        account_id
+            .filter(|id| !id.is_empty())
+            .unwrap_or(crate::harness::accounts::DEFAULT_ACCOUNT_ID)
+    } else {
+        crate::harness::accounts::DEFAULT_ACCOUNT_ID
+    };
+    (harness, account.to_string())
+}
+
+fn seed_models(harness: HarnessKind) -> Arc<[ModelOption]> {
+    SEEDS
+        .get(&harness)
+        .cloned()
+        .unwrap_or_else(|| Arc::from([]))
+}
+
 /// MonoCode `setHarnessModels`: an empty answer keeps what was there.
 pub fn set_harness_models(harness: HarnessKind, models: Vec<ModelOption>) {
+    set_account_models(harness, None, models);
+}
+
+/// Stores the live catalog reported by `harness`' CLI for `account_id`
+/// (the default profile when None). An empty answer keeps what was there.
+pub fn set_account_models(
+    harness: HarnessKind,
+    account_id: Option<&str>,
+    models: Vec<ModelOption>,
+) {
     if models.is_empty() {
         return;
     }
     match LIVE.write() {
         Ok(mut live) => {
-            live.insert(harness, Arc::from(models));
+            live.insert(account_key(harness, account_id), Arc::from(models));
         }
         Err(err) => log::error!("model catalog lock poisoned: {err}"),
     }
 }
 
-/// The harness' live catalog, else its built-in list.
-pub fn models_for(harness: HarnessKind) -> Arc<[ModelOption]> {
+/// Drops a removed account's cached models.
+pub fn forget_account_models(harness: HarnessKind, account_id: &str) {
+    match LIVE.write() {
+        Ok(mut live) => {
+            live.remove(&account_key(harness, Some(account_id)));
+        }
+        Err(err) => log::error!("model catalog lock poisoned: {err}"),
+    }
+}
+
+/// Whether a live model list has been loaded for `(harness, account_id)`.
+pub fn has_account_models(harness: HarnessKind, account_id: Option<&str>) -> bool {
+    LIVE.read()
+        .ok()
+        .and_then(|live| {
+            live.get(&account_key(harness, account_id))
+                .map(|m| !m.is_empty())
+        })
+        .unwrap_or(false)
+}
+
+/// The live catalog for `(harness, account_id)`, else `harness`' built-in list.
+pub fn models_for_account(harness: HarnessKind, account_id: Option<&str>) -> Arc<[ModelOption]> {
     let live = LIVE
         .read()
         .ok()
-        .and_then(|live| live.get(&harness).cloned());
-    live.unwrap_or_else(|| {
-        SEEDS
-            .get(&harness)
-            .cloned()
-            .unwrap_or_else(|| Arc::from([]))
-    })
+        .and_then(|live| live.get(&account_key(harness, account_id)).cloned());
+    live.unwrap_or_else(|| seed_models(harness))
+}
+
+/// The harness' live catalog (default profile first, else any loaded account),
+/// else its built-in list.
+pub fn models_for(harness: HarnessKind) -> Arc<[ModelOption]> {
+    let live = LIVE.read().ok().and_then(|live| {
+        if let Some(default) = live.get(&account_key(harness, None)) {
+            return Some(default.clone());
+        }
+        live.iter()
+            .filter(|((kind, _), _)| *kind == harness)
+            .min_by(|((_, a), _), ((_, b), _)| a.cmp(b))
+            .map(|(_, models)| models.clone())
+    });
+    live.unwrap_or_else(|| seed_models(harness))
+}
+
+/// All live models known for `harness` across accounts (default profile first),
+/// else its built-in seeds.
+fn all_models_for(harness: HarnessKind) -> Vec<ModelOption> {
+    let Ok(live) = LIVE.read() else {
+        return seed_models(harness).to_vec();
+    };
+    let mut entries: Vec<(&str, &Arc<[ModelOption]>)> = live
+        .iter()
+        .filter(|((kind, _), _)| *kind == harness)
+        .map(|((_, id), models)| (id.as_str(), models))
+        .collect();
+    if entries.is_empty() {
+        return seed_models(harness).to_vec();
+    }
+    let default_id = crate::harness::accounts::DEFAULT_ACCOUNT_ID;
+    entries.sort_by(|(a, _), (b, _)| {
+        (*a != default_id)
+            .cmp(&(*b != default_id))
+            .then_with(|| a.cmp(b))
+    });
+    let mut seen = std::collections::HashSet::new();
+    let mut combined = Vec::new();
+    for (_, models) in entries {
+        for model in models.iter() {
+            if seen.insert(model.key.clone()) {
+                combined.push(model.clone());
+            }
+        }
+    }
+    combined
 }
 
 /// The harness named by a `harness:model` key, whether or not the live
@@ -309,10 +401,40 @@ pub fn is_model_key(key: &str) -> bool {
     harness_of(key).is_some()
 }
 
-pub fn find(key: &str) -> Option<ModelOption> {
+/// Looks up `key`, preferring `account_id`'s live catalog, then any other
+/// loaded account for that harness, then the built-in seeds.
+pub fn find_for_account(key: &str, account_id: Option<&str>) -> Option<ModelOption> {
     let harness = harness_of(key)?;
-    let found = models_for(harness).iter().find(|m| m.key == key).cloned();
-    found.or_else(|| SEEDS.get(&harness)?.iter().find(|m| m.key == key).cloned())
+    if let Ok(live) = LIVE.read() {
+        let preferred = account_key(harness, account_id);
+        if let Some(found) = live
+            .get(&preferred)
+            .and_then(|models| models.iter().find(|m| m.key == key))
+        {
+            return Some(found.clone());
+        }
+        let default_id = crate::harness::accounts::DEFAULT_ACCOUNT_ID;
+        let mut others: Vec<(&str, &Arc<[ModelOption]>)> = live
+            .iter()
+            .filter(|((kind, id), _)| *kind == harness && id != &preferred.1)
+            .map(|((_, id), models)| (id.as_str(), models))
+            .collect();
+        others.sort_by(|(a, _), (b, _)| {
+            (*a != default_id)
+                .cmp(&(*b != default_id))
+                .then_with(|| a.cmp(b))
+        });
+        for (_, models) in others {
+            if let Some(found) = models.iter().find(|m| m.key == key) {
+                return Some(found.clone());
+            }
+        }
+    }
+    SEEDS.get(&harness)?.iter().find(|m| m.key == key).cloned()
+}
+
+pub fn find(key: &str) -> Option<ModelOption> {
+    find_for_account(key, None)
 }
 
 /// MonoCode `SETTING_ORDER`: the order rows take in the model menu.
@@ -331,7 +453,12 @@ const SETTING_ORDER: [&str; 9] = [
 /// MonoCode `pickerSettings`: the model's settings in menu order, without
 /// OpenCode's agent row.
 pub fn picker_settings(key: &str) -> Vec<ModelSetting> {
-    let Some(model) = find(key) else {
+    picker_settings_for(key, None)
+}
+
+/// `picker_settings` preferring `account_id`'s catalog entry for `key`.
+pub fn picker_settings_for(key: &str, account_id: Option<&str>) -> Vec<ModelSetting> {
+    let Some(model) = find_for_account(key, account_id) else {
         return Vec::new();
     };
     let mut settings: Vec<_> = model
@@ -350,7 +477,12 @@ pub fn picker_settings(key: &str) -> Vec<ModelSetting> {
 
 /// MonoCode `effortSetting`: the reasoning select the chip names.
 pub fn effort_setting(key: &str) -> Option<ModelSetting> {
-    find(key)?
+    effort_setting_for(key, None)
+}
+
+/// `effort_setting` preferring `account_id`'s catalog entry for `key`.
+pub fn effort_setting_for(key: &str, account_id: Option<&str>) -> Option<ModelSetting> {
+    find_for_account(key, account_id)?
         .settings
         .into_iter()
         .find(ModelSetting::is_effort)
@@ -359,7 +491,16 @@ pub fn effort_setting(key: &str) -> Option<ModelSetting> {
 /// MonoCode `mergeModelSettings`: the model's defaults, overridden by
 /// whatever in `current` the model accepts.
 pub fn merge_settings(key: &str, current: Option<&Map<String, Value>>) -> Map<String, Value> {
-    let Some(model) = find(key) else {
+    merge_settings_for(key, None, current)
+}
+
+/// `merge_settings` preferring `account_id`'s catalog entry for `key`.
+pub fn merge_settings_for(
+    key: &str,
+    account_id: Option<&str>,
+    current: Option<&Map<String, Value>>,
+) -> Map<String, Value> {
+    let Some(model) = find_for_account(key, account_id) else {
         return current.cloned().unwrap_or_default();
     };
     model
@@ -426,7 +567,7 @@ pub fn native_label(harness_id: &str, native: &str) -> String {
         return native.to_string();
     };
     let wanted = comparable_native(harness, native);
-    models_for(harness)
+    all_models_for(harness)
         .iter()
         .find(|m| {
             [m.native.as_str(), native_id_from(&m.key)]
@@ -472,7 +613,7 @@ pub fn display_label(harness_id: &str, key: &str) -> String {
     let Some(harness) = HarnessKind::from_id(harness_id) else {
         return label_for(key);
     };
-    let available = models_for(harness);
+    let available = all_models_for(harness);
     let key = key.trim();
     if !key.is_empty() {
         let slug = native_id_from(key);
@@ -770,5 +911,102 @@ mod tests {
         }];
         assert_eq!(default_model(&installed).harness, HarnessKind::Antigravity);
         assert_eq!(default_model(&[]).key, "claude:opus");
+    }
+
+    #[test]
+    fn account_catalogs_stay_isolated_while_lookups_find_account_models() {
+        let free = "test-codex-free";
+        let plus = "test-codex-plus";
+        set_account_models(
+            HarnessKind::Codex,
+            Some(free),
+            vec![option(
+                "codex:test-shared",
+                "Test Shared",
+                HarnessKind::Codex,
+                vec![ModelSetting::select(
+                    "reasoningEffort",
+                    "Reasoning",
+                    "medium",
+                    &[("low", "Low"), ("medium", "Medium")],
+                )],
+            )],
+        );
+        set_account_models(
+            HarnessKind::Codex,
+            Some(plus),
+            vec![
+                option(
+                    "codex:test-plus-only",
+                    "Test Plus Model",
+                    HarnessKind::Codex,
+                    vec![ModelSetting::select(
+                        "serviceTier",
+                        "Service Tier",
+                        "default",
+                        &[("default", "Standard"), ("fast", "Fast")],
+                    )],
+                ),
+                option(
+                    "codex:test-shared",
+                    "Test Shared",
+                    HarnessKind::Codex,
+                    vec![ModelSetting::select(
+                        "reasoningEffort",
+                        "Reasoning",
+                        "high",
+                        &[("low", "Low"), ("medium", "Medium"), ("high", "High")],
+                    )],
+                ),
+            ],
+        );
+
+        assert!(has_account_models(HarnessKind::Codex, Some(free)));
+        assert!(has_account_models(HarnessKind::Codex, Some(plus)));
+        assert_eq!(
+            models_for_account(HarnessKind::Codex, Some(free))
+                .iter()
+                .map(|m| m.key.as_str())
+                .collect::<Vec<_>>(),
+            ["codex:test-shared"]
+        );
+        assert_eq!(
+            models_for_account(HarnessKind::Codex, Some(plus))
+                .iter()
+                .map(|m| m.key.as_str())
+                .collect::<Vec<_>>(),
+            ["codex:test-plus-only", "codex:test-shared"]
+        );
+        // Account-less lookup still resolves labels and settings of a Plus-only model.
+        assert_eq!(label_for("codex:test-plus-only"), "Test Plus Model");
+        assert_eq!(
+            display_label("codex", "codex:test-plus-only"),
+            "Test Plus Model"
+        );
+        assert_eq!(
+            picker_settings("codex:test-plus-only")
+                .into_iter()
+                .map(|s| s.id)
+                .collect::<Vec<_>>(),
+            ["serviceTier"]
+        );
+        // Per-account settings lookup prefers the requested account's options.
+        assert_eq!(
+            effort_setting_for("codex:test-shared", Some(free))
+                .unwrap()
+                .default,
+            "medium"
+        );
+        assert_eq!(
+            effort_setting_for("codex:test-shared", Some(plus))
+                .unwrap()
+                .default,
+            "high"
+        );
+
+        forget_account_models(HarnessKind::Codex, free);
+        forget_account_models(HarnessKind::Codex, plus);
+        assert!(!has_account_models(HarnessKind::Codex, Some(free)));
+        assert!(!has_account_models(HarnessKind::Codex, Some(plus)));
     }
 }
