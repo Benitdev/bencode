@@ -1178,6 +1178,10 @@ impl BenCodeApp {
             .flex()
             .items_stretch()
             .h(crate::ui::scale::px(crate::ui::sidebar::TITLEBAR_HEIGHT)) // MonoCode `h-10`
+            // macOS draws a 1pt inner highlight along the window's top edge;
+            // offsetting by 1pt keeps the visible gap above and below the tab
+            // pills equal.
+            .when(cfg!(target_os = "macos"), |el| el.pt(gpui::px(1.0)))
             .w_full()
             .flex_none()
             .child(self.render_titlebar_leading(cx))
