@@ -14,8 +14,8 @@ use bencode_ui::forms::{code_highlights, json_highlights};
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnyElement, Context, HighlightStyle, Hsla, InteractiveElement, IntoElement, ListAlignment,
-    ListOffset, ListState, ParentElement, Pixels, ScrollEvent, SharedString,
+    AnyElement, Context, FontWeight, HighlightStyle, Hsla, InteractiveElement, IntoElement,
+    ListAlignment, ListOffset, ListState, ParentElement, Pixels, ScrollEvent, SharedString,
     StatefulInteractiveElement, Styled, StyledText, Window, canvas, div, list, prelude::*,
 };
 
@@ -1157,15 +1157,15 @@ impl BenCodeApp {
         let button = |id: &str, icon: Icon, tip: &'static str, enabled: bool| {
             div()
                 .id(SharedString::from(format!("{id}-{key}")))
-                .size(px(28.0))
+                .size(px(26.0))
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded_md()
+                .rounded(px(6.0))
                 .when(enabled, |el| {
-                    el.cursor_pointer().hover(|s| s.bg(fg.fill(Fill::Strong)))
+                    el.cursor_pointer().hover(|s| s.bg(fg.fill(Fill::Hover)))
                 })
-                .when(!enabled, |el| el.opacity(0.4))
+                .when(!enabled, |el| el.opacity(0.35))
                 .tooltip(Tooltip::text(tip))
                 .child(icon.size(IconSize::Sm).color(fg.ink(Ink::Muted)))
         };
@@ -1176,15 +1176,20 @@ impl BenCodeApp {
             .flex()
             .flex_none()
             .items_center()
-            .gap_3()
-            .h_8()
+            .gap_2p5()
+            .h(px(34.0))
             .px_3()
-            .text_size(Text::Base.px())
-            .child(div().text_color(fg.ink(Ink::Body)).child(if count == 1 {
-                "1 file".to_string()
-            } else {
-                format!("{count} files")
-            }))
+            .text_size(Text::Sm.px())
+            .child(
+                div()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(fg.ink(Ink::Muted))
+                    .child(if count == 1 {
+                        "1 file".to_string()
+                    } else {
+                        format!("{count} files")
+                    }),
+            )
             .child(
                 diff_counts(additions, deletions, crate::ui::appearance::diff_colors(cx))
                     .text_size(Text::Sm.px()),
@@ -1292,7 +1297,7 @@ impl BenCodeApp {
                     .items_center()
                     .w_full()
                     .h(px(LINE_HEIGHT + 4.0))
-                    .bg(fg.fill(Fill::Selected))
+                    .bg(fg.fill(Fill::Faint))
                     .font_family(cx.theme().mono_family.clone())
                     .text_size(Text::Sm.px())
                     .text_color(fg.ink(Ink::Muted))
@@ -1309,8 +1314,8 @@ impl BenCodeApp {
             }
             DocRow::Image(f) => render_picture_pair(&doc.files[*f], cx),
             DocRow::Message(_, text) => div()
-                .px_3()
-                .py_3()
+                .px_4()
+                .py_4()
                 .text_size(Text::Base.px())
                 .text_color(cx.theme().colors.fg.ink(Ink::Muted))
                 .child(text.clone())
@@ -1371,161 +1376,156 @@ impl BenCodeApp {
         let unstaged = live && file.side == Some(Side::Unstaged);
         let busy_here = matches!(&self.changes_ui.busy, Some(Busy::File(p)) if *p == file.path);
         let prefix = if pinned { "diff-pinned" } else { "diff" };
-        div().bg(colors.bg).child(
+        let (dir, base) = match file.label.rsplit_once('/') {
+            Some((dir, base)) => (Some(dir.to_string()), base.to_string()),
+            None => (None, file.label.clone()),
+        };
+        let pinned_backdrop = if theme.is_dark() {
+            colors.bg.opacity(0.92)
+        } else {
+            colors.surface
+        };
+        let action_btn = |id: SharedString, icon: IconName, tip: &'static str, enabled: bool| {
             div()
+                .id(id)
+                .size(px(24.0))
                 .flex()
+                .flex_none()
                 .items_center()
-                .gap_2()
-                .px_3()
-                .py_1p5()
-                .bg(fg.opacity(0.02))
-                .border_b_1()
-                .border_color(colors.border)
-                .child(
-                    div()
-                        .id(SharedString::from(format!(
-                            "{prefix}-file-{key}-{}",
-                            file.id
-                        )))
-                        .flex()
-                        .flex_1()
-                        .min_w_0()
-                        .items_center()
-                        .gap_2()
-                        .cursor_pointer()
-                        .tooltip(Tooltip::text(file.label.clone()))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.toggle_diff_file(&toggle_key, ix, cx)
-                        }))
-                        .child(
-                            Icon::new(if expanded {
-                                IconName::ChevronDown
-                            } else {
-                                IconName::ChevronRight
-                            })
-                            .size(IconSize::Xs)
-                            .color(fg.ink(Ink::Muted)),
-                        )
-                        .child(
-                            div()
-                                .flex_none()
-                                .child(FileIcon::file(&name).size(IconSize::Sm)),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .truncate()
-                                .font_family(theme.mono_family.clone())
-                                .text_size(Text::Base.px())
-                                .text_color(fg.ink(Ink::Strong))
-                                .child(file.label.clone()),
-                        )
-                        .child(
-                            diff_counts(
-                                file.additions,
-                                file.deletions,
-                                crate::ui::appearance::diff_colors(cx),
-                            )
-                            .flex_none()
-                            .text_size(Text::Sm.px()),
-                        ),
-                )
-                .child(
-                    div()
-                        .id(SharedString::from(format!(
-                            "{prefix}-open-{key}-{}",
-                            file.id
-                        )))
-                        .size(px(24.0))
-                        .flex()
-                        .flex_none()
-                        .items_center()
-                        .justify_center()
-                        .rounded_md()
-                        .cursor_pointer()
-                        .tooltip(Tooltip::text("Open file"))
-                        .hover(|s| s.bg(fg.fill(Fill::Strong)))
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.open_file_in_editor(&open_path, window, cx)
-                        }))
-                        .child(
-                            Icon::new(IconName::FileCode)
-                                .size(IconSize::Xs)
-                                .color(fg.ink(Ink::Muted)),
-                        ),
-                )
-                .when(unstaged, |el| {
-                    let discard_path = file.path.clone();
-                    let stage_path = file.path.clone();
-                    el.child(
-                        div()
-                            .id(SharedString::from(format!(
-                                "{prefix}-discard-{key}-{}",
-                                file.id
-                            )))
-                            .size(px(24.0))
-                            .flex()
-                            .flex_none()
-                            .items_center()
-                            .justify_center()
-                            .rounded_md()
-                            .tooltip(Tooltip::text("Discard file"))
-                            .when(busy, |el| el.opacity(0.4))
-                            .when(!busy, |el| {
-                                el.cursor_pointer()
-                                    .hover(|s| s.bg(fg.fill(Fill::Strong)))
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.file_action(
-                                            discard_path.clone(),
-                                            Side::Unstaged,
-                                            true,
-                                            cx,
-                                        )
-                                    }))
-                            })
-                            .child(
-                                Icon::new(IconName::Undo2)
-                                    .size(IconSize::Xs)
-                                    .color(fg.ink(Ink::Muted)),
-                            ),
-                    )
+                .justify_center()
+                .rounded(px(6.0))
+                .tooltip(Tooltip::text(tip))
+                .when(!enabled, |el| el.opacity(0.35))
+                .when(enabled, |el| {
+                    el.cursor_pointer().hover(|s| s.bg(fg.fill(Fill::Selected)))
+                })
+                .child(Icon::new(icon).size(IconSize::Xs).color(fg.ink(Ink::Muted)))
+        };
+        div()
+            .px_2()
+            .py_1()
+            .when(!pinned && ix > 0, |el| el.pt_2())
+            .when(pinned, |el| el.bg(pinned_backdrop))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .h(px(32.0))
+                    .px_2p5()
+                    .rounded(px(8.0))
+                    .bg(fg.fill(Fill::Hover))
                     .child(
                         div()
                             .id(SharedString::from(format!(
-                                "{prefix}-stage-{key}-{}",
+                                "{prefix}-file-{key}-{}",
                                 file.id
                             )))
-                            .size(px(16.0))
                             .flex()
-                            .flex_none()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
                             .items_center()
-                            .justify_center()
-                            .rounded(px(3.0))
-                            .bg(fg)
-                            .tooltip(Tooltip::text("Stage file"))
-                            .when(busy || busy_here, |el| el.opacity(0.4))
-                            .when(!busy, |el| {
-                                el.cursor_pointer()
-                                    .hover(|s| s.opacity(0.8))
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.file_action(
-                                            stage_path.clone(),
-                                            Side::Unstaged,
-                                            false,
-                                            cx,
-                                        )
-                                    }))
-                            })
+                            .gap_2()
+                            .cursor_pointer()
+                            .tooltip(Tooltip::text(file.label.clone()))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.toggle_diff_file(&toggle_key, ix, cx)
+                            }))
                             .child(
-                                gpui::svg()
-                                    .path(IconName::Check.path())
-                                    .size(px(10.0))
-                                    .text_color(colors.bg),
+                                Icon::new(if expanded {
+                                    IconName::ChevronDown
+                                } else {
+                                    IconName::ChevronRight
+                                })
+                                .size(IconSize::Xs)
+                                .color(fg.ink(Ink::Muted)),
+                            )
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .child(FileIcon::file(&name).size(IconSize::Sm)),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .items_baseline()
+                                    .gap_1p5()
+                                    .overflow_hidden()
+                                    .child(
+                                        div()
+                                            .flex_none()
+                                            .text_size(Text::Base.px())
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(fg)
+                                            .child(base),
+                                    )
+                                    .children(dir.map(|dir| {
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .truncate()
+                                            .text_size(Text::Sm.px())
+                                            .text_color(fg.ink(Ink::Muted))
+                                            .child(dir)
+                                    })),
+                            )
+                            .child(
+                                diff_counts(
+                                    file.additions,
+                                    file.deletions,
+                                    crate::ui::appearance::diff_colors(cx),
+                                )
+                                .flex_none()
+                                .text_size(Text::Sm.px()),
                             ),
                     )
-                }),
-        )
+                    .child(
+                        action_btn(
+                            SharedString::from(format!("{prefix}-open-{key}-{}", file.id)),
+                            IconName::FileCode,
+                            "Open file",
+                            true,
+                        )
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| {
+                                this.open_file_in_editor(&open_path, window, cx)
+                            },
+                        )),
+                    )
+                    .when(unstaged, |el| {
+                        let discard_path = file.path.clone();
+                        let stage_path = file.path.clone();
+                        el.child(
+                            action_btn(
+                                SharedString::from(format!("{prefix}-discard-{key}-{}", file.id)),
+                                IconName::Undo2,
+                                "Discard file",
+                                !busy,
+                            )
+                            .when(!busy, |el| {
+                                el.on_click(cx.listener(move |this, _, _, cx| {
+                                    this.file_action(discard_path.clone(), Side::Unstaged, true, cx)
+                                }))
+                            }),
+                        )
+                        .child(
+                            action_btn(
+                                SharedString::from(format!("{prefix}-stage-{key}-{}", file.id)),
+                                IconName::Plus,
+                                "Stage file",
+                                !(busy || busy_here),
+                            )
+                            .when(!busy, |el| {
+                                el.on_click(cx.listener(move |this, _, _, cx| {
+                                    this.file_action(stage_path.clone(), Side::Unstaged, false, cx)
+                                }))
+                            }),
+                        )
+                    }),
+            )
     }
 
     /// MonoCode `FoldBar`: reveal twenty lines up or down, or all of them.
