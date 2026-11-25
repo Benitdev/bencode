@@ -41,8 +41,11 @@ use tabs::{
 const TAB_WIDTH: f32 = 208.0;
 const TAB_MIN_WIDTH: f32 = 104.0;
 const TAB_GAP: f32 = 2.0;
-/// `pl-1.5 pr-2.5`.
-const STRIP_PADDING: f32 = 16.0;
+/// Left inset of the tab strip: matches `workspace_left_inset` beside the
+/// navigator so the first tab pill aligns flush with the floating card below.
+const STRIP_PAD_LEFT: f32 = 2.0;
+const STRIP_PAD_RIGHT: f32 = 10.0;
+const STRIP_PADDING: f32 = STRIP_PAD_LEFT + STRIP_PAD_RIGHT;
 /// MonoCode `--motion-tab-close-duration`.
 const TAB_MOTION: Duration = Duration::from_millis(200);
 /// Room for the macOS window buttons when nothing else on the left holds it.
@@ -854,7 +857,7 @@ impl BenCodeApp {
             let width = self.title_tab_width(count);
             let scroll = crate::ui::scale::logical(self.title_strip.scroll.offset().x);
             let x = crate::ui::scale::logical(event.event.position.x - event.bounds.origin.x)
-                - 6.0
+                - STRIP_PAD_LEFT
                 - scroll;
             (id, tabs::slot_at(x, width, TAB_GAP, count))
         });
@@ -1063,8 +1066,8 @@ impl BenCodeApp {
             .flex_none()
             .items_center()
             .gap(px(TAB_GAP))
-            .pl(px(6.0))
-            .pr(px(6.0))
+            .pl(px(STRIP_PAD_LEFT))
+            .pr(px(4.0))
             .children(cards)
             .into_any_element()
     }
@@ -1149,8 +1152,8 @@ impl BenCodeApp {
                     .flex()
                     .items_center()
                     .gap(px(TAB_GAP))
-                    .pl(px(6.0))
-                    .pr(px(10.0))
+                    .pl(px(STRIP_PAD_LEFT))
+                    .pr(px(STRIP_PAD_RIGHT))
                     .overflow_x_scroll()
                     .track_scroll(scroll)
                     .children(slots),
@@ -1201,6 +1204,7 @@ impl BenCodeApp {
             .when(rail_hidden, |el| el.px_1p5())
             .when(self.compact_title_bar(), |el| {
                 el.pl(gpui::px(70.0))
+                    .pr(px(4.0))
                     .children(self.history_buttons("titlebar", cx))
             })
             .when(rail_hidden && cfg!(target_os = "macos"), |el| {
