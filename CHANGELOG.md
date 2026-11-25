@@ -6,6 +6,20 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+## [0.1.63] - 2026-11-25
+
+- Model catalogs for Codex and Claude are now discovered and cached per
+  provider account profile (`CODEX_HOME` / `CLAUDE_CONFIG_DIR`), and refresh
+  automatically when switching, adding or reconnecting an account (and on
+  Antigravity account switches), so switching to another plan immediately
+  loads its accessible models in the model picker.
+- Reduced idle CPU and per-frame work: project git stats pause while the
+  window is hidden and redraw only the rail, git polling backs off to 10s
+  while another app has focus, LaTeX skips scanning system fonts when a
+  formula has no `<text>` glyphs, streaming markdown tail fading scans only
+  the last graphemes, and the code editor caches folds, brackets and
+  occurrences across renders of the same buffer state.
+
 ## [0.1.62] - 2026-11-25
 
 - Redesigned the workspace around borderless floating cards over a unified
