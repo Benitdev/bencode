@@ -28,7 +28,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         permission_responder: None,
         can_steer: false,
         account: req.account.clone(),
-        env: super::app_env(req),
+        env: super::app_env_with_computer(req),
     };
     process::spawn(spec, CodexParser::for_session(home, req.resume_id.clone()))
 }
@@ -735,6 +735,16 @@ mod tests {
                 ("BENCODE_APP_SOCKET".to_string(), "/tmp/a.sock".to_string()),
                 ("BENCODE_APP_TOKEN".to_string(), "t".to_string()),
             ]
+        );
+        // The desktop credential reaches only CLIs that must pass it on.
+        req.computer_turn = Some("synthetic-turn".into());
+        assert_eq!(crate::harness::app_env(&req).len(), 2);
+        assert_eq!(
+            crate::harness::app_env_with_computer(&req).last(),
+            Some(&(
+                "BENCODE_COMPUTER_TURN".to_string(),
+                "synthetic-turn".to_string()
+            ))
         );
     }
 

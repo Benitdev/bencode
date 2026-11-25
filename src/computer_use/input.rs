@@ -241,6 +241,18 @@ impl Mouse {
         };
 
         grant.check()?;
+        // Hover first, as a hand would: tracking areas, menus and web views
+        // ignore a press at a point the pointer never reached.
+        if held.buttons.is_empty()
+            && matches!(
+                self.action,
+                MouseAction::Click { .. } | MouseAction::Down { .. } | MouseAction::Drag { .. }
+            )
+        {
+            post(&move_event(position)?);
+            std::thread::sleep(Duration::from_millis(30));
+            grant.check()?;
+        }
         match self.action {
             MouseAction::Move => post(&move_event(position)?),
             MouseAction::Down { button } => {
@@ -375,15 +387,16 @@ impl Chord {
         if key.len() > 80 {
             bail!("A key combination must be at most 80 bytes.");
         }
-        let mut parts = key.split('+');
-        let key = parts
-            .next_back()
-            .unwrap_or_default()
-            .trim()
-            .to_ascii_lowercase();
+        let (modifiers, key) = split_chord(key);
+        let key = key.trim().to_ascii_lowercase();
         let code = key_code(&key)
             .ok_or_else(|| anyhow!("Unknown key {key:?}. Try Return, ArrowDown or Cmd+Space."))?;
-        let flags = flags(parts.map(str::trim))?;
+        let flags = flags(
+            modifiers
+                .split('+')
+                .map(str::trim)
+                .filter(|_| !modifiers.is_empty()),
+        )?;
         if action != KeyAction::Press && !flags.is_empty() {
             bail!("Hold, release and repeat take one key. Hold modifier keys separately.");
         }
@@ -434,6 +447,19 @@ impl Chord {
         }
         Ok(())
     }
+}
+
+/// The modifiers and the key of `Cmd+Shift+P`; the key may be `+`
+/// itself (`+`, `Cmd++`).
+fn split_chord(chord: &str) -> (&str, &str) {
+    let chord = chord.trim();
+    if chord == "+" {
+        return ("", "+");
+    }
+    if let Some(modifiers) = chord.strip_suffix("++") {
+        return (modifiers, "+");
+    }
+    chord.rsplit_once('+').unwrap_or(("", chord))
 }
 
 fn modifier_flag(code: u16) -> Option<Flags> {
@@ -517,7 +543,7 @@ fn key_code(key: &str) -> Option<u16> {
         "arrowright" | "right" => KeyCode::RIGHT_ARROW,
         "arrowup" | "up" => KeyCode::UP_ARROW,
         "arrowdown" | "down" => KeyCode::DOWN_ARROW,
-        "equal" | "plus" => 0x18,
+        "equal" | "plus" | "+" => 0x18,
         "minus" => 0x1b,
         key if key.len() > 1 && key.starts_with('f') => {
             let n: usize = key[1..].parse().ok()?;
@@ -554,6 +580,8 @@ fn key_press(source: &CGEventSource, code: u16, flags: Flags, text: Option<&str>
     let down = keyboard_event(source, code, true, flags, text)?;
     let up = keyboard_event(source, code, false, flags, text)?;
     post(&down);
+    // Shortcuts such as Cmd+Space miss a release in the same instant.
+    std::thread::sleep(Duration::from_millis(8));
     post(&up);
     Ok(())
 }
@@ -626,6 +654,10 @@ mod tests {
             KeyCode::F12
         );
         assert!(Chord::parse("Cmd+Cmd+P", KeyAction::Press).is_err());
+        let zoom = Chord::parse("Cmd++", KeyAction::Press).unwrap();
+        assert_eq!((zoom.code, zoom.flags), (0x18, Flags::CGEventFlagCommand));
+        let plus = Chord::parse("+", KeyAction::Press).unwrap();
+        assert_eq!((plus.code, plus.flags), (0x18, Flags::empty()));
         assert!(Chord::parse("Fn+", KeyAction::Press).is_err());
     }
 

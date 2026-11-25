@@ -66,6 +66,7 @@ impl BenCodeApp {
         let allow = app_callback(cx, move |this, cx| this.allow_computer_use(turn, cx));
         Some(
             Dialog::new("computer-use-approval", "Allow desktop access?", deny)
+                .keep_on_scrim()
                 .child(
                     div()
                         .text_size(Text::Md.px())

@@ -158,7 +158,10 @@ pub struct AppAccess {
 pub const APP_SOCKET_ENV: &str = "BENCODE_APP_SOCKET";
 pub const APP_TOKEN_ENV: &str = "BENCODE_APP_TOKEN";
 
-/// The child's environment for tools that reach the BenCode app.
+/// The child's environment for `req.app`. A CLI that hands MCP servers an
+/// environment of their own (ACP) gets only this: the turn's desktop
+/// credential goes to the desktop server alone, not to every command the
+/// agent runs.
 pub(crate) fn app_env(req: &SpawnRequest) -> Vec<(String, String)> {
     req.app
         .iter()
@@ -168,12 +171,20 @@ pub(crate) fn app_env(req: &SpawnRequest) -> Vec<(String, String)> {
                 (APP_TOKEN_ENV.to_string(), app.token.clone()),
             ]
         })
-        .chain(
-            req.computer_turn
-                .iter()
-                .map(|token| (crate::mcp::COMPUTER_TURN_ENV.into(), token.clone())),
-        )
         .collect()
+}
+
+/// `app_env` plus the desktop credential, for a CLI whose MCP servers can
+/// only inherit it from the CLI's own environment (Claude's inline config
+/// would put it on argv; Codex and OpenCode pass named variables through).
+pub(crate) fn app_env_with_computer(req: &SpawnRequest) -> Vec<(String, String)> {
+    let mut env = app_env(req);
+    env.extend(
+        req.computer_turn
+            .iter()
+            .map(|token| (crate::mcp::COMPUTER_TURN_ENV.into(), token.clone())),
+    );
+    env
 }
 
 /// Starts one agent turn. Non-blocking apart from a fork/exec; safe to call

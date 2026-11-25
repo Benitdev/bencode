@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bencode_core::mcp::McpLaunch;
-use gpui::Context;
+use gpui::{Context, Window};
 
 use super::BenCodeApp;
 use crate::computer_use::{self, Action, Desktop, Grant};
@@ -21,15 +21,22 @@ pub(crate) struct ComputerUse {
     desktop: Arc<Desktop>,
     stop_listening: bool,
     stop_registered: bool,
-    /// The thread an automation is starting a turn in, while it does.
-    unattended: Option<String>,
 }
 
+/// A turn's request for the desktop: every call it made while the prompt
+/// was up waits on the one answer.
 struct Approval {
     turn: u64,
     label: String,
-    action: Action,
-    call: ToolCall,
+    waiting: Vec<(Action, ToolCall)>,
+}
+
+impl Approval {
+    fn answer_all(self, text: &str) {
+        for (_, call) in self.waiting {
+            call.answer(ToolReply::error(text));
+        }
+    }
 }
 
 struct Access {
@@ -55,10 +62,6 @@ impl ComputerUse {
         self.active.as_ref().map(|access| access.label.as_str())
     }
 
-    pub(super) fn starting_unattended(&mut self, session_id: Option<&str>) {
-        self.unattended = session_id.map(str::to_owned);
-    }
-
     pub(super) fn revoke(&mut self) {
         if std::mem::take(&mut self.stop_registered) {
             hotkey::unregister(Shortcut::StopComputerUse);
@@ -67,9 +70,7 @@ impl ComputerUse {
             access.grant.revoke();
         }
         if let Some(request) = self.request.take() {
-            request
-                .call
-                .answer(ToolReply::error("Desktop access was stopped."));
+            request.answer_all("Desktop access was stopped.");
         }
     }
 }
@@ -87,12 +88,6 @@ impl BenCodeApp {
                 None
             }
         }
-    }
-
-    /// A turn nobody is there to approve: an automation's or a bot's
-    /// habit. It is not offered the desktop.
-    pub(super) fn runs_unattended(&self, session_id: &str) -> bool {
-        self.computer_use.unattended.as_deref() == Some(session_id) || self.is_habit_run(session_id)
     }
 
     pub(crate) fn set_computer_use(&mut self, enabled: bool, cx: &mut Context<Self>) {
@@ -143,7 +138,12 @@ impl BenCodeApp {
         }
     }
 
-    pub(super) fn handle_computer_call(&mut self, mut call: ToolCall, cx: &mut Context<Self>) {
+    pub(super) fn handle_computer_call(
+        &mut self,
+        mut call: ToolCall,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let credential = call.request.computer_turn.take().unwrap_or_default();
         let run = self.runs.iter().find(|(_, run)| {
             run.computer_turn
@@ -169,7 +169,12 @@ impl BenCodeApp {
             self.run_computer_action(turn, access.grant.clone(), action, call, cx);
             return;
         }
-        if self.computer_use.request.is_some() {
+        if let Some(request) = &mut self.computer_use.request {
+            // Calls made side by side wait on the same prompt.
+            if request.turn == turn {
+                request.waiting.push((action, call));
+                return;
+            }
             return call.answer(ToolReply::error(
                 "BenCode is already waiting for a desktop approval.",
             ));
@@ -183,10 +188,11 @@ impl BenCodeApp {
         self.computer_use.request = Some(Approval {
             turn,
             label,
-            action,
-            call,
+            waiting: vec![(action, call)],
         });
         self.announce_computer_use(session, cx);
+        // With notifications off, the Dock still says someone must answer.
+        window.request_attention();
         cx.notify();
 
         cx.spawn(async move |this, cx| {
@@ -201,9 +207,7 @@ impl BenCodeApp {
     pub(crate) fn deny_computer_use(&mut self, turn: u64, cx: &mut Context<Self>) {
         if let Some(request) = self.take_computer_request(turn) {
             self.reject_computer_turn(turn);
-            request.call.answer(ToolReply::error(
-                "Desktop access was declined or the approval expired.",
-            ));
+            request.answer_all("Desktop access was declined or the approval expired.");
             cx.notify();
         }
     }
@@ -223,12 +227,18 @@ impl BenCodeApp {
 
         // Clicking Allow left BenCode in front: keys, text and clicks
         // would land in BenCode, not where the agent meant them.
-        if request.action.follows_focus() {
-            request.call.answer(ToolReply::error(
+        let (replay, refused): (Vec<_>, Vec<_>) = request
+            .waiting
+            .into_iter()
+            .partition(|(action, _)| !action.follows_focus());
+        for (_, call) in refused {
+            call.answer(ToolReply::error(
                 "Desktop access was approved for this turn, but this action was not run because \
                  BenCode is in front after the approval. Bring the intended app forward \
                  (computer_open_app or computer_window focus), take a new screenshot, then retry.",
             ));
+        }
+        if replay.is_empty() {
             return;
         }
         // Let the permission dialog leave the window before the agent takes
@@ -238,7 +248,9 @@ impl BenCodeApp {
                 .timer(Duration::from_millis(120))
                 .await;
             if let Err(err) = entity.update(cx, |this, cx| {
-                this.run_computer_action(turn, grant, request.action, request.call, cx);
+                for (action, call) in replay {
+                    this.run_computer_action(turn, grant.clone(), action, call, cx);
+                }
             }) {
                 log::debug!("Computer Use approved after app drop: {err:#}");
             }

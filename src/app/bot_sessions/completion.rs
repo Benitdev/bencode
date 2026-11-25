@@ -344,6 +344,8 @@ impl BenCodeApp {
             let input = TurnInput {
                 text,
                 extra,
+                // Sent when the watched work ends, not by the person.
+                unattended: true,
                 ..Default::default()
             };
             let session = batch.bot_session;

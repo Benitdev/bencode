@@ -58,7 +58,7 @@ impl Server for DesktopServer<'_> {
     }
 
     fn instructions(&self) -> &'static str {
-        "Use these tools for native macOS apps. The user approves desktop access for this turn.          Open an app by bundle ID or use Spotlight with Cmd+Space. Capture the display before          interacting and after any change you need to verify. Mouse coordinates are pixels in          the returned screenshot (origin at the top left), and the call needs its screenshotId.          Key presses and text go to the foreground window. Use the in-app browser tools for web pages."
+        "Use these tools for native macOS apps. The user approves desktop access for this turn. Open an app by bundle ID or use Spotlight with Cmd+Space. Capture the display before interacting and after any change you need to verify. Mouse coordinates are pixels in the returned screenshot (origin at the top left), and the call needs its screenshotId. Key presses and text go to the foreground window. Use the in-app browser tools for web pages."
     }
 
     fn tools(&self) -> Value {
@@ -371,6 +371,16 @@ impl Desktop {
     }
 
     fn execute(&self, turn: u64, grant: &Grant, action: Action) -> Result<ToolReply> {
+        // Opening an app touches no frame and sends no input: it waits on
+        // LaunchServices outside the lock.
+        if let Action::OpenApp(bundle_id) = action {
+            grant.check()?;
+            open_app(&bundle_id)?;
+            grant.check()?;
+            return Ok(ToolReply::text(format!(
+                "Opened {bundle_id}. Take a screenshot to check its window."
+            )));
+        }
         let mut frames = self
             .frames
             .lock()
@@ -401,24 +411,47 @@ impl Desktop {
                 grant.input(|held| input::type_text(&text, held, grant))?;
                 ToolReply::text("Text typed.")
             }
-            Action::OpenApp(bundle_id) => {
-                let status = std::process::Command::new("/usr/bin/open")
-                    .args(["-b", &bundle_id])
-                    .output()
-                    .context("Could not open the app.")?;
-                if !status.status.success() {
-                    bail!(
-                        "Could not open {bundle_id}. Check the bundle ID and whether the application is installed."
-                    );
-                }
-                ToolReply::text(format!(
-                    "Opened {bundle_id}. Take a screenshot to check its window."
-                ))
-            }
+            Action::OpenApp(_) => unreachable!("opened before taking the frames"),
         };
         grant.check()?;
         Ok(reply)
     }
+}
+
+/// How long `open -b` may take before the call gives up on it.
+const OPEN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+fn open_app(bundle_id: &str) -> Result<()> {
+    let mut child = std::process::Command::new("/usr/bin/open")
+        .args(["-b", bundle_id])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .context("Could not open the app.")?;
+    let deadline = std::time::Instant::now() + OPEN_TIMEOUT;
+    let status = loop {
+        if let Some(status) = child.try_wait().context("Could not open the app.")? {
+            break status;
+        }
+        if std::time::Instant::now() >= deadline {
+            if let Err(err) = child.kill() {
+                log::warn!("Computer Use: could not stop a stuck open: {err}");
+            }
+            if let Err(err) = child.wait() {
+                log::warn!("Computer Use: could not reap a stuck open: {err}");
+            }
+            bail!(
+                "macOS did not open {bundle_id} in time. Take a screenshot: it may be asking for confirmation."
+            );
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    if !status.success() {
+        bail!(
+            "Could not open {bundle_id}. Check the bundle ID and whether the application is installed."
+        );
+    }
+    Ok(())
 }
 
 pub fn request_screen_permission() {

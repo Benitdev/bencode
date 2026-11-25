@@ -12,6 +12,7 @@ use std::time::Duration;
 use gpui::Context;
 use jiff::tz::TimeZone;
 
+use super::agent::TurnInput;
 use super::automations::{WorkingCopy, draft_is_valid, grace_minutes};
 use super::session_folders::{FolderTarget, place_session};
 use super::{AutomationLink, BenCodeApp, PermissionMode, now_ms, unique_id};
@@ -302,12 +303,12 @@ impl BenCodeApp {
         run_id: &str,
         cx: &mut Context<Self>,
     ) {
-        // Nobody waits to approve desktop access for a scheduled run.
-        #[cfg(target_os = "macos")]
-        self.computer_use.starting_unattended(Some(session_id));
-        self.send_prompt(session_id, &auto.prompt, cx);
-        #[cfg(target_os = "macos")]
-        self.computer_use.starting_unattended(None);
+        let input = TurnInput {
+            text: auto.prompt.clone(),
+            unattended: true,
+            ..Default::default()
+        };
+        self.send_turn(session_id, input, cx);
         let (run, thread) = (run_id.to_string(), session_id.to_string());
         if !self.is_agent_running_in(session_id) {
             // send_prompt already explains the failure inside the thread.

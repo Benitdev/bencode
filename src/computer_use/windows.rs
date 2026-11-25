@@ -132,7 +132,11 @@ impl Window {
                     .is_some_and(|title| title.chars().take(250).eq(self.title.chars()));
             candidates.push((position_match, title_match, window));
         }
-        let index = match_window(candidates.iter().map(|(bounds, title, _)| (*bounds, *title)))
+        // An app with one window needs no match: its title may be hidden
+        // (no Screen Recording) and a minimized window's frame may differ.
+        let index = (candidates.len() == 1)
+            .then_some(0)
+            .or_else(|| match_window(candidates.iter().map(|(bounds, title, _)| (*bounds, *title))))
             .context("Could not uniquely match this window to an Accessibility window. Refresh computer_windows or use display coordinates.")?;
         Ok((app, candidates.swap_remove(index).2))
     }

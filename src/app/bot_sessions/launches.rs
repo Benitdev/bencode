@@ -471,6 +471,8 @@ impl BenCodeApp {
                 TurnInput {
                     text: plan.prompt.clone(),
                     extra,
+                    // A habit's launch has nobody to approve the desktop.
+                    unattended: !caller.own,
                     ..Default::default()
                 },
                 cx,

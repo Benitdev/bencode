@@ -448,6 +448,7 @@ impl BenCodeApp {
                 TurnInput {
                     text: prompt.clone(),
                     extra,
+                    unattended: !caller.own,
                     ..Default::default()
                 },
                 cx,

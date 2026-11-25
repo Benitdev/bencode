@@ -8,6 +8,7 @@ use core_foundation::array::CFArray;
 use core_foundation::base::{CFType, CFTypeRef, TCFType};
 use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
+use core_foundation::number::CFNumber;
 use core_foundation::string::{CFString, CFStringRef};
 use core_graphics::geometry::{CGPoint, CGRect, CGSize};
 use serde_json::{Value, json};
@@ -242,6 +243,26 @@ impl Element {
         }
     }
 
+    /// What the control holds (a field's text, a checkbox's state, a
+    /// slider's number); never a secure field's.
+    fn value(&self) -> Option<Value> {
+        if self.text("AXSubrole").as_deref() == Some("AXSecureTextField") {
+            return None;
+        }
+        let value = self.attribute("AXValue")?;
+        if let Some(text) = value.downcast::<CFString>() {
+            let text: String = text.to_string().chars().take(250).collect();
+            return (!text.is_empty()).then(|| Value::String(text));
+        }
+        if let Some(flag) = value.downcast::<CFBoolean>() {
+            return Some(Value::Bool(flag.into()));
+        }
+        value
+            .downcast::<CFNumber>()
+            .and_then(|number| number.to_f64())
+            .map(|number| json!(number))
+    }
+
     fn description(&self) -> Description {
         let role = self.text("AXRole").unwrap_or_default();
         let label = self
@@ -306,10 +327,18 @@ struct Outline<'a> {
 }
 
 impl Outline<'_> {
+    /// Whether the walk must stop: the node budget or the time is spent.
+    /// A branch cut at `MAX_DEPTH` only marks the outline truncated; its
+    /// siblings are still visited.
+    fn spent(&mut self) -> bool {
+        let spent = self.nodes.len() >= MAX_NODES || Instant::now() >= self.deadline;
+        self.truncated |= spent;
+        spent
+    }
+
     fn visit(&mut self, element: &Element, path: &mut Vec<usize>) -> Result<()> {
         self.grant.check()?;
-        if self.nodes.len() >= MAX_NODES || Instant::now() >= self.deadline {
-            self.truncated = true;
+        if self.spent() {
             return Ok(());
         }
         let desc = element.description();
@@ -319,20 +348,23 @@ impl Outline<'_> {
             .collect::<Vec<_>>()
             .join(".");
         let label: String = desc.label.chars().take(250).collect();
-        self.nodes.push(json!({
+        let mut node = json!({
             "ref": format!("{path_text}:{}", desc.fingerprint()),
             "role": desc.role,
             "label": label,
             "enabled": element.boolean("AXEnabled"),
-        }));
+        });
+        if let Some(value) = element.value() {
+            node["value"] = value;
+        }
+        self.nodes.push(node);
         if let Some(children) = element.array("AXChildren") {
             if path.len() == MAX_DEPTH {
                 self.truncated |= !children.is_empty();
                 return Ok(());
             }
             for (index, value) in children.iter().enumerate() {
-                if self.truncated || Instant::now() >= self.deadline {
-                    self.truncated = true;
+                if self.spent() {
                     break;
                 }
                 if let Some(child) = element_ref(*value) {

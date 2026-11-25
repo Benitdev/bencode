@@ -399,7 +399,7 @@ const SCENES: &[(&str, SetUp)] = &[
         app.open_settings_tab(crate::ui::settings_modal::SettingsTab::Integrations, cx);
     }),
     #[cfg(target_os = "macos")]
-    ("computer-use-approval", |app, _, cx| {
+    ("computer-use-approval", |app, window, cx| {
         let mut run = staged_run(0, None);
         run.computer_turn = Some("snapshot-turn".into());
         app.runs.insert("snapshot-computer-use".into(), run);
@@ -415,6 +415,7 @@ const SCENES: &[(&str, SetUp)] = &[
                 },
                 reply,
             },
+            window,
             cx,
         );
     }),

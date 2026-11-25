@@ -55,6 +55,9 @@ pub struct TurnInput {
     /// Fields the message's block carries (MonoCode `appRequestId`,
     /// `internal`, `monoSessionCompletion`).
     pub extra: serde_json::Map<String, Value>,
+    /// Sent with nobody there to answer (an automation, a bot's habit or
+    /// its report): the turn is not offered the desktop.
+    pub unattended: bool,
 }
 
 /// Claude's clarifying-question tool, answered in the composer.
@@ -117,6 +120,7 @@ struct RunRequest {
     attachments: Vec<Attachment>,
     plan: bool,
     purpose: RunPurpose,
+    unattended: bool,
 }
 
 /// The command a harness compacts its context with, and MonoCode's
@@ -668,6 +672,7 @@ impl BenCodeApp {
             card: card.map(Box::new),
             agent_prompt: None,
             extra: Default::default(),
+            unattended: false,
         };
         self.sync_prompt_placeholder(cx);
         self.prompt_input
@@ -849,10 +854,11 @@ impl BenCodeApp {
             card: None,
             agent_prompt: None,
             extra: Default::default(),
+            unattended: false,
         })
     }
 
-    /// Starts a turn of plain `prompt` in `session_id` (automations, retries).
+    /// Starts a turn of plain `prompt` in `session_id` (retries).
     pub fn send_prompt(&mut self, session_id: &str, prompt: &str, cx: &mut Context<Self>) {
         let input = TurnInput {
             text: prompt.to_string(),
@@ -957,6 +963,7 @@ impl BenCodeApp {
             attachments: input.attachments,
             plan: input.plan,
             purpose: RunPurpose::Turn,
+            unattended: input.unattended,
         };
         self.start_run(session_id, request, pinned, cx);
         self.link_first_work_item(session_id, &input.text, cx);
@@ -991,6 +998,7 @@ impl BenCodeApp {
             attachments: Vec::new(),
             plan: false,
             purpose: RunPurpose::Compact,
+            unattended: false,
         };
         let pinned = self.pin_session_account(session_id);
         self.start_run(session_id, request, pinned, cx);
@@ -1023,7 +1031,8 @@ impl BenCodeApp {
         let computer = (request.purpose == RunPurpose::Turn
             && !request.plan
             && !remote
-            && !self.runs_unattended(session_id))
+            && !request.unattended
+            && !self.is_habit_run(session_id))
         .then(|| self.computer_use_launch())
         .flatten();
         #[cfg(not(target_os = "macos"))]

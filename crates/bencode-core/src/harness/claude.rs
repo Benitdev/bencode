@@ -47,7 +47,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         permission_responder: Some(permission_response),
         can_steer: super::can_steer(super::HarnessKind::Claude, req.compact),
         account: req.account.clone(),
-        env: super::app_env(req),
+        env: super::app_env_with_computer(req),
     };
     process::spawn(spec, ClaudeParser::default())
 }

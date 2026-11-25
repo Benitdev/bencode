@@ -43,7 +43,7 @@ pub fn spawn(req: &SpawnRequest) -> Result<(HarnessProcessHandle, EventRx)> {
         env: [("PWD".to_string(), req.cwd.clone())]
             .into_iter()
             .chain(inline_config(req, v2))
-            .chain(super::app_env(req))
+            .chain(super::app_env_with_computer(req))
             .collect(),
     };
     process::spawn(spec, OpenCodeParser::default())

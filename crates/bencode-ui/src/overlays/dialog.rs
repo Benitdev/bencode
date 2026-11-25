@@ -75,6 +75,13 @@ impl Dialog {
         self
     }
 
+    /// A press on the scrim leaves it open: for a decision a stray click
+    /// must not make (the first click that brings the window forward).
+    pub fn keep_on_scrim(mut self) -> Self {
+        self.scrim_closes = false;
+        self
+    }
+
     /// Where focus goes when it opens.
     pub fn focus_first(mut self, handle: FocusHandle) -> Self {
         self.first = Some(handle);
