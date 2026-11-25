@@ -752,6 +752,10 @@ mod tests {
         let mut parser = AcpParser::new(req, &AGY);
         let init: Value = serde_json::from_str(&parser.initialize()).unwrap();
         assert_eq!(init["method"], "initialize");
+        assert_eq!(
+            init["params"]["clientCapabilities"]["elicitation"]["form"],
+            json!({})
+        );
         parser.parse_line(&reply(&init["id"], json!({ "protocolVersion": 1 })));
         let mut asked = sent(&mut parser);
         // No `authenticate`: `agy` is signed in by itself.
@@ -1220,5 +1224,177 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as i64
+    }
+
+    #[test]
+    fn elicitation_questions_use_the_composer_form_and_encode_answers() {
+        let (mut parser, _) = opened(&acp_request(PermissionPolicy::AutoApprove));
+        // Recorded from `agy acp` 1.5.15 when the model calls `ask_question`.
+        let ask = json!({
+            "jsonrpc": "2.0",
+            "id": "1",
+            "method": "elicitation/create",
+            "params": {
+                "sessionId": "ses-1",
+                "toolCallId": "call_1",
+                "mode": "form",
+                "message": "The agent has 2 questions.",
+                "requestedSchema": {
+                    "type": "object",
+                    "properties": {
+                        "q1": {
+                            "type": "string",
+                            "title": "Pick a color?",
+                            "oneOf": [
+                                { "const": "1", "title": "Red, crimson" },
+                                { "const": "2", "title": "Blue" }
+                            ]
+                        },
+                        "q1_other": {
+                            "type": "string",
+                            "title": "Other",
+                            "description": "Optional free-form answer to: Pick a color?"
+                        },
+                        "q2": {
+                            "type": "array",
+                            "title": "Pick fruits?",
+                            "items": {
+                                "anyOf": [
+                                    { "const": "1", "title": "Apple, Fuji" },
+                                    { "const": "2", "title": "Banana" }
+                                ]
+                            }
+                        },
+                        "q2_other": {
+                            "type": "string",
+                            "title": "Other",
+                            "description": "Optional free-form answer to: Pick fruits?"
+                        }
+                    }
+                }
+            }
+        });
+        let events = parser.parse_line(&ask.to_string());
+        let asked = permission_requests(&events);
+        assert_eq!(asked.len(), 1);
+        assert_eq!(asked[0].tool, acp::QUESTION_TOOL);
+        assert_eq!(asked[0].description, "Pick a color?");
+        assert_eq!(asked[0].input["structuredAnswers"], true);
+        let qs = asked[0].input["questions"].as_array().unwrap();
+        assert_eq!(
+            qs.len(),
+            2,
+            "companion _other fields are merged, not separate"
+        );
+        assert_eq!(qs[0]["id"], "q1");
+        assert_eq!(qs[0]["multiSelect"], false);
+        assert_eq!(qs[0]["allowCustom"], true);
+        assert_eq!(qs[0]["options"][0]["id"], "1");
+        assert_eq!(qs[0]["options"][0]["label"], "Red, crimson");
+        assert_eq!(qs[1]["id"], "q2");
+        assert_eq!(qs[1]["multiSelect"], true);
+        assert_eq!(qs[1]["allowCustom"], true);
+
+        // Structured selections: single-select option + multi-select option with comma + Other.
+        let mut answered = asked[0].clone();
+        answered.input = json!({
+            "questions": qs,
+            "answers": {
+                "Pick a color?": "Blue",
+                "Pick fruits?": "Apple, Fuji, Mango"
+            },
+            "selections": {
+                "q1": { "selected": ["2"] },
+                "q2": { "selected": ["1"], "custom": "Mango" }
+            }
+        });
+        let reply: Value =
+            serde_json::from_str(&acp::permission_response(&answered, true)).unwrap();
+        assert_eq!(reply["id"], "1");
+        assert_eq!(
+            reply["result"],
+            json!({
+                "action": "accept",
+                "content": {
+                    "q1": "2",
+                    "q2": ["1"],
+                    "q2_other": "Mango"
+                }
+            })
+        );
+
+        // Pure Other write-in omits `q1` and sets only `q1_other`.
+        let mut custom_only = asked[0].clone();
+        custom_only.input = json!({
+            "questions": qs,
+            "answers": { "Pick a color?": "Emerald" },
+            "selections": { "q1": { "custom": "Emerald" } }
+        });
+        let reply: Value =
+            serde_json::from_str(&acp::permission_response(&custom_only, true)).unwrap();
+        assert_eq!(
+            reply["result"],
+            json!({ "action": "accept", "content": { "q1_other": "Emerald" } })
+        );
+
+        // Fallback when only `answers` is supplied (no `selections`).
+        let mut answers_only = asked[0].clone();
+        answers_only.input = json!({
+            "questions": qs,
+            "answers": { "Pick a color?": "Red, crimson", "Pick fruits?": "Banana" }
+        });
+        let reply: Value =
+            serde_json::from_str(&acp::permission_response(&answers_only, true)).unwrap();
+        assert_eq!(
+            reply["result"],
+            json!({ "action": "accept", "content": { "q1": "1", "q2": ["2"] } })
+        );
+
+        // Skipping declines the elicitation.
+        let skipped: Value =
+            serde_json::from_str(&acp::permission_response(asked[0], false)).unwrap();
+        assert_eq!(skipped["id"], "1");
+        assert_eq!(skipped["result"], json!({ "action": "decline" }));
+    }
+
+    #[test]
+    fn elicitation_orders_numbered_questions_naturally_and_declines_url_mode() {
+        let (mut parser, _) = opened(&acp_request(PermissionPolicy::Ask));
+        let ask = json!({
+            "jsonrpc": "2.0",
+            "id": "2",
+            "method": "elicitation/create",
+            "params": {
+                "mode": "form",
+                "requestedSchema": {
+                    "type": "object",
+                    "properties": {
+                        "q10": { "type": "string", "title": "Tenth" },
+                        "q2": { "type": "string", "title": "Second" },
+                        "q1": { "type": "string", "title": "First" }
+                    }
+                }
+            }
+        });
+        let events = parser.parse_line(&ask.to_string());
+        let asked = permission_requests(&events);
+        let ids: Vec<&str> = asked[0].input["questions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|q| q["id"].as_str())
+            .collect();
+        assert_eq!(ids, ["q1", "q2", "q10"]);
+
+        let url = json!({
+            "jsonrpc": "2.0",
+            "id": "3",
+            "method": "elicitation/create",
+            "params": { "mode": "url", "url": "https://example.com" }
+        });
+        assert!(parser.parse_line(&url.to_string()).is_empty());
+        let replies = sent(&mut parser);
+        assert_eq!(replies[0]["id"], "3");
+        assert_eq!(replies[0]["result"], json!({ "action": "decline" }));
     }
 }

@@ -14,7 +14,7 @@ use gpui::{
 };
 
 use crate::ui::scale::px;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 use crate::app::BenCodeApp;
 use crate::app::QUESTION_TOOL;
@@ -180,9 +180,14 @@ pub fn is_complete(question: &Question, ui: &QuestionUi) -> bool {
 }
 
 /// MonoCode `askUserQuestionAllowInput`: the tool input with `answers`
-/// keyed by question text (several picks joined by ", ").
+/// keyed by question text (several picks joined by ", "). When the harness
+/// asked for `structuredAnswers` (ACP elicitation), also includes exact
+/// selected option ids and custom text per question id so labels containing
+/// commas or mixed multi-select + Other answers survive lossless.
 pub fn allow_input(input: &Value, questions: &[Question], ui: &QuestionUi) -> Value {
+    let structured = input.get("structuredAnswers") == Some(&Value::Bool(true));
     let mut answers = Map::new();
+    let mut selections = Map::new();
     for question in questions {
         let typed = ui
             .custom
@@ -192,7 +197,7 @@ pub fn allow_input(input: &Value, questions: &[Question], ui: &QuestionUi) -> Va
         let picked = ui.answers.get(&question.id).cloned().unwrap_or_default();
         let options = shown_options(question);
         let labels: Vec<String> = if picked.is_empty() {
-            typed.into_iter().collect()
+            typed.clone().into_iter().collect()
         } else {
             picked
                 .iter()
@@ -215,8 +220,45 @@ pub fn allow_input(input: &Value, questions: &[Question], ui: &QuestionUi) -> Va
             labels[0].clone()
         };
         answers.insert(question.prompt.clone(), Value::String(answer));
+        if structured {
+            let mut selected = Vec::new();
+            let mut custom_used = None;
+            if picked.is_empty() {
+                custom_used = typed;
+            } else {
+                for id in &picked {
+                    let Some(option) = options.iter().find(|o| o.id == *id) else {
+                        continue;
+                    };
+                    if is_other(option) {
+                        custom_used = typed.clone();
+                    } else {
+                        selected.push(Value::String(option.id.clone()));
+                    }
+                }
+            }
+            if !selected.is_empty() || custom_used.is_some() {
+                let mut entry = Map::new();
+                if !selected.is_empty() {
+                    entry.insert("selected".into(), Value::Array(selected));
+                }
+                if let Some(custom) = custom_used {
+                    entry.insert("custom".into(), Value::String(custom));
+                }
+                selections.insert(question.id.clone(), Value::Object(entry));
+            }
+        }
     }
-    json!({ "questions": input.get("questions").cloned().unwrap_or(Value::Null), "answers": answers })
+    let mut out = Map::new();
+    out.insert(
+        "questions".into(),
+        input.get("questions").cloned().unwrap_or(Value::Null),
+    );
+    out.insert("answers".into(), Value::Object(answers));
+    if structured {
+        out.insert("selections".into(), Value::Object(selections));
+    }
+    Value::Object(out)
 }
 
 impl BenCodeApp {
@@ -716,6 +758,8 @@ impl BenCodeApp {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     fn input() -> Value {
@@ -756,5 +800,33 @@ mod tests {
         assert_eq!(sent["answers"]["Which database?"], "Postgres");
         assert_eq!(sent["answers"]["Which features?"], "Auth, Billing");
         assert_eq!(sent["questions"], input()["questions"]);
+        assert!(sent.get("selections").is_none());
+    }
+
+    #[test]
+    fn structured_answers_keep_option_ids_and_custom_text_separately() {
+        let raw = json!({
+            "structuredAnswers": true,
+            "questions": [
+                {
+                    "id": "q1",
+                    "question": "Scope?",
+                    "multiSelect": true,
+                    "allowCustom": true,
+                    "options": [
+                        { "id": "1", "label": "Full UI (Titlebar, Navigator, Composer)" },
+                        { "id": "2", "label": "Settings, Inbox, Notes" }
+                    ]
+                }
+            ]
+        });
+        let questions = parse_questions(&raw);
+        let mut ui = QuestionUi::default();
+        ui.answers
+            .insert("q1".into(), vec!["1".into(), CUSTOM.into()]);
+        ui.custom.insert("q1".into(), "Terminal dock".into());
+        let sent = allow_input(&raw, &questions, &ui);
+        assert_eq!(sent["selections"]["q1"]["selected"], json!(["1"]));
+        assert_eq!(sent["selections"]["q1"]["custom"], "Terminal dock");
     }
 }

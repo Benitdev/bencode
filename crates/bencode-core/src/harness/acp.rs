@@ -77,13 +77,16 @@ pub struct Dialect {
 /// How much of a prompt's reply `Dialect::usage_limit` reads: its end.
 const REPLY_TAIL_CHARS: usize = 1_024;
 
-/// MonoCode `CLIENT_CAPABILITIES` and `clientInfo`.
+/// MonoCode `CLIENT_CAPABILITIES` and `clientInfo`, plus ACP form elicitation
+/// so agents like Antigravity surface `ask_question` through the question form
+/// rather than falling back to plain-text lists in chat.
 pub fn initialize_params() -> Value {
     json!({
         "protocolVersion": 1,
         "clientCapabilities": {
             "fs": { "readTextFile": false, "writeTextFile": false },
             "terminal": false,
+            "elicitation": { "form": {} },
         },
         "clientInfo": { "name": "bencode", "version": env!("CARGO_PKG_VERSION") },
     })
@@ -646,6 +649,7 @@ impl AcpParser {
     ) {
         match method {
             "session/request_permission" => self.on_permission(id, params, events),
+            "elicitation/create" => self.on_elicitation(id, params, events),
             "_x.ai/ask_user_question" | "x.ai/ask_user_question" => {
                 let questions = questions_from(params);
                 let description = questions
@@ -729,6 +733,39 @@ impl AcpParser {
                 .unwrap_or_else(|| crate::harness::summarize_tool_input(&fields.name(), &input)),
             tool: fields.name(),
             input,
+        }));
+    }
+
+    /// ACP form elicitation (`elicitation/create`): turns the agent's JSON
+    /// Schema form (e.g. Antigravity's `ask_question`) into the composer's
+    /// `AskUserQuestion` prompt. Non-form or empty requests are declined.
+    fn on_elicitation(&mut self, id: &Value, params: &Value, events: &mut Vec<AgentEvent>) {
+        if str_field(params, "mode").is_some_and(|mode| mode != "form") {
+            self.respond(id, json!({ "action": "decline" }));
+            return;
+        }
+        let Some((questions, fields)) = parse_elicitation_schema(params) else {
+            self.respond(id, json!({ "action": "decline" }));
+            return;
+        };
+        let description = questions
+            .first()
+            .and_then(|q| str_field(q, "question"))
+            .or_else(|| str_field(params, "message"))
+            .unwrap_or("Question")
+            .to_string();
+        events.push(AgentEvent::PermissionRequest(PermissionRequest {
+            request_id: json!({
+                "id": id,
+                "elicitation": { "fields": fields },
+            })
+            .to_string(),
+            tool: QUESTION_TOOL.into(),
+            description,
+            input: json!({
+                "questions": questions,
+                "structuredAnswers": true,
+            }),
         }));
     }
 
@@ -944,7 +981,9 @@ pub(crate) fn selected(option: &str) -> Value {
 /// carries the JSON-RPC id and the options to pick from.
 pub(crate) fn permission_response(request: &PermissionRequest, allow: bool) -> String {
     let meta: Value = serde_json::from_str(&request.request_id).unwrap_or(Value::Null);
-    let result = if meta.get("question") == Some(&Value::Bool(true)) {
+    let result = if let Some(elicitation) = meta.get("elicitation") {
+        elicitation_result(elicitation, &request.input, allow)
+    } else if meta.get("question") == Some(&Value::Bool(true)) {
         match request.input.get("answers").filter(|_| allow) {
             Some(answers) => json!({ "outcome": "accepted", "answers": answers }),
             None => json!({ "outcome": "skip_interview" }),
@@ -955,6 +994,337 @@ pub(crate) fn permission_response(request: &PermissionRequest, allow: bool) -> S
     };
     json!({ "jsonrpc": "2.0", "id": meta.get("id").cloned().unwrap_or(Value::Null), "result": result })
         .to_string()
+}
+
+/// Converts an ACP `elicitation/create` `requestedSchema` into `QuestionForm`
+/// questions plus per-field metadata for encoding the elicitation response.
+/// Pairs `<key>_other` free-text string properties onto `<key>` as "Other".
+fn parse_elicitation_schema(params: &Value) -> Option<(Vec<Value>, Vec<Value>)> {
+    let schema = params
+        .get("requestedSchema")
+        .or_else(|| params.get("requested_schema"))?;
+    let properties = schema.get("properties")?.as_object()?;
+    if properties.is_empty() {
+        return None;
+    }
+
+    let mut other_for: HashMap<&str, &str> = HashMap::new();
+    let mut companion_keys: HashSet<&str> = HashSet::new();
+    for (key, prop) in properties {
+        if let Some(base) = key.strip_suffix("_other")
+            && properties.contains_key(base)
+            && is_plain_string_schema(prop)
+        {
+            other_for.insert(base, key.as_str());
+            companion_keys.insert(key.as_str());
+        }
+    }
+
+    let mut keys: Vec<&str> = properties
+        .keys()
+        .map(String::as_str)
+        .filter(|k| !companion_keys.contains(k))
+        .collect();
+    keys.sort_by(|a, b| natural_key_cmp(a, b));
+
+    let mut questions = Vec::new();
+    let mut fields = Vec::new();
+    for key in keys {
+        let Some(prop) = properties.get(key) else {
+            continue;
+        };
+        let prop_type = str_field(prop, "type").unwrap_or("string");
+        let other_key = other_for.get(key).copied();
+        let (kind, multi, options, allow_custom) = match prop_type {
+            "array" => {
+                let opts = prop
+                    .get("items")
+                    .map(elicitation_options)
+                    .unwrap_or_default();
+                ("array", true, opts, other_key.is_some())
+            }
+            "boolean" => (
+                "boolean",
+                false,
+                vec![
+                    ("true".to_string(), "Yes".to_string(), None),
+                    ("false".to_string(), "No".to_string(), None),
+                ],
+                false,
+            ),
+            "integer" | "number" => {
+                let opts = elicitation_options(prop);
+                let allow_custom = other_key.is_some() || opts.is_empty();
+                (prop_type, false, opts, allow_custom)
+            }
+            _ => {
+                let opts = elicitation_options(prop);
+                let allow_custom = other_key.is_some() || opts.is_empty();
+                ("string", false, opts, allow_custom)
+            }
+        };
+
+        let prompt = str_field(prop, "title")
+            .or_else(|| str_field(prop, "description"))
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(key);
+
+        let ui_options: Vec<Value> = options
+            .iter()
+            .map(|(opt_id, label, desc)| {
+                let mut obj = Map::new();
+                obj.insert("id".into(), Value::String(opt_id.clone()));
+                obj.insert("label".into(), Value::String(label.clone()));
+                if let Some(desc) = desc {
+                    obj.insert("description".into(), Value::String(desc.clone()));
+                }
+                Value::Object(obj)
+            })
+            .collect();
+        let meta_options: Vec<Value> = options
+            .iter()
+            .map(|(opt_id, label, _)| json!({ "id": opt_id, "label": label }))
+            .collect();
+
+        questions.push(json!({
+            "id": key,
+            "question": prompt,
+            "multiSelect": multi,
+            "allowCustom": allow_custom,
+            "options": ui_options,
+        }));
+        let mut field = json!({
+            "key": key,
+            "question": prompt,
+            "kind": kind,
+            "multi": multi,
+            "options": meta_options,
+        });
+        if let Some(other) = other_key {
+            field["otherKey"] = Value::String(other.to_string());
+        }
+        fields.push(field);
+    }
+
+    (!questions.is_empty()).then_some((questions, fields))
+}
+
+fn is_plain_string_schema(prop: &Value) -> bool {
+    str_field(prop, "type").unwrap_or("string") == "string"
+        && prop.get("oneOf").is_none()
+        && prop.get("anyOf").is_none()
+        && prop.get("enum").is_none()
+}
+
+/// Natural ordering for schema property names so `q2` comes before `q10`.
+fn natural_key_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    fn split(s: &str) -> (&str, Option<u64>) {
+        let digits = s.bytes().rev().take_while(|b| b.is_ascii_digit()).count();
+        let head = &s[..s.len() - digits];
+        let num = (digits > 0)
+            .then(|| s[s.len() - digits..].parse::<u64>().ok())
+            .flatten();
+        (head, num)
+    }
+    let (ah, an) = split(a);
+    let (bh, bn) = split(b);
+    ah.cmp(bh).then_with(|| an.cmp(&bn)).then_with(|| a.cmp(b))
+}
+
+fn scalar_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
+/// Reads choice entries from JSON Schema `oneOf`/`anyOf` (`const` + `title`)
+/// or `enum` (+ optional `enumNames`).
+fn elicitation_options(schema: &Value) -> Vec<(String, String, Option<String>)> {
+    if let Some(variants) = schema
+        .get("oneOf")
+        .or_else(|| schema.get("anyOf"))
+        .and_then(Value::as_array)
+    {
+        return variants
+            .iter()
+            .filter_map(|item| {
+                let id = item.get("const").and_then(scalar_string)?;
+                let label = str_field(item, "title")
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .unwrap_or_else(|| id.clone());
+                let desc = str_field(item, "description")
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                Some((id, label, desc))
+            })
+            .collect();
+    }
+    if let Some(values) = schema.get("enum").and_then(Value::as_array) {
+        let names = schema.get("enumNames").and_then(Value::as_array);
+        return values
+            .iter()
+            .enumerate()
+            .filter_map(|(ix, val)| {
+                let id = scalar_string(val)?;
+                let label = names
+                    .and_then(|n| n.get(ix))
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .unwrap_or_else(|| id.clone());
+                Some((id, label, None))
+            })
+            .collect();
+    }
+    Vec::new()
+}
+
+/// Encodes the user's `QuestionForm` picks back into ACP `elicitation/create`'s
+/// `{ "action": "accept", "content": { ... } }` or `{ "action": "decline" }`.
+fn elicitation_result(meta: &Value, input: &Value, allow: bool) -> Value {
+    if !allow {
+        return json!({ "action": "decline" });
+    }
+    let Some(fields) = meta.get("fields").and_then(Value::as_array) else {
+        return json!({ "action": "decline" });
+    };
+    let selections = input.get("selections").and_then(Value::as_object);
+    let answers = input.get("answers").and_then(Value::as_object);
+    let mut content = Map::new();
+
+    for field in fields {
+        let Some(key) = str_field(field, "key") else {
+            continue;
+        };
+        let other_key = str_field(field, "otherKey");
+        let question = str_field(field, "question").unwrap_or(key);
+        let multi = field.get("multi") == Some(&Value::Bool(true));
+        let kind = str_field(field, "kind").unwrap_or("string");
+        let options: Vec<(&str, &str)> = field
+            .get("options")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|o| Some((str_field(o, "id")?, str_field(o, "label")?)))
+            .collect();
+
+        let (selected_ids, custom_text) = if let Some(selections) = selections {
+            let Some(entry) = selections.get(key) else {
+                continue;
+            };
+            let ids: Vec<String> = entry
+                .get("selected")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(String::from)
+                .collect();
+            let custom = str_field(entry, "custom")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+            (ids, custom)
+        } else if let Some(answer) = answers
+            .and_then(|a| a.get(question))
+            .and_then(Value::as_str)
+        {
+            let answer = answer.trim();
+            if answer.is_empty() {
+                continue;
+            }
+            let match_opt = |part: &str| {
+                options
+                    .iter()
+                    .find(|(id, label)| *label == part || *id == part)
+                    .map(|(id, _)| (*id).to_string())
+            };
+            if multi {
+                if let Some(id) = match_opt(answer) {
+                    (vec![id], None)
+                } else {
+                    let mut ids = Vec::new();
+                    let mut custom = Vec::new();
+                    for part in answer.split(", ").map(str::trim).filter(|s| !s.is_empty()) {
+                        match match_opt(part) {
+                            Some(id) => ids.push(id),
+                            None => custom.push(part),
+                        }
+                    }
+                    let custom_text = (!custom.is_empty()).then(|| custom.join(", "));
+                    (ids, custom_text)
+                }
+            } else {
+                match match_opt(answer) {
+                    Some(id) => (vec![id], None),
+                    None => (Vec::new(), Some(answer.to_string())),
+                }
+            }
+        } else {
+            continue;
+        };
+
+        if multi {
+            if !selected_ids.is_empty() {
+                content.insert(
+                    key.to_string(),
+                    Value::Array(selected_ids.into_iter().map(Value::String).collect()),
+                );
+            }
+            if let Some(custom) = custom_text
+                && let Some(other) = other_key
+            {
+                content.insert(other.to_string(), Value::String(custom));
+            }
+        } else if kind == "boolean" {
+            if let Some(first) = selected_ids.first() {
+                content.insert(key.to_string(), Value::Bool(first == "true"));
+            }
+        } else if kind == "integer" {
+            if let Some(raw) = selected_ids.first().or(custom_text.as_ref()) {
+                let value = raw
+                    .parse::<i64>()
+                    .map(|n| Value::Number(n.into()))
+                    .unwrap_or_else(|_| Value::String(raw.clone()));
+                content.insert(key.to_string(), value);
+            }
+        } else if kind == "number" {
+            if let Some(raw) = selected_ids.first().or(custom_text.as_ref()) {
+                let value = raw
+                    .parse::<f64>()
+                    .ok()
+                    .and_then(serde_json::Number::from_f64)
+                    .map(Value::Number)
+                    .unwrap_or_else(|| Value::String(raw.clone()));
+                content.insert(key.to_string(), value);
+            }
+        } else {
+            if let Some(first) = selected_ids.first() {
+                content.insert(key.to_string(), Value::String(first.clone()));
+            }
+            if let Some(custom) = custom_text {
+                if let Some(other) = other_key {
+                    content.insert(other.to_string(), Value::String(custom));
+                } else if !content.contains_key(key) {
+                    content.insert(key.to_string(), Value::String(custom));
+                }
+            }
+        }
+    }
+
+    if content.is_empty() {
+        json!({ "action": "decline" })
+    } else {
+        json!({ "action": "accept", "content": content })
+    }
 }
 
 pub(crate) const ALLOW_ONCE_FIRST: [&str; 5] = [
