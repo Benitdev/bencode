@@ -1,6 +1,6 @@
 //! MonoCode `EmptySession`, dressed up: the harness' mark in a soft halo,
 //! a greeting for the time of day, the question over the centred composer,
-//! a glow around the composer in the harness' colour, and starter prompts.
+//! and starter prompts.
 //! It rises in once when the thread is opened (a one-shot transition; no
 //! loop runs while it sits there).
 
@@ -16,7 +16,7 @@ use gpui::{
 
 use crate::app::BenCodeApp;
 use crate::db::SessionRow;
-use crate::ui::composer::{COMPOSER_MAX_WIDTH, DockProbe};
+use crate::ui::composer::DockProbe;
 use crate::ui::provider_icon::HarnessIcon;
 use crate::ui::scale::px;
 use crate::ui::theme::harness_color;
@@ -28,6 +28,7 @@ const ENTRANCE: Duration = Duration::from_millis(720);
 const STAGGER: f32 = 0.14;
 /// How far below its place each part starts.
 const RISE: f32 = 10.0;
+const EMPTY_COMPOSER_WIDTH: f32 = 760.0;
 
 /// A starter prompt under the composer.
 struct Starter {
@@ -185,9 +186,8 @@ impl BenCodeApp {
             div()
                 .relative()
                 .w_full()
-                .max_w(px(COMPOSER_MAX_WIDTH))
+                .max_w(px(EMPTY_COMPOSER_WIDTH))
                 .mx_auto()
-                .child(self.render_composer_halo(tint, colors.bg, dark, focused))
                 .child(self.render_composer_view(Some(session), focused, true, cx))
                 .when(focused, |el| {
                     el.child(self.dock_probe_canvas(DockProbe::Composer))
@@ -252,47 +252,6 @@ impl BenCodeApp {
             ))
     }
 
-    /// The glow around the centred composer, brighter while it has the
-    /// caret. An opaque plate sits on it so the glow shows only outside
-    /// the box (the box's own fill is see-through); a little of the chat
-    /// background still shows through it in dark mode.
-    fn render_composer_halo(
-        &self,
-        tint: Hsla,
-        page: Hsla,
-        dark: bool,
-        focused: bool,
-    ) -> impl IntoElement {
-        // Only the pane holding the prompt has the caret.
-        let lit = focused && self.prompt_focused;
-        let strength = match (dark, lit) {
-            (true, true) => 0.30,
-            (true, false) => 0.16,
-            (false, true) => 0.20,
-            (false, false) => 0.10,
-        };
-        // The composer pads its box by 12px on the sides and below.
-        let inset = |el: gpui::Div| {
-            el.absolute()
-                .top_0()
-                .left(px(12.0))
-                .right(px(12.0))
-                .bottom(px(12.0))
-        };
-        div()
-            .absolute()
-            .inset_0()
-            .child(inset(div()).rounded(px(16.0)).shadow(vec![
-                glow(tint.opacity(strength), 40.0, 0.0),
-                glow(tint.opacity(strength * 0.5), 110.0, 12.0),
-            ]))
-            .child(
-                inset(div())
-                    .rounded(px(14.0))
-                    .bg(page.opacity(if dark { 0.9 } else { 1.0 })),
-            )
-    }
-
     /// Starter prompts: a click puts one in the prompt. Hidden (keeping
     /// their room, so nothing moves) once something is typed.
     fn render_starters(
@@ -311,9 +270,7 @@ impl BenCodeApp {
         };
         let changed =
             self.workspace(cx).cwd == session.cwd && !self.workspace(cx).changes.is_empty();
-        let border = colors.fg.fill(Fill::Line);
         let hover_bg = colors.fg.fill(Fill::Hover);
-        let hover_border = colors.fg.fill(Fill::Strong);
         let chips = changed
             .then_some(&REVIEW)
             .into_iter()
@@ -326,16 +283,13 @@ impl BenCodeApp {
                     .flex()
                     .items_center()
                     .gap_1p5()
-                    .h(px(30.0))
-                    .px(px(12.0))
-                    .rounded_full()
-                    .border_1()
-                    .border_color(border)
-                    .bg(colors.fg.fill(Fill::Faint))
+                    .h(px(28.0))
+                    .px(px(10.0))
+                    .rounded(px(7.0))
                     .text_size(Text::Base.px())
-                    .text_color(colors.fg.ink(Ink::Secondary))
+                    .text_color(colors.fg.ink(Ink::Body))
                     .cursor_pointer()
-                    .hover(move |s| s.bg(hover_bg).border_color(hover_border))
+                    .hover(move |s| s.bg(hover_bg).text_color(colors.fg))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         // The prompt belongs to the focused pane: this one
                         // takes it first.
@@ -354,7 +308,7 @@ impl BenCodeApp {
             });
         div()
             .relative()
-            .mt(px(14.0))
+            .mt(px(4.0))
             .px(px(16.0))
             .flex()
             .flex_wrap()

@@ -1,6 +1,6 @@
 //! Prompt composer: model / permission / branch menus, context meter, the
 //! prompt field with `/` and `@` suggestions, and send / stop.
-//! 100% faithful to MonoCode Composer layout.
+//! Adapted from MonoCode `Composer`.
 
 pub mod add_to_chat;
 pub mod attachments;
@@ -33,7 +33,7 @@ pub mod tokens;
 mod transfer_notice;
 pub mod usage_limit;
 
-use bencode_ui::buttons::ButtonVariant;
+use bencode_ui::buttons::{ButtonVariant, IconButton};
 use bencode_ui::menus::{DropdownMenu, Menu, MenuItem};
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, IconSize};
@@ -60,8 +60,8 @@ pub use prompt_marks::{MentionMark, prompt_highlights};
 pub(crate) const COMPOSER_MAX_WIDTH: f32 = 896.0;
 /// MonoCode `max-h-40`: the prompt grows to this before it scrolls.
 const PROMPT_MAX_HEIGHT: f32 = 160.0;
-/// MonoCode's default placeholder (trailing space included).
-pub const PROMPT_PLACEHOLDER: &str = "Ask, build, / for commands, @ for references... ";
+pub const PROMPT_PLACEHOLDER: &str = "Describe a task…  / commands · @ references";
+const COMPOSER_RADIUS: f32 = 14.0;
 /// MonoCode `CwdPicker` `PREVIEW`.
 const RECENT_PROJECTS_SHOWN: usize = 5;
 const HARNESS_ORDER: [HarnessKind; 5] = [
@@ -90,10 +90,7 @@ pub enum TokenPicker {
     Mention,
 }
 
-/// MonoCode's toolbar chip (`ModelPicker` / `AccessPicker` trigger):
-/// `h-6.5 rounded-md px-1.5 gap-1 bg-selection hover:bg-selection-hover`,
-/// an icon, an 11px label, an optional dimmed detail (the model's effort),
-/// and a chevron that turns over while the menu is open.
+/// Model and access triggers share the toolbar's quiet resting state.
 fn composer_chip(
     id: &'static str,
     icon: gpui::AnyElement,
@@ -104,33 +101,38 @@ fn composer_chip(
     cx: &Context<BenCodeApp>,
 ) -> gpui::Stateful<gpui::Div> {
     let colors = &cx.theme().colors;
-    let (fill, hover) = (selection(cx), selection_hover(cx));
+    let (fg, hover, selected) = (
+        colors.fg,
+        colors.fg.fill(Fill::Hover),
+        colors.fg.fill(Fill::Selected),
+    );
     div()
         .id(id)
-        .h(px(26.0))
+        .h(px(28.0))
         .max_w(px(max_width))
         .min_w_0()
-        .flex_none()
         .px_2()
-        .rounded(px(8.0))
+        .rounded(px(7.0))
         .flex()
         .items_center()
-        .gap_1()
+        .gap_1p5()
         .cursor_pointer()
-        .text_color(colors.fg)
-        .bg(fill)
-        .hover(move |s| s.bg(hover))
+        .text_color(fg.ink(Ink::Strong))
+        .hover(move |s| s.bg(hover).text_color(fg))
+        .active(move |s| s.bg(selected))
+        .when(open, |el| el.bg(selected).text_color(fg))
         .child(div().flex_none().child(icon))
         .child(
             div()
                 .min_w_0()
                 .truncate()
-                .text_size(Text::Sm.px())
+                .text_size(Text::Base.px())
                 .child(label),
         )
         .children(detail.map(|detail| {
             div()
-                .flex_none()
+                .min_w_0()
+                .truncate()
                 .text_size(Text::Sm.px())
                 .text_color(colors.fg.ink(Ink::Secondary))
                 .child(detail)
@@ -147,7 +149,7 @@ fn composer_chip(
         )
 }
 
-/// Soft tonal fill for composer chips: 6% in dark, 5% in light.
+/// Soft tonal fill for the highlighted MCP result.
 fn selection(cx: &gpui::App) -> gpui::Hsla {
     let theme = cx.theme();
     theme.colors.fg.fill(if theme.is_dark() {
@@ -155,22 +157,6 @@ fn selection(cx: &gpui::App) -> gpui::Hsla {
     } else {
         Fill::Hover
     })
-}
-
-/// Hover fill for composer chips: 11% in dark, 9% in light.
-fn selection_hover(cx: &gpui::App) -> gpui::Hsla {
-    let colors = &cx.theme().colors;
-    colors
-        .fg
-        .opacity(if cx.theme().is_dark() { 0.11 } else { 0.09 })
-}
-
-/// Emphasis fill for open composer triggers: 15% in dark, 12% in light.
-fn selection_emphasis(cx: &gpui::App) -> gpui::Hsla {
-    let colors = &cx.theme().colors;
-    colors
-        .fg
-        .opacity(if cx.theme().is_dark() { 0.15 } else { 0.12 })
 }
 
 /// MonoCode `GitPickerTrigger`: the top bar's 12px workspace and branch
@@ -229,7 +215,7 @@ fn git_label(
     let interactive = enabled.is_some();
     let enabled = enabled.unwrap_or(true);
     let colors = &cx.theme().colors;
-    let (fg, hover) = (colors.fg, colors.fg.fill(Fill::Selected));
+    let (fg, hover) = (colors.fg, colors.fg.fill(Fill::Hover));
     div()
         .id(id)
         .ml(px(-6.0))
@@ -237,13 +223,17 @@ fn git_label(
         .flex_none()
         .max_w(px(256.0))
         .items_center()
-        .gap_1p5()
+        .gap_1()
         .h(px(24.0))
         .px_1p5()
         .rounded(px(6.0))
         .text_size(Text::Base.px())
-        .text_color(fg.opacity(if interactive { 0.55 } else { 0.45 }))
-        .when(open, |el| el.bg(hover).text_color(fg))
+        .text_color(fg.ink(if interactive {
+            Ink::Body
+        } else {
+            Ink::Secondary
+        }))
+        .when(open, |el| el.bg(fg.fill(Fill::Selected)).text_color(fg))
         .when(enabled && interactive, |el| {
             el.cursor_pointer()
                 .hover(move |s| s.bg(hover).text_color(fg))
@@ -251,6 +241,13 @@ fn git_label(
         .when(!enabled, |el| el.opacity(0.4))
         .child(icon.into().render(fg.ink(Ink::Secondary)))
         .child(div().min_w_0().truncate().child(label))
+        .when(enabled && interactive, |el| {
+            el.child(
+                Icon::new(IconName::ChevronDown)
+                    .size(IconSize::Xs)
+                    .color(fg.ink(Ink::Muted)),
+            )
+        })
 }
 
 /// A row of the composer "+" menu.
@@ -437,9 +434,7 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    /// MonoCode `Composer`: an 8px-rounded box holding the project / branch
-    /// bar with the context meter, the prompt, and the + / model / access /
-    /// send row.
+    /// Prompt and controls docked beneath a transcript.
     pub fn render_composer(
         &self,
         session: Option<&SessionRow>,
@@ -450,8 +445,8 @@ impl BenCodeApp {
 
     /// The composer of a pane. `focused` is the one holding the prompt; the
     /// others show their thread's draft and focus the pane on a click, as
-    /// each MonoCode pane keeps its own composer. `shell` is the centred
-    /// composer of a new thread (`py-4` field).
+    /// each MonoCode pane keeps its own composer. The centred composer puts
+    /// workspace controls above the prompt surface.
     pub fn render_composer_view(
         &self,
         session: Option<&SessionRow>,
@@ -473,6 +468,7 @@ impl BenCodeApp {
             .and_then(|s| self.bot_background_for(&s.id))
             .or_else(|| self.chat_background_for(empty))
             .is_some();
+        let prompt_focused = focused && self.prompt_focused;
         let field_pad = if shell { px(16.0) } else { px(12.0) };
         let field = if focused {
             self.render_prompt_field("composer-prompt", px(PROMPT_MAX_HEIGHT))
@@ -518,6 +514,7 @@ impl BenCodeApp {
                 el.key_context("DraftComposer")
             })
             .flex_none()
+            .relative()
             .w_full()
             .max_w(px(COMPOSER_MAX_WIDTH))
             .mx_auto()
@@ -548,6 +545,9 @@ impl BenCodeApp {
                         el.child(runner_view::measure(&self.runner_geometry.ledge))
                     }),
             )
+            .when(shell, |el| {
+                el.child(self.composer_top_bar(session, cx).pb(px(8.0)))
+            })
             .child(
                 div()
                     .relative()
@@ -574,7 +574,7 @@ impl BenCodeApp {
                             }),
                         )
                     })
-                    .rounded(px(14.0))
+                    .rounded(px(COMPOSER_RADIUS))
                     .border_1()
                     // MonoCode `edit-last-turn-composer`: dashed, in the accent.
                     .when(editing && !file_drag, |el| el.border_dashed())
@@ -582,31 +582,21 @@ impl BenCodeApp {
                         colors.accent.opacity(0.6)
                     } else if editing {
                         colors.accent.opacity(0.32)
-                    } else if dark {
-                        colors.fg.opacity(if focused && self.prompt_focused {
-                            if has_bg_image { 0.16 } else { 0.11 }
-                        } else if has_bg_image {
-                            0.09
-                        } else {
-                            0.05
-                        })
-                    } else {
-                        colors.fg.opacity(if focused && self.prompt_focused {
-                            0.13
-                        } else {
-                            0.07
-                        })
-                    })
-                    .bg(if !dark {
-                        colors.surface
+                    } else if prompt_focused {
+                        colors.border_strong
                     } else if has_bg_image {
-                        // Opaque-enough scrim so text & chips stay crisp over photos.
-                        colors.bg.opacity(0.82)
+                        colors.fg.fill(Fill::Selected)
                     } else {
-                        colors.fg.fill(Fill::Hover)
+                        colors.border
                     })
-                    // Light theme: pure lifted card with soft shadow.
-                    .when(!dark, |el| el.shadow_md())
+                    .bg(if dark && has_bg_image {
+                        colors.surface.opacity(0.92)
+                    } else {
+                        colors.surface
+                    })
+                    .when(!dark, |el| {
+                        el.shadow(crate::ui::tokens::panel_card_shadow(dark))
+                    })
                     .when(focused, |el| {
                         el.children(
                             self.render_mcp_picker(cx)
@@ -615,7 +605,9 @@ impl BenCodeApp {
                         )
                         .children(self.render_mention_marks(cx))
                     })
-                    .child(self.composer_top_bar(session, cx))
+                    .when(!shell, |el| {
+                        el.child(self.composer_top_bar(session, cx).pt(px(8.0)))
+                    })
                     .children(
                         session
                             .filter(|_| focused)
@@ -651,27 +643,12 @@ impl BenCodeApp {
                         )))
                     })
                     .child(self.composer_bottom_bar(session, running_here, focused, cx))
-                    // A resting pane's composer only wakes its pane.
-                    .when(!focused, |el| {
-                        el.child(
-                            div()
-                                .id("composer-wake")
-                                .absolute()
-                                .inset_0()
-                                .cursor_text()
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    if let Some(id) = focus_id.clone() {
-                                        this.focus_pane(id, cx);
-                                    }
-                                })),
-                        )
-                    })
                     .when(file_drag, |el| {
                         el.child(
                             div()
                                 .absolute()
                                 .inset_0()
-                                .rounded(px(14.0))
+                                .rounded(px(COMPOSER_RADIUS))
                                 .bg(colors.accent.opacity(0.08))
                                 .flex()
                                 .items_center()
@@ -681,7 +658,21 @@ impl BenCodeApp {
                                 .child("Drop files to attach"),
                         )
                     }),
-            );
+            )
+            // A resting pane's composer only wakes its pane.
+            .when_some(focus_id.filter(|_| !focused), |el, id| {
+                el.child(
+                    div()
+                        .id("composer-wake")
+                        .absolute()
+                        .inset_0()
+                        .cursor_text()
+                        .occlude()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.focus_pane(id.clone(), cx);
+                        })),
+                )
+            });
         match dock_rise {
             Some((rise, at)) if at.elapsed() < DOCK_MOTION => composer
                 .relative()
@@ -695,14 +686,10 @@ impl BenCodeApp {
         }
     }
 
-    /// MonoCode's top bar: the project only for a new thread outside any
+    /// The project only for a new thread outside any
     /// project (`showDeckProjectPicker`), the checkout, the branch, and the
     /// context meter at the far right.
-    fn composer_top_bar(
-        &self,
-        session: Option<&SessionRow>,
-        cx: &Context<Self>,
-    ) -> impl IntoElement {
+    fn composer_top_bar(&self, session: Option<&SessionRow>, cx: &Context<Self>) -> gpui::Div {
         let empty = session.is_none_or(|s| !s.blocks.iter().any(|b| b.role == "user"));
         let projectless = session.is_none_or(|s| matches!(s.cwd.trim(), "" | "~"));
         let busy = session.is_some_and(|s| self.is_agent_running_in(&s.id));
@@ -712,10 +699,9 @@ impl BenCodeApp {
             .flex()
             .min_w_0()
             .items_center()
-            .gap_2p5()
+            .gap_2()
             .overflow_hidden()
             .px(px(14.0))
-            .pt(px(10.0))
             .when(empty && projectless && !bot, |el| {
                 let project = std::path::Path::new(&self.current_cwd)
                     .file_name()
@@ -885,11 +871,11 @@ impl BenCodeApp {
             .to_string();
         let mode = self.session_permission_mode(session);
         let (perm_label, perm_icon) = permission_entry(mode);
-        // MonoCode tints only Full access (`text-amber-400/90`).
+        // Keep Full access recognizable in the quiet toolbar.
         let perm_color = if mode == PermissionMode::FullAccess {
             cx.theme().colors.warning.opacity(0.9)
         } else {
-            cx.theme().colors.fg
+            cx.theme().colors.fg.ink(Ink::Secondary)
         };
         let values = session.map_or(Some(&self.last_model_settings), |s| {
             s.model_settings.as_ref()
@@ -983,13 +969,14 @@ impl BenCodeApp {
         div()
             .flex()
             .items_center()
-            .justify_between()
             .px(px(10.0))
             .pb(px(10.0))
+            .gap_2()
             .child(
                 // Shrinks before Send: the chips' labels truncate.
                 div()
                     .flex()
+                    .flex_1()
                     .min_w_0()
                     .items_center()
                     .gap_1()
@@ -1009,34 +996,18 @@ impl BenCodeApp {
             )
     }
 
-    /// MonoCode `ToolButton`: 26px on the selection fill, brighter while
-    /// its menu is open.
     fn plus_button(&self, cx: &Context<Self>) -> impl IntoElement {
-        let colors = &cx.theme().colors;
-        let open = self.popover_open(ComposerPopover::Plus);
-        let (fill, hover, emphasis) = (selection(cx), selection_hover(cx), selection_emphasis(cx));
-        let button =
-            div()
-                .id("composer-plus")
-                .size(px(26.0))
-                .flex_none()
-                .rounded(px(8.0))
-                .bg(if open { emphasis } else { fill })
-                .flex()
-                .items_center()
-                .justify_center()
-                .cursor_pointer()
-                .when(!open, |el| el.hover(move |s| s.bg(hover)))
-                .tooltip(Tooltip::text("Add files or choose a mode"))
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.toggle_composer_popover(ComposerPopover::Plus, cx)
-                }))
-                .child(Icon::new(IconName::Plus).size(IconSize::Xs).color(if open {
-                    colors.fg
-                } else {
-                    colors.fg.ink(Ink::Secondary)
-                }));
-        popover_anchor(button, cx)
+        let button = IconButton::new("composer-plus", IconName::Plus)
+            .variant(if self.popover_open(ComposerPopover::Plus) {
+                ButtonVariant::Subtle
+            } else {
+                ButtonVariant::Ghost
+            })
+            .tooltip("Add files or choose a mode")
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.toggle_composer_popover(ComposerPopover::Plus, cx)
+            }));
+        popover_anchor(div().flex_none().child(button), cx)
     }
 
     /// Whether `which` is the open toolbar popover.
@@ -1105,8 +1076,7 @@ impl BenCodeApp {
         cx.notify();
     }
 
-    /// Send / Stop, as MonoCode's `ComposerAction`: a 26px light button with
-    /// a dark arrow, or a filled square to stop. While this thread runs an
+    /// Send / Stop, adapted from MonoCode's `ComposerAction`. While this thread runs an
     /// empty composer offers Stop; typing turns it back into Send (queue).
     fn render_send_button(&self, running_here: bool, cx: &Context<Self>) -> impl IntoElement {
         // A card can be sent on its own.
@@ -1121,6 +1091,12 @@ impl BenCodeApp {
         // MonoCode `html.has-user-accent .primary-action`: the accent the
         // user picked, else the light button.
         let (bg, ink, hover) = crate::ui::appearance::primary_action(enabled, cx);
+        let fg = cx.theme().colors.fg;
+        let (bg, ink) = if enabled {
+            (bg, ink)
+        } else {
+            (fg.fill(Fill::Line), fg.ink(Ink::Muted))
+        };
         let drafting = self
             .selected_session_id
             .as_deref()
@@ -1156,7 +1132,7 @@ impl BenCodeApp {
         };
         div()
             .id("composer-send-btn")
-            .size(px(28.0))
+            .size(px(32.0))
             .flex_none()
             .rounded_full()
             .flex()
@@ -1177,7 +1153,7 @@ impl BenCodeApp {
                     .into_any_element()
             } else {
                 Icon::new(icon)
-                    .size(IconSize::Xs)
+                    .size(IconSize::Sm)
                     .color(ink)
                     .into_any_element()
             })
