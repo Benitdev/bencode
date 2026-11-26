@@ -166,7 +166,8 @@ impl BenCodeApp {
             .flex_1()
             .min_w_0()
             .min_h_0()
-            .p_1()
+            .px_1p5()
+            .pb_1p5()
             .child(div().flex_1().min_h_0().min_w_0().child(tab.view.clone()))
             .children(exited.map(|status| {
                 div()
