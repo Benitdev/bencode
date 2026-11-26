@@ -1424,14 +1424,26 @@ impl BenCodeApp {
                     path: doc.files[*f].path.clone(),
                     side: None,
                 };
-                div().px_4().py_3()
-                    .text_size(Text::Base.px()).text_color(cx.theme().colors.fg.ink(Ink::Body))
-                    .child("This file changed between the thread’s edits. The exact lines from this thread are unavailable.")
-                    .child(div().flex().mt_2().child(
-                        Button::new(SharedString::from(format!("diff-working-tree-{key}-{f}")), "View working-tree diff")
-                            .variant(ButtonVariant::Subtle).size(ControlSize::Sm)
-                            .on_click(cx.listener(move |this, _, _, cx| this.open_pane_tab(tab.clone(), true, cx))),
-                    ))
+                const MIXED: &str = "This file changed between the thread’s edits. \
+                    The exact lines from this thread are unavailable.";
+                let button_id = SharedString::from(format!("diff-working-tree-{key}-{f}"));
+                let open = cx.listener(move |this, _, _, cx| {
+                    this.open_pane_tab(tab.clone(), true, cx);
+                });
+                div()
+                    .px_4()
+                    .py_3()
+                    .text_size(Text::Base.px())
+                    .text_color(cx.theme().colors.fg.ink(Ink::Body))
+                    .child(MIXED)
+                    .child(
+                        div().flex().mt_2().child(
+                            Button::new(button_id, "View working-tree diff")
+                                .variant(ButtonVariant::Subtle)
+                                .size(ControlSize::Sm)
+                                .on_click(open),
+                        ),
+                    )
                     .into_any_element()
             }
             DocRow::Message(_, text) => div()
