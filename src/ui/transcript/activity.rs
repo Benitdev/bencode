@@ -402,11 +402,13 @@ impl BenCodeApp {
     }
 
     /// An item of a turn: activity renders as phases, blocks as themselves.
+    /// `after_line`: the row just above is the turn's status line.
     pub(super) fn render_turn_item(
         &self,
         session: &SessionRow,
         turn: &TurnLayout,
         item: usize,
+        after_line: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
         match &turn.items[item] {
@@ -426,11 +428,12 @@ impl BenCodeApp {
                 .child(self.render_subagent_stack(Trail::of(session), group, turn.live, cx))
                 .into_any_element(),
             Item::Block(ix) => {
-                let under_work = item > 0
-                    && matches!(
-                        turn.items.get(item - 1),
-                        Some(Item::Activity(_) | Item::Subagents(_))
-                    );
+                let under_work = after_line
+                    || item > 0
+                        && matches!(
+                            turn.items.get(item - 1),
+                            Some(Item::Activity(_) | Item::Subagents(_))
+                        );
                 let live = turn.live && *ix + 1 == session.blocks.len();
                 self.render_block(session, *ix, live, turn.live, under_work, cx)
             }

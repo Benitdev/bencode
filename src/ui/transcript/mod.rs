@@ -685,7 +685,14 @@ impl BenCodeApp {
                 Some(at) => bot::day_separator(("transcript-day", ix), at, cx).into_any_element(),
                 None => div().into_any_element(),
             },
-            Row::Item { turn, item } => self.render_turn_item(session, turn_of(*turn), *item, cx),
+            Row::Item { turn, item } => {
+                // Right under the turn's status line, as under its work.
+                let after_line = ix
+                    .checked_sub(1)
+                    .and_then(|prev| view.rows.get(prev))
+                    .is_some_and(|prev| matches!(prev, Row::FoldLine { .. }));
+                self.render_turn_item(session, turn_of(*turn), *item, after_line, cx)
+            }
             Row::FoldLine { turn } => self.render_fold_line(session, turn_of(*turn), cx),
             Row::FoldItem { turn, item, .. } => {
                 self.render_fold_item(session, turn_of(*turn), *item, cx)
