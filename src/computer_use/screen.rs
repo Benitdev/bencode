@@ -73,6 +73,7 @@ pub struct Frame {
 
 impl Frame {
     fn point(&self, x: f64, y: f64) -> Result<CGPoint> {
+        let point = self.map_pixels(x, y)?;
         match self.target {
             FrameTarget::Display(id) => {
                 let display = CGDisplay::new(id);
@@ -93,9 +94,10 @@ impl Frame {
                         "The window moved, resized, or is no longer on screen. Take a new screenshot."
                     );
                 }
+                super::windows::ensure_point_visible(id, point)?;
             }
         }
-        self.map_pixels(x, y)
+        Ok(point)
     }
 
     fn map_pixels(&self, x: f64, y: f64) -> Result<CGPoint> {

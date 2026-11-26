@@ -234,6 +234,7 @@ impl Element {
         reference: &str,
         verb: Control,
         text: Option<&str>,
+        window_id: u32,
         window_bounds: CGRect,
         grant: &Grant,
     ) -> Result<()> {
@@ -283,6 +284,7 @@ impl Element {
                     .bounds()
                     .context("This element has no on-screen bounds to click.")?;
                 let center = element_center(bounds, window_bounds)?;
+                super::windows::ensure_point_visible(window_id, center)?;
                 let count = if matches!(verb, Control::DoubleClick) {
                     2
                 } else {
@@ -302,7 +304,9 @@ impl Element {
         ) {
             return None;
         }
-        if self.text("AXSubrole").as_deref() == Some("AXSecureTextField") {
+        if matches!(role, "AXTextField" | "AXTextArea")
+            && self.text("AXSubrole").as_deref() == Some("AXSecureTextField")
+        {
             return None;
         }
         let value = self.attribute("AXValue")?;
@@ -428,6 +432,17 @@ fn is_interactive_role(role: &str) -> bool {
     )
 }
 
+fn is_list_item_role(role: &str) -> bool {
+    matches!(role, "AXRow" | "AXOutlineRow" | "AXCell")
+}
+
+/// When `interactiveOnly` is set, keep actionable controls plus static text
+/// labels inside list/outline rows (macOS view-based tables and SwiftUI Lists
+/// leave `AXRow`/`AXCell` unlabeled and store row text in child `AXStaticText`).
+fn keep_in_interactive_only(role: &str, in_list_item: bool) -> bool {
+    is_interactive_role(role) || (in_list_item && role == "AXStaticText")
+}
+
 fn matches_query(query: &str, desc: &Description, value: Option<&Value>) -> bool {
     let contains = |haystack: &str| haystack.to_lowercase().contains(query);
     contains(&desc.label)
@@ -493,9 +508,9 @@ impl Outline<'_> {
     /// so toolbars, sidebars and main content are all reached within budget.
     fn walk(&mut self, root: &Element) -> Result<()> {
         let mut queue = VecDeque::new();
-        queue.push_back((Element(root.0.clone()), Vec::<usize>::new()));
+        queue.push_back((Element(root.0.clone()), Vec::<usize>::new(), false));
 
-        while let Some((element, path)) = queue.pop_front() {
+        while let Some((element, path, in_list_item)) = queue.pop_front() {
             self.grant.check()?;
             if self.spent() {
                 break;
@@ -509,6 +524,7 @@ impl Outline<'_> {
 
             let children = element.array("AXChildren");
             let has_children = children.as_ref().is_some_and(|c| !c.is_empty());
+            let child_in_list_item = in_list_item || is_list_item_role(&role);
 
             // Enqueue children before deciding whether to emit this node so
             // skipping a container never hides its descendants.
@@ -521,7 +537,7 @@ impl Outline<'_> {
                             let mut child_path = Vec::with_capacity(path.len() + 1);
                             child_path.extend_from_slice(&path);
                             child_path.push(index);
-                            queue.push_back((child, child_path));
+                            queue.push_back((child, child_path, child_in_list_item));
                         }
                     }
                 }
@@ -533,7 +549,7 @@ impl Outline<'_> {
             }
 
             let interactive = is_interactive_role(&role);
-            if self.interactive_only && !interactive {
+            if self.interactive_only && !keep_in_interactive_only(&role, in_list_item) {
                 continue;
             }
 
@@ -553,10 +569,7 @@ impl Outline<'_> {
                 continue;
             }
             // Drop unlabeled structural rows/cells unless they hold a value.
-            if matches!(desc.role.as_str(), "AXRow" | "AXOutlineRow" | "AXCell")
-                && desc.label.is_empty()
-                && value.is_none()
-            {
+            if is_list_item_role(&desc.role) && desc.label.is_empty() && value.is_none() {
                 continue;
             }
 
@@ -635,5 +648,8 @@ mod tests {
         assert!(is_interactive_role("AXButton"));
         assert!(is_container_role("AXScrollArea"));
         assert!(is_ignored_subtree("AXScrollBar"));
+        assert!(keep_in_interactive_only("AXStaticText", true));
+        assert!(!keep_in_interactive_only("AXStaticText", false));
+        assert!(keep_in_interactive_only("AXButton", false));
     }
 }

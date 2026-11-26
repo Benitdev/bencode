@@ -9,7 +9,7 @@ use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
-use core_graphics::geometry::CGRect;
+use core_graphics::geometry::{CGPoint, CGRect};
 use core_graphics::window as quartz;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -25,6 +25,7 @@ pub struct Window {
     pub app: String,
     pub title: String,
     pub on_screen: bool,
+    pub alpha: f64,
 }
 
 pub fn list(include_hidden: bool, pid: Option<i32>) -> Result<ToolReply> {
@@ -77,11 +78,48 @@ pub fn frontmost(skip_self: bool) -> Result<Window> {
             .context("No on-screen window was found. Open an app or call computer_windows.")?;
         if front.pid == self_pid {
             bail!(
-                "BenCode is currently in front. Focus the target window or pass its windowId explicitly."
+                "BenCode is currently in front. Focus the target window with computer_window (action='focus') first, or pass its windowId for non-pointer Accessibility actions."
             );
         }
         Ok(front)
     }
+}
+
+/// Ensures `point` is not covered by another visible normal window in front of `target_id`.
+pub(super) fn ensure_point_visible(target_id: u32, point: CGPoint) -> Result<()> {
+    let windows = read(false)?;
+    check_point_unoccluded(&windows, target_id, point)
+}
+
+fn check_point_unoccluded(windows: &[Window], target_id: u32, point: CGPoint) -> Result<()> {
+    for window in windows {
+        if window.id == target_id {
+            return Ok(());
+        }
+        if window.alpha <= 0.0 {
+            continue;
+        }
+        if rect_contains(window.bounds, point) {
+            let owner = if window.app.is_empty() {
+                "another window"
+            } else {
+                window.app.as_str()
+            };
+            bail!(
+                "That point is covered by {owner}. Focus the target window with computer_window (action='focus') first."
+            );
+        }
+    }
+    bail!(
+        "The target window is not visible on the current Space. Focus it with computer_window (action='focus') first."
+    )
+}
+
+fn rect_contains(rect: CGRect, point: CGPoint) -> bool {
+    point.x >= rect.origin.x
+        && point.y >= rect.origin.y
+        && point.x < rect.origin.x + rect.size.width
+        && point.y < rect.origin.y + rect.size.height
 }
 
 fn read(include_hidden: bool) -> Result<Vec<Window>> {
@@ -134,6 +172,9 @@ fn decode_window(value: *const std::ffi::c_void) -> Option<Window> {
         app: text("kCGWindowOwnerName"),
         title: text("kCGWindowName"),
         on_screen: downcast::<CFBoolean>(get("kCGWindowIsOnscreen")).is_some_and(bool::from),
+        alpha: downcast::<CFNumber>(get("kCGWindowAlpha"))
+            .and_then(|value| value.to_f64())
+            .unwrap_or(1.0),
     })
 }
 
@@ -314,14 +355,13 @@ enum UiCommand {
 
 impl UiAction {
     pub fn follows_focus(&self) -> bool {
-        self.window_id.is_none()
-            || matches!(
-                self.action,
-                UiCommand::Control {
-                    verb: ax::Control::Click | ax::Control::DoubleClick,
-                    ..
-                }
-            )
+        match self.action {
+            UiCommand::Outline { .. } => false,
+            UiCommand::Control { verb, .. } => {
+                self.window_id.is_none()
+                    || matches!(verb, ax::Control::Click | ax::Control::DoubleClick)
+            }
+        }
     }
 
     pub fn parse(args: Value) -> Result<Self> {
@@ -342,8 +382,8 @@ impl UiAction {
             ref query, limit, ..
         } = action.action
         {
-            if query.as_ref().is_some_and(|q| q.len() > 200) {
-                bail!("Query must be at most 200 bytes.");
+            if query.as_ref().is_some_and(|q| q.chars().count() > 200) {
+                bail!("Query must be at most 200 characters.");
             }
             if let Some(limit) = limit
                 && !(1..=250).contains(&limit)
@@ -401,7 +441,14 @@ impl UiAction {
                         "The window is not on screen. Focus it with computer_window before clicking."
                     );
                 }
-                window.control(&element, verb, text.as_deref(), target.bounds, grant)?;
+                window.control(
+                    &element,
+                    verb,
+                    text.as_deref(),
+                    target.id,
+                    target.bounds,
+                    grant,
+                )?;
                 Ok(ToolReply::text("Accessibility action completed."))
             }
         }
@@ -495,5 +542,38 @@ mod tests {
             }))
             .is_err()
         );
+        // 150 Vietnamese accented characters (> 200 UTF-8 bytes) must be accepted; 201 rejected.
+        let viet = "ệ".repeat(150);
+        assert!(viet.len() > 200);
+        assert!(UiAction::parse(json!({"action": "outline", "query": viet})).is_ok());
+        assert!(
+            UiAction::parse(json!({"action": "outline", "query": "ệ".repeat(201)})).is_err()
+        );
+    }
+
+    #[test]
+    fn point_occlusion_blocks_covered_points_and_ignores_transparent_helpers() {
+        use core_graphics::geometry::CGSize;
+        let win = |id, app: &str, x, y, w, h, alpha| Window {
+            id,
+            pid: id as i32,
+            bounds: CGRect::new(&CGPoint::new(x, y), &CGSize::new(w, h)),
+            app: app.into(),
+            title: String::new(),
+            on_screen: true,
+            alpha,
+        };
+        let stack = vec![
+            win(1, "Helper", 0.0, 0.0, 1440.0, 900.0, 0.0),
+            win(2, "BenCode", 0.0, 0.0, 700.0, 800.0, 1.0),
+            win(3, "Notes", 200.0, 100.0, 800.0, 600.0, 1.0),
+        ];
+        // Point inside Notes but covered by BenCode must be rejected.
+        let err = check_point_unoccluded(&stack, 3, CGPoint::new(500.0, 300.0)).unwrap_err();
+        assert!(err.to_string().contains("BenCode"), "{err:#}");
+        // Exposed part of Notes (to the right of BenCode) is clickable even with transparent Helper above.
+        assert!(check_point_unoccluded(&stack, 3, CGPoint::new(850.0, 300.0)).is_ok());
+        // Window absent from current Space's on-screen list must be rejected.
+        assert!(check_point_unoccluded(&stack, 99, CGPoint::new(850.0, 300.0)).is_err());
     }
 }

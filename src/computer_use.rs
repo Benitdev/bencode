@@ -156,14 +156,14 @@ impl Server for DesktopServer<'_> {
             },
             {
                 "name": "computer_ui",
-                "description": "Preferred way to inspect and drive native macOS controls via Accessibility. 'outline' returns meaningful elements with refs and [x,y,w,h] bounds (skipping empty layout wrappers); 'control' invokes press, focus, increment, decrement, setText, click, or doubleClick on an element ref without needing a screenshot. Omit windowId to target the frontmost external window.",
+                "description": "Preferred way to inspect and drive native macOS controls via Accessibility. 'outline' returns meaningful elements with refs and [x,y,w,h] bounds (skipping empty layout wrappers); 'control' invokes press, focus, increment, decrement, setText, click, or doubleClick on an element ref without needing a screenshot. Omit windowId on 'outline' to inspect the frontmost external window, then pass the returned windowId back to 'control'.",
                 "inputSchema": {
                     "type": "object", "required": ["action"],
                     "properties": {
-                        "windowId": { "type": "integer", "minimum": 1, "description": "Target window ID. Defaults to the frontmost external window for outline (or frontmost window for control)." },
+                        "windowId": { "type": "integer", "minimum": 1, "description": "Target window ID. Omit on 'outline' to inspect the frontmost external window; pass the returned windowId to 'control' (omitting it on 'control' requires the target app to already be in front)." },
                         "action": { "type": "string", "enum": ["outline", "control"] },
                         "query": { "type": "string", "maxLength": 200, "description": "Optional case-insensitive filter on label, role, identifier or value (outline only)." },
-                        "interactiveOnly": { "type": "boolean", "default": false, "description": "Only return actionable controls (outline only)." },
+                        "interactiveOnly": { "type": "boolean", "default": false, "description": "Only return actionable controls and list/sidebar item labels (outline only)." },
                         "limit": { "type": "integer", "minimum": 1, "maximum": 250, "default": 150, "description": "Max elements to return (outline only)." },
                         "element": { "type": "string", "description": "Element ref from the current outline. Required for control." },
                         "verb": { "type": "string", "enum": ["press", "focus", "increment", "decrement", "setText", "click", "doubleClick"], "description": "Required for control. Use click/doubleClick when AXPress is unsupported." },
@@ -181,7 +181,7 @@ impl Server for DesktopServer<'_> {
             },
             {
                 "name": "computer_batch",
-                "description": "Execute a sequence of 1-20 desktop steps in a single turn (stops on first error). Use this to combine actions like click/ui -> type -> key -> wait -> outline/screenshot without extra round-trips.",
+                "description": "Execute a sequence of 1-20 desktop steps in a single turn (stops on first error and releases any held input). Use this to combine actions like click/ui -> type -> key -> wait -> outline/screenshot without extra round-trips.",
                 "inputSchema": {
                     "type": "object",
                     "required": ["steps"],
@@ -195,8 +195,8 @@ impl Server for DesktopServer<'_> {
                                 "properties": {
                                     "tool": {
                                         "type": "string",
-                                        "enum": ["mouse", "key", "type", "ui", "window", "open_app", "wait", "screenshot", "windows"],
-                                        "description": "Step tool name (short name or full computer_* name). 'wait' pauses for args.ms (50-5000)."
+                                        "enum": ["mouse", "key", "type", "ui", "window", "open_app", "wait", "screenshot", "windows", "displays"],
+                                        "description": "Step tool name. 'wait' pauses for args.ms (50-5000)."
                                     },
                                     "args": {
                                         "type": "object",
@@ -590,9 +590,15 @@ impl Desktop {
         let mut results = Vec::with_capacity(total);
         let mut last_image: Option<(String, Option<String>)> = None;
         for (idx, step) in steps.into_iter().enumerate() {
-            let reply = self
-                .execute(turn, grant, step.action)
-                .with_context(|| format!("Step {}/{total} ({}) failed", idx + 1, step.tool))?;
+            let reply = match self.execute(turn, grant, step.action) {
+                Ok(reply) => reply,
+                Err(err) => {
+                    // Never leave a modifier or mouse button stuck down when a batch aborts mid-sequence.
+                    grant.release_input();
+                    return Err(err)
+                        .with_context(|| format!("Step {}/{total} ({}) failed", idx + 1, step.tool));
+                }
+            };
             if let Some(image) = reply.image {
                 last_image = Some((image, reply.image_mime));
             }
@@ -727,8 +733,16 @@ mod tests {
         );
         assert!(parse("computer_type", json!({"text": "hi"})).follows_focus());
         assert!(parse("computer_key", json!({"key": "Return"})).follows_focus());
-        assert!(parse("computer_ui", json!({"action": "outline"})).follows_focus());
+        // Read-only outline skips BenCode itself, so it is safe to replay right after approval.
+        assert!(!parse("computer_ui", json!({"action": "outline"})).follows_focus());
         assert!(!parse("computer_ui", json!({"windowId": 5, "action": "outline"})).follows_focus());
+        assert!(
+            parse(
+                "computer_ui",
+                json!({"action": "control", "element": "0:abc", "verb": "press"})
+            )
+            .follows_focus()
+        );
         assert!(
             parse(
                 "computer_ui",
@@ -759,6 +773,8 @@ mod tests {
                 "steps": [
                     {"tool": "open_app", "args": {"bundleId": "com.apple.calculator"}},
                     {"tool": "wait", "args": {"ms": 200}},
+                    {"tool": "ui", "args": {"action": "outline"}},
+                    {"tool": "displays"},
                     {"tool": "computer_screenshot", "args": {"format": "png", "maxSize": 1000}}
                 ]
             }),
