@@ -19,6 +19,55 @@ use crate::ui::scale::px;
 use crate::ui::tokens::PANEL_GAP;
 
 impl BenCodeApp {
+    /// Identity of the changes being reviewed, from the tab's source.
+    pub(super) fn diff_scope<'a>(
+        &self,
+        tab: &'a PaneTab,
+        cx: &gpui::App,
+    ) -> Option<(String, String, &'a str)> {
+        let (title, cwd, branch) = match tab {
+            PaneTab::SessionChanges {
+                cwd, session_id, ..
+            } => {
+                let session = self
+                    .sessions
+                    .iter()
+                    .find(|session| session.id == *session_id);
+                let title = session
+                    .map(crate::app::session_list::session_title)
+                    .filter(|title| !title.is_empty())
+                    .unwrap_or_else(|| "Thread changes".into());
+                let branch = session
+                    .filter(|session| session.work_dir() == cwd)
+                    .and_then(|session| session.branch.as_deref());
+                (title, cwd.as_str(), branch)
+            }
+            PaneTab::Changes { cwd, side, .. } | PaneTab::Review { cwd, side, .. } => {
+                let title = match side {
+                    Some(crate::ui::git_changes_panel::Side::Staged) => "Staged changes",
+                    _ => "Working tree",
+                };
+                let branch =
+                    (cwd == &self.workspace(cx).cwd).then_some(self.git_status.branch.as_str());
+                (title.to_string(), cwd.as_str(), branch)
+            }
+            _ => return None,
+        };
+        let folder = cwd
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .filter(|name| !name.is_empty())
+            .unwrap_or(cwd);
+        let location = branch
+            .filter(|branch| !branch.is_empty() && *branch != folder)
+            .map_or_else(
+                || folder.to_string(),
+                |branch| format!("{folder} · {branch}"),
+            );
+        Some((title, location, cwd))
+    }
+
     /// Whether the keys are the file pane's (⌘W closes its tab, Escape
     /// leaves the thread's turn alone): a press landed there last, and it
     /// is on screen. A view over it keeps the press but not the keys.
@@ -299,10 +348,20 @@ impl BenCodeApp {
                 | PaneTab::Changes { .. }
                 | PaneTab::SessionChanges { .. } => (IconName::GitBranch, false),
             };
-            EditorTab::new(entry.tab.key(), label)
+            let scope = self.diff_scope(&entry.tab, cx);
+            if let Some((title, _, _)) = &scope
+                && matches!(entry.tab, PaneTab::SessionChanges { .. })
+            {
+                label = title.clone();
+            }
+            let tab = EditorTab::new(entry.tab.key(), label)
                 .icon(icon)
                 .dirty(dirty)
-                .preview(entry.preview)
+                .preview(entry.preview);
+            match scope {
+                Some((title, location, cwd)) => tab.tooltip(format!("{title}\n{location}\n{cwd}")),
+                None => tab,
+            }
         });
         let strip = EditorTabs::new("file-pane-tabs", tabs)
             .on_select(cx.listener(|this, key: &SharedString, _, cx| this.select_pane_tab(key, cx)))

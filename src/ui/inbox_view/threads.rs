@@ -33,6 +33,8 @@ fn state_glyph(state: ThreadState, cx: &gpui::App) -> AnyElement {
         ThreadState::Working => terminal_spinner(fg.ink(Ink::Secondary), cx).into_any_element(),
         ThreadState::NeedsYou => icon(IconName::CircleAlert, Status::Attention.color(fg)),
         ThreadState::Done => icon(IconName::Check, Status::Done.color(fg)),
+        ThreadState::Stopped => icon(IconName::CircleStop, fg.ink(Ink::Secondary)),
+        ThreadState::Failed => icon(IconName::CircleAlert, cx.theme().colors.danger),
         ThreadState::Idle => icon(IconName::Bot, fg.ink(Ink::Muted)),
     }
 }
@@ -75,7 +77,8 @@ impl BenCodeApp {
         let tone = match state {
             ThreadState::NeedsYou => Status::Attention.color(fg),
             ThreadState::Done => Status::Done.color(fg),
-            ThreadState::Working | ThreadState::Idle => fg.ink(Ink::Muted),
+            ThreadState::Failed => cx.theme().colors.danger,
+            ThreadState::Working | ThreadState::Idle | ThreadState::Stopped => fg.ink(Ink::Muted),
         };
         // The thread most worth a look: the most urgent, newest first.
         let open = (threads.iter())

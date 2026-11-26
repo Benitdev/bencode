@@ -11,7 +11,7 @@ use crate::{
     buttons::{ButtonVariant, IconButton},
     forms::Choice,
     i18n,
-    primitives::{DragGhost, Icon, IconName},
+    primitives::{DragGhost, Icon, IconName, Tooltip},
     theme::{ActiveTheme, ControlSize, IconSize, TextSize},
 };
 
@@ -20,6 +20,7 @@ use crate::{
 pub struct EditorTab {
     id: SharedString,
     title: SharedString,
+    tooltip: Option<SharedString>,
     icon: Option<IconName>,
     dirty: bool,
     pinned: bool,
@@ -31,6 +32,7 @@ impl EditorTab {
         Self {
             id: id.into(),
             title: title.into(),
+            tooltip: None,
             icon: None,
             dirty: false,
             pinned: false,
@@ -40,6 +42,11 @@ impl EditorTab {
 
     pub fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    pub fn tooltip(mut self, text: impl Into<SharedString>) -> Self {
+        self.tooltip = Some(text.into());
         self
     }
 
@@ -254,6 +261,9 @@ impl RenderOnce for EditorTabs {
                     .role(Role::Tab)
                     .aria_selected(on)
                     .aria_label(tab.title.clone())
+                    .when_some(tab.tooltip.clone(), |el, text| {
+                        el.tooltip(Tooltip::text(text))
+                    })
                     .group(group)
                     .relative()
                     .flex()

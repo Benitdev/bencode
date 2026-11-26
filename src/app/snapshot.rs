@@ -667,7 +667,8 @@ fn stage_agents(app: &mut BenCodeApp) {
         }
     }
     if let Some(id) = ours.next() {
-        app.title_strip.unseen_finished.insert(id);
+        app.unseen_agent_outcomes
+            .insert(id, crate::harness::DoneStatus::Completed);
     }
 }
 
@@ -714,7 +715,7 @@ fn stage_item_threads(app: &mut BenCodeApp) {
             session.linked_work_item = crate::db::LinkedWorkItem::backlog(key, "acme.backlog.jp");
             session.title = format!("{key} {title}");
         }
-        app.title_strip.unseen_finished.remove(&id);
+        app.unseen_agent_outcomes.remove(&id);
         match run {
             Some(pending) => {
                 app.runs.insert(id, staged_run(10 + n as u64, pending));

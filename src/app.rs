@@ -508,6 +508,8 @@ pub struct BenCodeApp {
     // Agent execution
     /// The running turn of each thread that has one, keyed by session id.
     pub runs: HashMap<String, AgentRun>,
+    /// Settled turns whose threads have not been looked at yet.
+    pub(crate) unseen_agent_outcomes: HashMap<String, crate::harness::DoneStatus>,
     /// Each thread's composer and queue state; dropped when the thread is.
     pub threads: HashMap<String, thread_state::ThreadState>,
     next_run_id: u64,
@@ -1609,6 +1611,7 @@ impl BenCodeApp {
             rename_input,
             focus_handle: cx.focus_handle(),
             runs: HashMap::new(),
+            unseen_agent_outcomes: HashMap::new(),
             threads: HashMap::new(),
             next_run_id: 0,
             prompt_input,

@@ -162,7 +162,7 @@ impl BenCodeApp {
     fn return_to_project(&mut self, cwd: &str, cx: &gpui::App) {
         let focused = self
             .selected_session()
-            .map(|s| (s, self.is_agent_running_in(&s.id)));
+            .map(|s| (s, self.can_reuse_blank_session(s, cx)));
         let plan = plan_project_return(
             &self.project_return,
             self.tabs.tabs(),

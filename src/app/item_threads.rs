@@ -12,6 +12,7 @@ use crate::app::BenCodeApp;
 use crate::app::live_agents::{RunFlags, live_agent};
 use crate::app::session_list::session_title;
 use crate::db::SessionRow;
+use crate::harness::DoneStatus;
 
 /// What a linked thread is doing, least urgent first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -19,7 +20,9 @@ pub enum ThreadState {
     Idle,
     /// Finished, not looked at since.
     Done,
+    Stopped,
     Working,
+    Failed,
     /// Waiting on an approval or an answer.
     NeedsYou,
 }
@@ -30,8 +33,12 @@ impl ThreadState {
         match live_agent(session, flags) {
             None => Self::Idle,
             Some(agent) if agent.needs_approval => Self::NeedsYou,
-            Some(agent) if agent.done => Self::Done,
-            Some(_) => Self::Working,
+            Some(agent) => match agent.outcome {
+                Some(DoneStatus::Completed) => Self::Done,
+                Some(DoneStatus::Cancelled) => Self::Stopped,
+                Some(DoneStatus::Failed) => Self::Failed,
+                None => Self::Working,
+            },
         }
     }
 
@@ -39,7 +46,9 @@ impl ThreadState {
         match self {
             Self::Idle => "Idle",
             Self::Done => "Done",
+            Self::Stopped => "Stopped",
             Self::Working => "Working",
+            Self::Failed => "Failed",
             Self::NeedsYou => "Needs you",
         }
     }
@@ -133,7 +142,7 @@ impl BenCodeApp {
         RunFlags {
             busy: run.is_some(),
             needs_approval: run.is_some_and(|run| run.pending_permission.is_some()),
-            unseen_finished: self.title_strip.unseen_finished.contains(id),
+            unseen_finished: self.unseen_agent_outcomes.get(id).copied(),
         }
     }
 
@@ -254,7 +263,7 @@ mod tests {
         };
         assert_eq!(ThreadState::of(&session, asking), ThreadState::NeedsYou);
         let done = RunFlags {
-            unseen_finished: true,
+            unseen_finished: Some(crate::harness::DoneStatus::Completed),
             ..Default::default()
         };
         assert_eq!(ThreadState::of(&session, done), ThreadState::Done);

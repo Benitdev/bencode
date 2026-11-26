@@ -121,6 +121,7 @@ actions!(
         MoveProjectUp,
         MoveProjectDown,
         NextAgent,
+        NextWaitingAgent,
         ShowLogs,
         CheckForUpdates,
     ]
@@ -250,6 +251,7 @@ pub(crate) fn keymap() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-alt-shift-down", MoveProjectDown, None),
         // The Agents section's threads, those waiting on you first.
         KeyBinding::new("cmd-alt-a", NextAgent, None),
+        KeyBinding::new("cmd-alt-shift-a", NextWaitingAgent, None),
         // MonoCode session cards: F2 renames, ⌫ deletes, Esc drops the picks.
         KeyBinding::new("f2", RenameSelectedSession, Some("SessionList")),
         KeyBinding::new("backspace", DeleteSelectedSessions, Some("SessionList")),
@@ -419,6 +421,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Move Project Up", MoveProjectUp),
             MenuItem::action("Move Project Down", MoveProjectDown),
             MenuItem::action("Next Agent", NextAgent),
+            MenuItem::action("Next Agent Waiting on You", NextWaitingAgent),
             MenuItem::separator(),
             MenuItem::action("Focus Pane Left", FocusLeft),
             MenuItem::action("Focus Pane Right", FocusRight),
@@ -883,6 +886,9 @@ impl BenCodeApp {
             this.move_current_project(crate::ui::rail::model::RailMove::Down, cx)
         }))
         .on_action(cx.listener(|this, _: &NextAgent, _, cx| this.select_next_live_agent(cx)))
+        .on_action(
+            cx.listener(|this, _: &NextWaitingAgent, _, cx| this.select_next_waiting_agent(cx)),
+        )
         .on_action(cx.listener(|this, _: &NextTab, _, cx| this.cycle_tab(1, cx)))
         .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.cycle_tab(-1, cx)))
         .on_action(cx.listener(|this, _: &OpenNotes, _, cx| this.open_notes(cx)))

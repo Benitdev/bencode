@@ -161,7 +161,7 @@ pub fn is_blank_session(session: &SessionRow, running: bool) -> bool {
 /// What to show when `project` is selected on the rail: the focused pane if
 /// it is already there, else the pane last focused in that project, else the
 /// first open pane in it, else the empty focused thread, else a new thread.
-/// `focused` is the focused thread and whether its agent is running.
+/// `focused` is the focused thread and whether its pane can be reused.
 pub fn plan_project_return(
     memory: &HashMap<String, String>,
     tabs: &[WorkspaceTab],
@@ -191,11 +191,9 @@ pub fn plan_project_return(
         return ProjectReturn::Activate { pane_id };
     }
     match focused {
-        Some((session, running)) if is_blank_session(session, running) => {
-            ProjectReturn::ReuseBlank {
-                session_id: session.id.clone(),
-            }
-        }
+        Some((session, true)) => ProjectReturn::ReuseBlank {
+            session_id: session.id.clone(),
+        },
         _ => ProjectReturn::Create,
     }
 }
@@ -353,15 +351,15 @@ mod tests {
         blank.blocks.clear();
         let memory = HashMap::new();
         assert_eq!(
-            plan_project_return(&memory, &tabs, &sessions, Some((&blank, false)), "/c"),
+            plan_project_return(&memory, &tabs, &sessions, Some((&blank, true)), "/c"),
             ProjectReturn::ReuseBlank {
                 session_id: "new".into()
             }
         );
         assert_eq!(
-            plan_project_return(&memory, &tabs, &sessions, Some((&blank, true)), "/c"),
+            plan_project_return(&memory, &tabs, &sessions, Some((&blank, false)), "/c"),
             ProjectReturn::Create,
-            "a running thread is never moved"
+            "a blank thread with an unsent draft stays in its original project"
         );
         assert_eq!(
             plan_project_return(&memory, &tabs, &sessions, Some((&sessions[1], false)), "/c"),

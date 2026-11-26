@@ -312,7 +312,7 @@ impl BenCodeApp {
             crate::app::file_pane::PaneTab::Review {
                 cwd: root,
                 path,
-                side,
+                side: Some(side),
             },
             true,
             cx,

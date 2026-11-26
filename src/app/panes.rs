@@ -100,6 +100,9 @@ impl BenCodeApp {
             self.selected_model = model;
         }
         self.selected_session_id = focused;
+        if let Some(id) = &self.selected_session_id {
+            self.unseen_agent_outcomes.remove(id);
+        }
         self.sync_prompt_placeholder(cx);
         if let Some((kind, account_id)) = self.selected_session().and_then(|session| {
             if crate::remote::route(&session.cwd).is_some()
@@ -530,6 +533,7 @@ impl BenCodeApp {
     /// `sync_selection`, which saves the old selection's draft.
     fn forget_thread_state(&mut self, id: &str) {
         self.threads.remove(id);
+        self.unseen_agent_outcomes.remove(id);
         self.new_worktrees.remove(id);
         self.transcripts.remove(id);
         if self
@@ -589,7 +593,10 @@ impl BenCodeApp {
         self.leave_bot_view(cx);
         let mut discarded = None;
         if !self.tabs.focus(&id) {
-            match self.blank_pane_in_active_tab().filter(|blank| *blank != id) {
+            match self
+                .blank_pane_in_active_tab(cx)
+                .filter(|blank| *blank != id)
+            {
                 Some(blank) if self.tabs.replace_pane(&blank, &id) => {
                     self.discard_blank_session(&blank);
                     discarded = Some(blank);
@@ -608,13 +615,13 @@ impl BenCodeApp {
 
     /// The active tab's focused pane if it is an empty thread, else its
     /// first empty one.
-    fn blank_pane_in_active_tab(&self) -> Option<String> {
+    fn blank_pane_in_active_tab(&self, cx: &gpui::App) -> Option<String> {
         let tab = self.tabs.active()?;
         let is_blank = |id: &str| {
             self.sessions
                 .iter()
                 .find(|s| s.id == id)
-                .is_some_and(|s| is_blank_session(s, self.is_agent_running_in(id)))
+                .is_some_and(|s| self.can_reuse_blank_session(s, cx))
         };
         if is_blank(&tab.focused) {
             return Some(tab.focused.clone());

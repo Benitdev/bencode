@@ -9,10 +9,11 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
+use bencode_ui::buttons::{Button, ButtonVariant};
 use bencode_ui::files::FileIcon;
 use bencode_ui::forms::{code_highlights, json_highlights};
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
-use bencode_ui::theme::{ActiveTheme, IconSize};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, HighlightStyle, Hsla, InteractiveElement, IntoElement,
     ListAlignment, ListOffset, ListState, ParentElement, Pixels, ScrollEvent, SharedString,
@@ -60,6 +61,8 @@ pub enum FileBody {
         new: Option<Picture>,
     },
     TooLarge,
+    /// Other edits were interleaved with the session's edits to this file.
+    Mixed,
     Failed(String),
     /// Nothing textual changed; the message says so.
     Empty(&'static str),
@@ -118,6 +121,7 @@ enum DocRow {
         hidden: usize,
     },
     Message(usize, SharedString),
+    Mixed(usize),
     /// A changed picture's two versions.
     Image(usize),
     /// Lines a patch left out, under the next hunk's header.
@@ -130,6 +134,7 @@ impl DocRow {
             Self::Header(f)
             | Self::Line(f, _)
             | Self::Message(f, _)
+            | Self::Mixed(f)
             | Self::Image(f)
             | Self::Gap(f, _) => *f,
             Self::Fold { file, .. } | Self::Pair { file, .. } => *file,
@@ -270,6 +275,7 @@ impl DiffDoc {
             FileBody::Binary => rows.push(message("Binary file changed".into())),
             FileBody::Image { .. } => rows.push(DocRow::Image(ix)),
             FileBody::TooLarge => rows.push(message("Diff is too large to display".into())),
+            FileBody::Mixed => rows.push(DocRow::Mixed(ix)),
             FileBody::Failed(err) => rows.push(message(format!("Couldn’t load diff: {err}"))),
             FileBody::Empty(text) => rows.push(message((*text).into())),
             FileBody::Diff(blocks) => {
@@ -430,6 +436,7 @@ struct Entry {
     source: EntrySource,
     /// Counts from the status or commit, for diffs that cannot be shown.
     counts: (usize, usize),
+    mixed: bool,
 }
 
 /// Where a file's diff is read from.
@@ -485,6 +492,7 @@ fn working_tree_entries(cwd: &str, scope: Option<Side>) -> Vec<Entry> {
                 side: Some(side),
                 source: EntrySource::Git(side_source(side)),
                 counts: (file.additions, file.deletions),
+                mixed: false,
             });
         }
     }
@@ -499,7 +507,11 @@ fn entries_for(tab: &PaneTab, store: &CheckpointStore) -> Result<(String, Vec<En
         | PaneTab::FileHistory { .. }
         | PaneTab::WorkItem { .. }
         | PaneTab::Terminal { .. } => Ok((String::new(), Vec::new())),
-        PaneTab::Review { cwd, path, side } => Ok((
+        PaneTab::Review {
+            cwd,
+            path,
+            side: Some(side),
+        } => Ok((
             cwd.clone(),
             vec![Entry {
                 id: format!("{}:{path}", side_name(*side)),
@@ -508,7 +520,19 @@ fn entries_for(tab: &PaneTab, store: &CheckpointStore) -> Result<(String, Vec<En
                 side: Some(*side),
                 source: EntrySource::Git(side_source(*side)),
                 counts: (0, 0),
+                mixed: false,
             }],
+        )),
+        PaneTab::Review {
+            cwd,
+            path,
+            side: None,
+        } => Ok((
+            cwd.clone(),
+            working_tree_entries(cwd, None)
+                .into_iter()
+                .filter(|file| file.path == *path)
+                .collect(),
         )),
         PaneTab::SessionChanges {
             cwd, session_id, ..
@@ -522,8 +546,13 @@ fn entries_for(tab: &PaneTab, store: &CheckpointStore) -> Result<(String, Vec<En
                     label: f.relative.clone(),
                     side: None,
                     source: EntrySource::Session(session_id.clone()),
-                    counts: (f.additions, f.deletions),
+                    counts: if f.exact {
+                        (f.additions, f.deletions)
+                    } else {
+                        (0, 0)
+                    },
                     path: f.relative,
+                    mixed: !f.exact,
                 })
                 .collect();
             Ok((cwd.clone(), entries))
@@ -539,6 +568,7 @@ fn entries_for(tab: &PaneTab, store: &CheckpointStore) -> Result<(String, Vec<En
                     side: None,
                     source: EntrySource::Git(DiffSource::Commit(sha.clone())),
                     counts: (f.additions, f.deletions),
+                    mixed: false,
                     path: f.path,
                 })
                 .collect();
@@ -549,33 +579,10 @@ fn entries_for(tab: &PaneTab, store: &CheckpointStore) -> Result<(String, Vec<En
 
 fn load_file(cwd: &str, entry: Entry, store: &CheckpointStore) -> DocFile {
     let (mut additions, mut deletions) = entry.counts;
-    let read = match &entry.source {
-        EntrySource::Git(source) => {
-            git::file_diff(cwd, &entry.path, source).map_err(|err| format!("{err:#}"))
-        }
-        EntrySource::Session(session_id) => store.file_diff(session_id, cwd, &entry.path),
-    };
-    let body = match read {
-        Err(err) => {
-            log::warn!("could not diff {}: {err}", entry.path);
-            FileBody::Failed(err)
-        }
-        Ok(diff) if diff.binary && is_image_path(&entry.path) => image_body(cwd, &entry, store),
-        Ok(diff) if diff.binary => FileBody::Binary,
-        Ok(diff) if diff.too_large => FileBody::TooLarge,
-        Ok(diff) => {
-            let file = diff_model::build(diff.lines);
-            (additions, deletions) = (file.additions, file.deletions);
-            if additions == 0 && deletions == 0 {
-                FileBody::Empty(match entry.side {
-                    Some(Side::Staged) => "No staged changes",
-                    Some(Side::Unstaged) => "No unstaged changes",
-                    None => "No textual diff",
-                })
-            } else {
-                FileBody::Diff(file.blocks)
-            }
-        }
+    let body = if entry.mixed {
+        FileBody::Mixed
+    } else {
+        read_file_body(cwd, &entry, store, &mut additions, &mut deletions)
     };
     DocFile {
         id: entry.id,
@@ -585,6 +592,43 @@ fn load_file(cwd: &str, entry: Entry, store: &CheckpointStore) -> DocFile {
         additions,
         deletions,
         body,
+    }
+}
+
+fn read_file_body(
+    cwd: &str,
+    entry: &Entry,
+    store: &CheckpointStore,
+    additions: &mut usize,
+    deletions: &mut usize,
+) -> FileBody {
+    let read = match &entry.source {
+        EntrySource::Git(source) => {
+            git::file_diff(cwd, &entry.path, source).map_err(|err| format!("{err:#}"))
+        }
+        EntrySource::Session(session_id) => store.file_diff(session_id, cwd, &entry.path),
+    };
+    match read {
+        Err(err) => {
+            log::warn!("could not diff {}: {err}", entry.path);
+            FileBody::Failed(err)
+        }
+        Ok(diff) if diff.binary && is_image_path(&entry.path) => image_body(cwd, entry, store),
+        Ok(diff) if diff.binary => FileBody::Binary,
+        Ok(diff) if diff.too_large => FileBody::TooLarge,
+        Ok(diff) => {
+            let file = diff_model::build(diff.lines);
+            (*additions, *deletions) = (file.additions, file.deletions);
+            if *additions == 0 && *deletions == 0 {
+                FileBody::Empty(match entry.side {
+                    Some(Side::Staged) => "No staged changes",
+                    Some(Side::Unstaged) => "No unstaged changes",
+                    None => "No textual diff",
+                })
+            } else {
+                FileBody::Diff(file.blocks)
+            }
+        }
     }
 }
 
@@ -997,6 +1041,55 @@ impl BenCodeApp {
 
     /// The review of the active tab, or its loading / error state.
     pub(crate) fn render_diff_doc(&self, key: &str, cx: &Context<Self>) -> AnyElement {
+        let body = self.render_diff_contents(key, cx);
+        let Some(tab) = self.file_pane.get(key) else {
+            return body;
+        };
+        let Some((title, location, cwd)) = self.diff_scope(tab, cx) else {
+            return body;
+        };
+        let location = if matches!(tab, PaneTab::SessionChanges { .. }) {
+            format!("Thread changes · {location}")
+        } else {
+            location
+        };
+        let colors = &cx.theme().colors;
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .min_h_0()
+            .child(
+                div()
+                    .id(SharedString::from(format!("diff-scope-{key}")))
+                    .flex_none()
+                    .px_3()
+                    .py_2()
+                    .border_b_1()
+                    .border_color(colors.border)
+                    .tooltip(Tooltip::text(format!("{title}\n{cwd}")))
+                    .child(
+                        div()
+                            .truncate()
+                            .text_size(Text::Base.px())
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(colors.fg)
+                            .child(title),
+                    )
+                    .child(
+                        div()
+                            .mt_0p5()
+                            .truncate()
+                            .text_size(Text::Sm.px())
+                            .text_color(colors.fg.ink(Ink::Secondary))
+                            .child(location),
+                    ),
+            )
+            .child(div().flex_1().min_h_0().overflow_hidden().child(body))
+            .into_any_element()
+    }
+
+    fn render_diff_contents(&self, key: &str, cx: &Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let fg = theme.colors.fg;
         let centered = || {
@@ -1152,7 +1245,16 @@ impl BenCodeApp {
         let theme = cx.theme();
         let colors = &theme.colors;
         let fg = colors.fg;
-        let count = doc.files.len();
+        // A single-file working-tree review can list its staged and
+        // unstaged patches separately.
+        let count = if matches!(
+            self.file_pane.get(key),
+            Some(PaneTab::Review { side: None, .. })
+        ) {
+            1
+        } else {
+            doc.files.len()
+        };
         let (additions, deletions) = doc.totals();
         let button = |id: &str, icon: Icon, tip: &'static str, enabled: bool| {
             div()
@@ -1313,6 +1415,25 @@ impl BenCodeApp {
                     .into_any_element()
             }
             DocRow::Image(f) => render_picture_pair(&doc.files[*f], cx),
+            DocRow::Mixed(f) => {
+                let Some(cwd) = self.file_pane.get(key).and_then(PaneTab::cwd) else {
+                    return div().into_any_element();
+                };
+                let tab = PaneTab::Review {
+                    cwd: cwd.to_string(),
+                    path: doc.files[*f].path.clone(),
+                    side: None,
+                };
+                div().px_4().py_3()
+                    .text_size(Text::Base.px()).text_color(cx.theme().colors.fg.ink(Ink::Body))
+                    .child("This file changed between the thread’s edits. The exact lines from this thread are unavailable.")
+                    .child(div().flex().mt_2().child(
+                        Button::new(SharedString::from(format!("diff-working-tree-{key}-{f}")), "View working-tree diff")
+                            .variant(ButtonVariant::Subtle).size(ControlSize::Sm)
+                            .on_click(cx.listener(move |this, _, _, cx| this.open_pane_tab(tab.clone(), true, cx))),
+                    ))
+                    .into_any_element()
+            }
             DocRow::Message(_, text) => div()
                 .px_4()
                 .py_4()
@@ -1472,15 +1593,23 @@ impl BenCodeApp {
                                             .child(dir)
                                     })),
                             )
-                            .child(
+                            .child(if file.body == FileBody::Mixed {
+                                div()
+                                    .flex_none()
+                                    .text_size(Text::Sm.px())
+                                    .text_color(colors.warning)
+                                    .child("Mixed changes")
+                                    .into_any_element()
+                            } else {
                                 diff_counts(
                                     file.additions,
                                     file.deletions,
                                     crate::ui::appearance::diff_colors(cx),
                                 )
                                 .flex_none()
-                                .text_size(Text::Sm.px()),
-                            ),
+                                .text_size(Text::Sm.px())
+                                .into_any_element()
+                            }),
                     )
                     .child(
                         action_btn(

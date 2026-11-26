@@ -51,6 +51,14 @@ pub struct ThreadState {
 }
 
 impl ThreadState {
+    fn has_pending_content(&self) -> bool {
+        !self.attachments.is_empty()
+            || self.attaching > 0
+            || self.composer_card.is_some()
+            || self.preparing_worktree
+            || !self.queue.is_empty()
+    }
+
     /// One file read ended; true when a send waited on the last one.
     pub fn finish_attaching(&mut self) -> bool {
         self.attaching = self.attaching.saturating_sub(1);
@@ -65,6 +73,25 @@ impl ThreadState {
 }
 
 impl BenCodeApp {
+    /// A new pane can be reused only while its composer is untouched.
+    pub(super) fn can_reuse_blank_session(
+        &self,
+        session: &crate::db::SessionRow,
+        cx: &gpui::App,
+    ) -> bool {
+        let state = self.thread(&session.id);
+        let text = if self.selected_session_id.as_deref() == Some(session.id.as_str()) {
+            self.prompt_input.read(cx).text()
+        } else {
+            state
+                .and_then(|thread| thread.draft.as_deref())
+                .unwrap_or_default()
+        };
+        super::tab_scope::is_blank_session(session, self.is_agent_running_in(&session.id))
+            && text.is_empty()
+            && !state.is_some_and(ThreadState::has_pending_content)
+    }
+
     /// A thread's state, if it has any.
     pub fn thread(&self, id: &str) -> Option<&ThreadState> {
         self.threads.get(id)
@@ -79,6 +106,24 @@ impl BenCodeApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_attachment_protects_a_pane_even_before_the_read_finishes() {
+        let mut thread = ThreadState::default();
+        assert!(!thread.has_pending_content());
+        thread.attaching = 1;
+        assert!(thread.has_pending_content());
+        thread.attaching = 0;
+        thread.attachments.push(Attachment {
+            id: "attachment".into(),
+            name: "notes.txt".into(),
+            path: "notes.txt".into(),
+            mime_type: "text/plain".into(),
+            size: 1,
+            data: None,
+        });
+        assert!(thread.has_pending_content());
+    }
 
     #[test]
     fn attaching_counts_down_and_releases_a_waiting_send() {

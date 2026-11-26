@@ -1119,6 +1119,7 @@ impl BenCodeApp {
             }
             Err(message) => {
                 log::error!("{message}");
+                self.record_agent_outcome(session_id, DoneStatus::Failed);
                 self.drop_bot_context(session_id);
                 self.note_bot_turn_end(session_id, Some(DoneStatus::Failed));
                 if let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id) {
@@ -1140,6 +1141,7 @@ impl BenCodeApp {
         auto_approve: bool,
         cx: &mut Context<Self>,
     ) {
+        self.unseen_agent_outcomes.remove(&session_id);
         self.next_run_id += 1;
         let run_id = self.next_run_id;
         self.runs.insert(
@@ -1333,6 +1335,7 @@ impl BenCodeApp {
             self.habit_run_settled(session_id, completed, cx);
             return;
         }
+        self.record_agent_outcome(session_id, run.outcome.unwrap_or(DoneStatus::Failed));
         let mut compacted = false;
         if run.purpose == RunPurpose::Compact
             && let Some(session) = self.sessions.iter_mut().find(|s| s.id == session_id)
@@ -1430,6 +1433,7 @@ impl BenCodeApp {
             self.habit_run_settled(session_id, false, cx);
             return;
         }
+        self.record_agent_outcome(session_id, DoneStatus::Cancelled);
         self.drop_bot_context(session_id);
         self.note_bot_turn_end(session_id, None);
         self.close_automation_run(&run, RunStatus::Cancelled, cx);

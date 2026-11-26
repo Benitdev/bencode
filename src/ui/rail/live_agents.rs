@@ -8,11 +8,12 @@
 //! `app/live_agents.rs`.
 
 use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::menus::{DropdownMenu, Menu, MenuItem};
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    AnyElement, Context, FontWeight, Hsla, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, div, prelude::*, relative,
+    AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement, Styled, div, prelude::*, relative,
 };
 
 use super::project_name;
@@ -41,6 +42,36 @@ pub struct LiveAgentsUi {
 }
 
 impl BenCodeApp {
+    /// Requests stay reachable from the title bar in every navigator mode.
+    pub(crate) fn render_waiting_agents_menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let agents = self.waiting_agents();
+        if agents.is_empty() {
+            return None;
+        }
+        let count = agents.len();
+        let menu = agents.into_iter().fold(Menu::new(), |menu, agent| {
+            let project = self.rail_project_label(&agent.cwd);
+            let id = agent.id;
+            menu.item(
+                MenuItem::new(format!("{} · {project}", agent.title))
+                    .icon(IconName::CircleAlert)
+                    .on_click(crate::ui::app_callback::app_callback(
+                        cx,
+                        move |this, cx| {
+                            this.select_waiting_agent(&id, cx);
+                        },
+                    )),
+            )
+        });
+        Some(
+            DropdownMenu::new("needs-you", format!("Needs you · {count}"), menu)
+                .size(ControlSize::Sm)
+                .variant(ButtonVariant::Outline)
+                .icon(IconName::CircleAlert)
+                .into_any_element(),
+        )
+    }
+
     /// Whether the section has anything the project's threads above do not
     /// already show.
     fn live_agents_shown(&self, agents: &[LiveAgent]) -> bool {
@@ -182,22 +213,16 @@ impl BenCodeApp {
     /// click brings the navigator back with its Agents section. The icon
     /// rail lists the agents themselves (`render_compact_agents`).
     pub(crate) fn render_agents_badge(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let agents = self.live_agents();
-        if agents.is_empty() {
+        let working = self
+            .live_agents()
+            .iter()
+            .filter(|agent| !agent.needs_approval && !agent.done())
+            .count();
+        if working == 0 {
             return None;
         }
         let colors = &cx.theme().colors;
-        let fg = colors.fg;
-        let waiting = agents.iter().filter(|agent| agent.needs_approval).count();
-        let tint = if waiting > 0 {
-            Status::Attention.color(fg)
-        } else {
-            colors.accent
-        };
-        let tip = match waiting {
-            0 => format!("{} agents at work", agents.len()),
-            _ => format!("{} agents, {waiting} waiting for you", agents.len()),
-        };
+        let tint = colors.accent;
         Some(
             div()
                 .id("agents-badge-pill")
@@ -214,11 +239,7 @@ impl BenCodeApp {
                 .text_size(Text::Sm.px())
                 .text_color(tint)
                 .child(Icon::new(IconName::Bot).size(IconSize::Sm).color(tint))
-                .child(match waiting {
-                    0 => format!("{} at work", agents.len()),
-                    _ => format!("{waiting} waiting"),
-                })
-                .tooltip(Tooltip::text(tip))
+                .child(format!("{working} at work"))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.is_rail_open = true;
                     cx.notify();
@@ -242,7 +263,6 @@ impl BenCodeApp {
             }
             Some(request) => format!("{}: {}", request.tool, request.description),
             None if agent.needs_approval => "Needs approval".to_string(),
-            None if agent.done => "Done".to_string(),
             None => agent.activity.clone(),
         }
     }
@@ -252,6 +272,7 @@ impl BenCodeApp {
     /// request to run something, Answer under a question.
     fn render_live_agent(&self, agent: &LiveAgent, now: i64, cx: &Context<Self>) -> AnyElement {
         let theme = cx.theme();
+        let colors = &theme.colors;
         let fg = theme.colors.fg;
         let selection = fg.fill(Fill::Selected);
         let seed = project_name(&agent.cwd);
@@ -263,7 +284,7 @@ impl BenCodeApp {
             .flatten();
         let question = request.is_some_and(|r| r.tool == crate::app::QUESTION_TOOL);
         let activity = self.live_agent_activity(agent);
-        let live = !agent.needs_approval && !agent.done;
+        let live = !agent.needs_approval && !agent.done();
         let selected = self.selected_session_id.as_deref() == Some(agent.id.as_str());
         let tip = [
             Some(agent.title.as_str()),
@@ -277,25 +298,19 @@ impl BenCodeApp {
         .collect::<Vec<_>>()
         .join("\n");
         let amber = Status::Attention.color(fg);
-        let status: Hsla = if agent.needs_approval {
-            amber
-        } else if agent.done {
-            Status::Done.color(fg)
-        } else {
-            fg.ink(Ink::Secondary)
-        };
         let status_glyph = if agent.needs_approval {
             Icon::new(IconName::CircleAlert)
                 .size(IconSize::Xs)
-                .color(status)
+                .color(amber)
                 .into_any_element()
-        } else if agent.done {
-            Icon::new(IconName::Check)
+        } else if let Some(outcome) = agent.outcome {
+            let (icon, color) = crate::ui::tokens::agent_outcome_style(outcome, colors);
+            Icon::new(icon)
                 .size(IconSize::Xs)
-                .color(status)
+                .color(color)
                 .into_any_element()
         } else {
-            terminal_spinner(status, cx).into_any_element()
+            terminal_spinner(fg.ink(Ink::Secondary), cx).into_any_element()
         };
         let actions = request.map(|_| {
             let (allow_id, deny_id, open_id) =
@@ -405,7 +420,13 @@ impl BenCodeApp {
                     .pl(px(DETAIL_INSET))
                     .text_size(Text::Sm.px())
                     .line_height(px(11.0 * 1.35))
-                    .text_color(status)
+                    .text_color(if agent.needs_approval {
+                        amber
+                    } else {
+                        agent.outcome.map_or(fg.ink(Ink::Secondary), |outcome| {
+                            crate::ui::tokens::agent_outcome_style(outcome, colors).1
+                        })
+                    })
                     .child(status_glyph)
                     .child(div().min_w_0().flex_1().truncate().child(activity))
                     .child(
@@ -424,7 +445,7 @@ impl BenCodeApp {
 
 /// How long the turn has run, or took once done.
 pub(crate) fn live_agent_elapsed(agent: &LiveAgent, now: i64) -> Option<String> {
-    if agent.done {
+    if agent.done() {
         agent.duration_ms.map(format_live_elapsed)
     } else {
         agent

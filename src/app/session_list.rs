@@ -3,7 +3,7 @@
 //! (`sessionDisplayTitle`, `formatGitLabel`, `formatRelative`), the list's
 //! shape (`buildSessionList`) and multi-selection (`sessionSelection.ts`).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -84,7 +84,7 @@ impl SessionFilters {
 pub struct LiveStates {
     pub busy: HashSet<String>,
     pub approval: HashSet<String>,
-    pub done: HashSet<String>,
+    pub done: HashMap<String, crate::harness::DoneStatus>,
 }
 
 /// MonoCode `timeFilterStart`; "Today" starts at local midnight.
@@ -133,7 +133,7 @@ pub fn passes_filters(
     }
     (status.working && states.busy.contains(&session.id))
         || (status.needs_approval && states.approval.contains(&session.id))
-        || (status.done && states.done.contains(&session.id))
+        || (status.done && states.done.contains_key(&session.id))
 }
 
 /// MonoCode `HARNESS_LABEL`: the harness id, used in stored titles.

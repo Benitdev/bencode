@@ -1,7 +1,7 @@
 //! MonoCode `features/sessions/model/liveAgents.ts`: the threads the
 //! navigator's Agents section lists, across every project. A thread is listed
-//! while its agent runs or waits on the user, and stays as "Done" after it
-//! finishes until it is looked at.
+//! while its agent runs or waits on the user, and keeps its outcome after
+//! it finishes until it is looked at.
 
 use gpui::Context;
 use std::sync::Arc;
@@ -9,6 +9,7 @@ use std::sync::Arc;
 use crate::app::BenCodeApp;
 use crate::app::session_list::session_title;
 use crate::db::{Block, SessionRow};
+use crate::harness::DoneStatus;
 use crate::ui::transcript::activity::tool_label;
 use crate::ui::transcript::turns::is_tool;
 
@@ -24,7 +25,13 @@ pub struct LiveAgent {
     pub started_at: Option<i64>,
     pub duration_ms: Option<i64>,
     pub needs_approval: bool,
-    pub done: bool,
+    pub outcome: Option<DoneStatus>,
+}
+
+impl LiveAgent {
+    pub fn done(&self) -> bool {
+        self.outcome.is_some()
+    }
 }
 
 /// What the app knows about a thread's run.
@@ -32,17 +39,33 @@ pub struct LiveAgent {
 pub struct RunFlags {
     pub busy: bool,
     pub needs_approval: bool,
-    pub unseen_finished: bool,
+    pub unseen_finished: Option<DoneStatus>,
+}
+
+pub(crate) fn outcome_label(outcome: DoneStatus) -> &'static str {
+    match outcome {
+        DoneStatus::Completed => "Done",
+        DoneStatus::Cancelled => "Stopped",
+        DoneStatus::Failed => "Failed",
+    }
+}
+
+pub(crate) fn outcome_priority(outcome: DoneStatus) -> u8 {
+    match outcome {
+        DoneStatus::Completed => 0,
+        DoneStatus::Cancelled => 1,
+        DoneStatus::Failed => 2,
+    }
 }
 
 /// MonoCode `toLiveAgent`, for a thread in flight or finished unseen.
 pub fn live_agent(session: &SessionRow, flags: RunFlags) -> Option<LiveAgent> {
     // MonoCode `isInFlightSession`.
     let in_flight = flags.busy && !session.worktree_removed;
-    if !in_flight && !flags.unseen_finished {
+    let outcome = flags.unseen_finished.filter(|_| !in_flight);
+    if !in_flight && outcome.is_none() {
         return None;
     }
-    let done = !in_flight;
     let turn = session
         .blocks
         .iter()
@@ -53,15 +76,16 @@ pub fn live_agent(session: &SessionRow, flags: RunFlags) -> Option<LiveAgent> {
         cwd: session.cwd.clone(),
         title: session_title(session),
         harness: session.harness.clone(),
-        activity: if done {
-            "Done".to_string()
-        } else {
-            activity_label(&session.blocks, &session.cwd)
-        },
+        activity: outcome.map_or_else(
+            || activity_label(&session.blocks, &session.cwd),
+            |outcome| outcome_label(outcome).to_string(),
+        ),
         started_at: turn.and_then(|block| block.started_at),
-        duration_ms: turn.filter(|_| done).and_then(|block| block.duration_ms),
+        duration_ms: turn
+            .filter(|_| outcome.is_some())
+            .and_then(|block| block.duration_ms),
         needs_approval: in_flight && flags.needs_approval,
-        done,
+        outcome,
     })
 }
 
@@ -71,7 +95,7 @@ pub fn sort_live_agents(agents: &mut [LiveAgent]) {
     agents.sort_by_key(|agent| {
         (
             !agent.needs_approval,
-            agent.done,
+            agent.done(),
             agent.started_at.unwrap_or(i64::MAX),
         )
     });
@@ -130,6 +154,14 @@ fn activity_label(blocks: &[Arc<Block>], cwd: &str) -> String {
 }
 
 impl BenCodeApp {
+    pub(super) fn record_agent_outcome(&mut self, id: &str, outcome: DoneStatus) {
+        if self.selected_session_id.as_deref() != Some(id)
+            && self.sessions.iter().any(|session| session.id == id)
+        {
+            self.unseen_agent_outcomes.insert(id.to_string(), outcome);
+        }
+    }
+
     /// MonoCode `liveAgentsFromSessions`; empty while the card is off.
     pub fn live_agents(&self) -> Vec<LiveAgent> {
         if self.live_agents_off {
@@ -141,7 +173,7 @@ impl BenCodeApp {
     /// The threads in flight or finished unseen, whether or not the Agents
     /// section is on: what a bot's digest reads too.
     pub fn agents_in_flight(&self) -> Vec<LiveAgent> {
-        let unseen = &self.title_strip.unseen_finished;
+        let unseen = &self.unseen_agent_outcomes;
         if self.runs.is_empty() && unseen.is_empty() {
             return Vec::new();
         }
@@ -160,6 +192,47 @@ impl BenCodeApp {
     /// thread, in whichever project it belongs to.
     pub fn select_live_agent(&mut self, id: &str, cx: &mut Context<Self>) {
         self.open_session(id.to_string(), cx);
+    }
+
+    /// A stable list of the threads that can be opened to answer a request.
+    pub(crate) fn waiting_agents(&self) -> Vec<LiveAgent> {
+        let mut agents: Vec<_> = self
+            .runs
+            .iter()
+            .filter(|(id, run)| run.pending_permission.is_some() && !self.is_habit_run(id))
+            .filter_map(|(id, _)| self.sessions.iter().find(|session| session.id == *id))
+            .filter_map(|session| live_agent(session, self.run_flags(&session.id)))
+            .filter(|agent| agent.needs_approval)
+            .collect();
+        sort_live_agents(&mut agents);
+        agents
+    }
+
+    pub(crate) fn select_waiting_agent(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(request) = self.pending_permission_for(id) else {
+            return;
+        };
+        let question = request.tool == crate::app::QUESTION_TOOL;
+        if self.is_habit_run(id) {
+            return;
+        }
+        self.select_live_agent(id, cx);
+        self.question_focus_wanted = question;
+        if let Some(view) = self.transcripts.get(id) {
+            view.list.scroll_to_end();
+        }
+        self.redraw_thread(id, cx);
+    }
+
+    pub(crate) fn select_next_waiting_agent(&mut self, cx: &mut Context<Self>) {
+        let ids: Vec<_> = self
+            .waiting_agents()
+            .into_iter()
+            .map(|agent| agent.id)
+            .collect();
+        if let Some(id) = next_agent(&ids, self.selected_session_id.as_deref()) {
+            self.select_waiting_agent(&id, cx);
+        }
     }
 
     /// Go › Next Agent (BenCode's own): the Agents section's next thread
@@ -224,7 +297,7 @@ mod tests {
     const BUSY: RunFlags = RunFlags {
         busy: true,
         needs_approval: false,
-        unseen_finished: false,
+        unseen_finished: None,
     };
 
     #[test]
@@ -243,7 +316,7 @@ mod tests {
         assert_eq!(agent.activity, "Read src/main.rs");
         assert_eq!(agent.started_at, Some(100));
         assert_eq!(agent.duration_ms, None);
-        assert!(!agent.done && !agent.needs_approval);
+        assert!(!agent.done() && !agent.needs_approval);
 
         let fresh = live_agent(&session("b", vec![user(100, None)]), BUSY).unwrap();
         assert_eq!(fresh.activity, "Working");
@@ -256,11 +329,11 @@ mod tests {
             vec![user(100, Some(24_000)), tool("search", "fn main")],
         );
         let flags = RunFlags {
-            unseen_finished: true,
+            unseen_finished: Some(DoneStatus::Completed),
             ..Default::default()
         };
         let agent = live_agent(&row, flags).unwrap();
-        assert!(agent.done);
+        assert!(agent.done());
         assert_eq!(agent.activity, "Done");
         assert_eq!(agent.duration_ms, Some(24_000));
     }
@@ -283,7 +356,7 @@ mod tests {
             started_at: Some(started_at),
             duration_ms: None,
             needs_approval,
-            done,
+            outcome: done.then_some(DoneStatus::Completed),
         };
         let mut agents = vec![
             agent("done", false, true, 1),

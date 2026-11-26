@@ -33,9 +33,7 @@ use crate::ui::scale::px;
 use crate::ui::sidebar::SessionDialog;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 use crate::ui::window_drag::claim_press;
-use tabs::{
-    CloseMany, TitleTab, closable, close_ids, next_unseen_finished, strip_overflow, tab_copy,
-};
+use tabs::{CloseMany, TitleTab, closable, close_ids, strip_overflow, tab_copy};
 
 /// MonoCode `w-56 min-w-28`, in one line here.
 const TAB_WIDTH: f32 = 208.0;
@@ -77,9 +75,6 @@ pub struct TitleStrip {
     opening: HashMap<String, Instant>,
     closing: Vec<ClosingTab>,
     last_active: Option<String>,
-    /// Threads working last frame, and those that finished unseen.
-    busy: HashSet<String>,
-    pub(crate) unseen_finished: HashSet<String>,
     window_title: String,
     menu: Option<TabMenu>,
     /// While a tab is dragged along the strip: it and the place it would
@@ -173,15 +168,18 @@ impl BenCodeApp {
         };
         for session in &sessions {
             let harness = session.harness.clone();
-            let working = self.is_agent_running_in(&session.id)
-                && self.pending_permission_for(&session.id).is_none();
-            if working && !out.busy.contains(&harness) {
-                out.busy.push(harness.clone());
-            }
-            if self.title_strip.unseen_finished.contains(&session.id)
-                && !out.done.contains(&harness)
-            {
-                out.done.push(harness.clone());
+            let flags = self.run_flags(&session.id);
+            if flags.busy {
+                let state = if flags.needs_approval {
+                    &mut out.waiting
+                } else {
+                    &mut out.busy
+                };
+                if !state.contains(&harness) {
+                    state.push(harness.clone());
+                }
+            } else if let Some(outcome) = flags.unseen_finished {
+                out.finished.push((harness.clone(), outcome));
             }
             if !out.harnesses.contains(&harness) {
                 out.harnesses.push(harness);
@@ -223,28 +221,13 @@ impl BenCodeApp {
         (room / count as f32).clamp(TAB_MIN_WIDTH, TAB_WIDTH)
     }
 
-    /// Keeps per-frame strip state: unseen finishes, opening sweeps, the
+    /// Keeps per-frame strip state: opening sweeps, the
     /// active tab scrolled into view, and the window title.
     fn sync_title_strip(&mut self, all: &[TitleTab], window: &mut Window) {
         // The pinned cards neither slide nor scroll with the strip.
         let strip_tabs: Vec<TitleTab> = all.iter().filter(|t| !t.pinned).cloned().collect();
         let tabs = strip_tabs.as_slice();
-        let busy: HashSet<String> = self
-            .sessions
-            .iter()
-            .filter(|s| {
-                self.is_agent_running_in(&s.id) && self.pending_permission_for(&s.id).is_none()
-            })
-            .map(|s| s.id.clone())
-            .collect();
         let strip = &mut self.title_strip;
-        strip.unseen_finished = next_unseen_finished(
-            &strip.busy,
-            &busy,
-            &strip.unseen_finished,
-            self.selected_session_id.as_deref(),
-        );
-        strip.busy = busy;
 
         let now = Instant::now();
         let first_frame = strip.seen.is_empty();
@@ -658,16 +641,20 @@ impl BenCodeApp {
                     .items_center()
                     .justify_center()
                     .when(ix > 0, |el| el.ml(px(-2.0)));
-                if tab.busy.contains(harness) && !dragged {
-                    slot.child(crate::ui::spinner::terminal_spinner(colors.accent, cx))
-                        .into_any_element()
-                } else if tab.done.contains(harness) {
+                if tab.waiting.contains(harness) {
                     slot.child(
-                        Icon::new(IconName::CircleCheck)
+                        Icon::new(IconName::CircleAlert)
                             .size(IconSize::Xs)
-                            .color(colors.success),
+                            .color(crate::ui::tokens::Status::Attention.color(colors.fg)),
                     )
                     .into_any_element()
+                } else if tab.busy.contains(harness) && !dragged {
+                    slot.child(crate::ui::spinner::terminal_spinner(colors.accent, cx))
+                        .into_any_element()
+                } else if let Some(outcome) = tab.outcome_for(harness) {
+                    let (icon, color) = crate::ui::tokens::agent_outcome_style(outcome, colors);
+                    slot.child(Icon::new(icon).size(IconSize::Xs).color(color))
+                        .into_any_element()
                 } else {
                     slot.when(!active, |el| el.opacity(0.55))
                         .child(HarnessIcon::new(harness.as_str()).size(px(14.0)))
@@ -1259,6 +1246,7 @@ impl BenCodeApp {
             )
         });
         controls
+            .children(self.render_waiting_agents_menu(cx))
             .child(self.render_browser_toggle(cx))
             .child(self.render_terminal_status(cx))
             .when(!projectless, |el| {

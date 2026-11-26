@@ -15,7 +15,7 @@ impl BenCodeApp {
             .agents_in_flight()
             .into_iter()
             .filter_map(|agent| {
-                let standing = if agent.done {
+                let standing = if agent.done() {
                     Standing::Finished
                 } else {
                     let request = self

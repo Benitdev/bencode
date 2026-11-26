@@ -39,14 +39,17 @@ pub enum SessionGroup {
 struct FolderState {
     approval: bool,
     busy: bool,
-    done: bool,
+    outcome: Option<crate::harness::DoneStatus>,
 }
 
 fn folder_state(sessions: &[&SessionRow], states: &LiveStates) -> FolderState {
     FolderState {
         approval: sessions.iter().any(|s| states.approval.contains(&s.id)),
         busy: sessions.iter().any(|s| states.busy.contains(&s.id)),
-        done: sessions.iter().any(|s| states.done.contains(&s.id)),
+        outcome: sessions
+            .iter()
+            .filter_map(|s| states.done.get(&s.id).copied())
+            .max_by_key(|outcome| crate::app::live_agents::outcome_priority(*outcome)),
     }
 }
 
@@ -125,12 +128,9 @@ impl BenCodeApp {
                     )
                 } else if state.busy {
                     el.child(terminal_spinner(colors.accent, cx))
-                } else if state.done {
-                    el.child(
-                        Icon::new(IconName::Check)
-                            .size(IconSize::Xs)
-                            .color(Status::Done.color(colors.fg)),
-                    )
+                } else if let Some(outcome) = state.outcome {
+                    let (icon, color) = crate::ui::tokens::agent_outcome_style(outcome, colors);
+                    el.child(Icon::new(icon).size(IconSize::Xs).color(color))
                 } else {
                     el
                 }

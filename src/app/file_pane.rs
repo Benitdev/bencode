@@ -17,7 +17,8 @@ pub enum PaneTab {
     Review {
         cwd: String,
         path: String,
-        side: Side,
+        /// `None` reads both sides of the working tree for this file.
+        side: Option<Side>,
     },
     /// Every working-tree change stacked; `side` keeps one section only,
     /// `focus` is the file to scroll to.
@@ -331,7 +332,7 @@ mod tests {
         PaneTab::Review {
             cwd: "/repo".into(),
             path: path.into(),
-            side: Side::Unstaged,
+            side: Some(Side::Unstaged),
         }
     }
 
@@ -367,7 +368,7 @@ mod tests {
             PaneTab::Review {
                 cwd: "/repo".into(),
                 path: "a.rs".into(),
-                side: Side::Staged,
+                side: Some(Side::Staged),
             },
             false,
         );
@@ -375,7 +376,7 @@ mod tests {
         assert!(matches!(
             pane.active(),
             Some(PaneTab::Review {
-                side: Side::Staged,
+                side: Some(Side::Staged),
                 ..
             })
         ));

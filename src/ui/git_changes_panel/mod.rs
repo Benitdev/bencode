@@ -1375,7 +1375,7 @@ impl BenCodeApp {
         let active = matches!(
             self.file_pane.active(),
             Some(PaneTab::Review { cwd, path, side: open })
-                if *cwd == self.workspace(cx).cwd && *path == file.path && *open == side
+                if *cwd == self.workspace(cx).cwd && *path == file.path && open.is_none_or(|open| open == side)
         );
         let busy = self.changes_ui.busy.is_some();
         let icon = crate::ui::file_tree::resolve_entry_icon(&name, is_folder(&file.path), false);

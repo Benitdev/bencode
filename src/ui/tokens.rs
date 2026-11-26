@@ -343,6 +343,18 @@ impl Status {
     }
 }
 
+pub(crate) fn agent_outcome_style(
+    outcome: crate::harness::DoneStatus,
+    colors: &bencode_ui::theme::Palette,
+) -> (IconName, Hsla) {
+    use crate::harness::DoneStatus;
+    match outcome {
+        DoneStatus::Completed => (IconName::CircleCheck, colors.success),
+        DoneStatus::Cancelled => (IconName::CircleStop, colors.fg.ink(Ink::Secondary)),
+        DoneStatus::Failed => (IconName::CircleAlert, colors.danger),
+    }
+}
+
 impl From<crate::app::bot_sessions::LaunchedState> for Status {
     fn from(state: crate::app::bot_sessions::LaunchedState) -> Self {
         use crate::app::bot_sessions::LaunchedState;

@@ -184,5 +184,9 @@ impl BenCodeApp {
                     .text_color(colors.fg)
                     .child(surface.title()),
             )
+            .children(
+                self.render_waiting_agents_menu(cx)
+                    .map(|menu| claim_press(div()).child(menu)),
+            )
     }
 }

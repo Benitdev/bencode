@@ -150,6 +150,7 @@ impl BenCodeApp {
             .items_center()
             .gap_1()
             .px_3()
+            .children(self.render_waiting_agents_menu(cx))
             .child(self.render_browser_toggle(cx))
             .child(
                 div()

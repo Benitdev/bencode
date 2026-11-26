@@ -265,11 +265,12 @@ impl BenCodeApp {
 
     fn render_compact_agent(&self, agent: &LiveAgent, now: i64, cx: &Context<Self>) -> AnyElement {
         let theme = cx.theme();
+        let colors = &theme.colors;
         let fg = theme.colors.fg;
         let selection = fg.fill(Fill::Selected);
         let amber = Status::Attention.color(fg);
         let selected = self.selected_session_id.as_deref() == Some(agent.id.as_str());
-        let live = !agent.needs_approval && !agent.done;
+        let live = !agent.needs_approval && !agent.done();
         let activity = self.live_agent_activity(agent);
         let project = self.rail_project_label(&agent.cwd);
         let tip = [
@@ -285,10 +286,10 @@ impl BenCodeApp {
         .join("\n");
         let dot = if agent.needs_approval {
             Some(amber)
-        } else if agent.done {
-            Some(Status::Done.color(fg))
         } else {
-            None
+            agent
+                .outcome
+                .map(|outcome| crate::ui::tokens::agent_outcome_style(outcome, colors).1)
         };
         let id = agent.id.clone();
         div()
@@ -675,11 +676,12 @@ impl BenCodeApp {
                         .bg(accent)
                         .into_any_element(),
                 )
-            } else if states.done.contains(&session.id) {
+            } else if let Some(&outcome) = states.done.get(&session.id) {
+                let (icon, color) = crate::ui::tokens::agent_outcome_style(outcome, &theme.colors);
                 Some(
-                    Icon::new(IconName::Check)
+                    Icon::new(icon)
                         .size(IconSize::Xs)
-                        .color(Status::Done.color(fg))
+                        .color(color)
                         .into_any_element(),
                 )
             } else {

@@ -76,11 +76,11 @@ impl BenCodeApp {
                 .child(terminal_spinner(colors.accent, cx))
                 .into_any_element();
         }
-        if states.done.contains(&session.id) {
-            let green = Status::Done.color(colors.fg);
-            return row(green)
-                .child(icon(IconName::Check, green))
-                .child("Done")
+        if let Some(&outcome) = states.done.get(&session.id) {
+            let (glyph, color) = crate::ui::tokens::agent_outcome_style(outcome, colors);
+            return row(color)
+                .child(icon(glyph, color))
+                .child(crate::app::live_agents::outcome_label(outcome))
                 .into_any_element();
         }
         if draft {

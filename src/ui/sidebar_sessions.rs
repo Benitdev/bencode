@@ -162,7 +162,7 @@ impl BenCodeApp {
                 .filter(|(_, run)| run.pending_permission.is_some())
                 .map(|(id, _)| id.clone())
                 .collect(),
-            done: self.title_strip.unseen_finished.clone(),
+            done: self.unseen_agent_outcomes.clone(),
         }
     }
 

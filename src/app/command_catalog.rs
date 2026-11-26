@@ -100,6 +100,7 @@ pub(crate) fn groups() -> Vec<Group<Entry>> {
                     .note("Within its list on the navigator."),
                 entry("Move Project Down", I::ChevronDown, cmd::MoveProjectDown),
                 entry("Next Agent", I::Bot, cmd::NextAgent).note("Those waiting on you first."),
+                entry("Next Agent Waiting on You", I::CircleAlert, cmd::NextWaitingAgent),
                 entry("Open Settings", I::Settings, cmd::OpenSettings),
                 #[cfg(target_os = "macos")]
                 entry("Stop Computer Use", I::X, cmd::StopComputerUse),

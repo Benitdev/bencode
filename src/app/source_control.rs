@@ -425,7 +425,15 @@ impl BenCodeApp {
             return;
         }
         let cwd = self.workspace(cx).cwd.clone();
-        self.open_pane_tab(PaneTab::Review { cwd, path, side }, pin, cx);
+        self.open_pane_tab(
+            PaneTab::Review {
+                cwd,
+                path,
+                side: Some(side),
+            },
+            pin,
+            cx,
+        );
     }
 
     /// MonoCode "Open All Changes": that section's files stacked in one review.

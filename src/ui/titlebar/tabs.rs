@@ -1,7 +1,8 @@
 //! What a title-bar tab says (MonoCode `TitleBar.tsx` `Tab`, `tabCopy`,
 //! `toTitleTab`), kept pure so it can be tested without a window.
 
-use std::collections::HashSet;
+use crate::app::live_agents::outcome_priority;
+use crate::harness::DoneStatus;
 
 /// One tab as the strip draws it.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -18,8 +19,9 @@ pub struct TitleTab {
     pub harnesses: Vec<String>,
     /// Harnesses with a turn in flight (not waiting on the user).
     pub busy: Vec<String>,
-    /// Harnesses that finished while their thread was not looked at.
-    pub done: Vec<String>,
+    /// Harnesses waiting on user input, and the outcomes of unseen turns.
+    pub waiting: Vec<String>,
+    pub finished: Vec<(String, DoneStatus)>,
     pub multi_pane: bool,
     /// One fresh thread with nothing sent yet.
     pub blank: bool,
@@ -29,6 +31,16 @@ pub struct TitleTab {
     /// A thread in the tab holds a saved draft (MonoCode's dashed plate,
     /// as its card in the navigator has).
     pub draft: bool,
+}
+
+impl TitleTab {
+    pub fn outcome_for(&self, harness: &str) -> Option<DoneStatus> {
+        self.finished
+            .iter()
+            .filter(|(id, _)| id == harness)
+            .map(|(_, outcome)| *outcome)
+            .max_by_key(|outcome| outcome_priority(*outcome))
+    }
 }
 
 /// MonoCode `sessionMeta`.
@@ -48,8 +60,24 @@ pub fn tab_copy(tab: &TitleTab) -> (String, String) {
     };
     let mut tooltip = vec![headline.to_string(), project.to_string()];
     tooltip.extend(tab.more.iter().cloned());
-    if !tab.done.is_empty() {
-        tooltip.push("Response complete".into());
+    if !tab.waiting.is_empty() {
+        tooltip.push("Needs you".into());
+    }
+    if !tab.busy.is_empty() {
+        tooltip.push("Working".into());
+    }
+    for (outcome, text) in [
+        (DoneStatus::Failed, "Turn failed"),
+        (DoneStatus::Cancelled, "Turn stopped"),
+        (DoneStatus::Completed, "Response complete"),
+    ] {
+        if tab
+            .finished
+            .iter()
+            .any(|(_, finished)| *finished == outcome)
+        {
+            tooltip.push(text.into());
+        }
     }
     (headline.to_string(), tooltip.join("\n"))
 }
@@ -87,24 +115,6 @@ pub fn close_ids(tabs: &[TitleTab], target: &str, action: CloseMany) -> Vec<Stri
             .map(|t| t.id.clone())
             .collect(),
     }
-}
-
-/// MonoCode `nextUnseenFinishedSessions`: a thread that stops working while
-/// unfocused is "done" until looked at.
-pub fn next_unseen_finished(
-    previous_busy: &HashSet<String>,
-    busy: &HashSet<String>,
-    previous_unseen: &HashSet<String>,
-    focused: Option<&str>,
-) -> HashSet<String> {
-    let mut next = previous_unseen.clone();
-    for id in previous_busy {
-        if !busy.contains(id) && Some(id.as_str()) != focused {
-            next.insert(id.clone());
-        }
-    }
-    next.retain(|id| !busy.contains(id) && Some(id.as_str()) != focused);
-    next
 }
 
 /// MonoCode `tabStripOverflow`: which edges still have tabs past them.
@@ -161,7 +171,7 @@ mod tests {
         let (headline, tooltip) = tab_copy(&t);
         assert_eq!(headline, "Fix login");
         assert_eq!(tooltip, "Fix login\nbencode\nWrite tests");
-        t.done = vec!["claude".into()];
+        t.finished = vec![("claude".into(), DoneStatus::Completed)];
         assert!(tab_copy(&t).1.ends_with("\nResponse complete"));
     }
 
@@ -195,14 +205,15 @@ mod tests {
     }
 
     #[test]
-    fn finished_threads_stay_done_until_focused() {
-        let set = |ids: &[&str]| ids.iter().map(|s| s.to_string()).collect::<HashSet<_>>();
-        let unseen = next_unseen_finished(&set(&["a", "b"]), &set(&["b"]), &set(&[]), Some("x"));
-        assert_eq!(unseen, set(&["a"]));
-        let focused = next_unseen_finished(&set(&[]), &set(&[]), &unseen, Some("a"));
-        assert!(focused.is_empty());
-        let own = next_unseen_finished(&set(&["x"]), &set(&[]), &set(&[]), Some("x"));
-        assert!(own.is_empty());
+    fn waiting_and_failed_turns_do_not_announce_completion() {
+        let mut tab = tab("a");
+        tab.waiting.push("claude".into());
+        assert!(tab_copy(&tab).1.ends_with("Needs you"));
+        tab.waiting.clear();
+        tab.finished.push(("claude".into(), DoneStatus::Failed));
+        assert!(tab_copy(&tab).1.ends_with("Turn failed"));
+        tab.finished.push(("claude".into(), DoneStatus::Completed));
+        assert_eq!(tab.outcome_for("claude"), Some(DoneStatus::Failed));
     }
 
     #[test]
