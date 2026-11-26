@@ -4,8 +4,10 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.2.4] - 2026-11-26
 
+- Codex is found again in the ChatGPT app's new `codex-cli` package, so its
+  turns start and its models show.
 - GPUI, which draws BenCode, is updated to 0.3.14, with the frosted glass,
   the browser's cutouts and the chat wallpaper carried over. Its renderer
   draws opaque surfaces once against a depth buffer, batches and sorts
