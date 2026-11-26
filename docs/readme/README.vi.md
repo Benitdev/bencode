@@ -8,7 +8,7 @@
   <a href="https://github.com/Benitdev/bencode/releases"><img src="https://img.shields.io/github/downloads/Benitdev/bencode/total?style=flat&amp;color=2e7cf2" alt="Tổng lượt tải" /></a>
   <img src="https://img.shields.io/badge/license-MIT-2e7cf2?style=flat" alt="Giấy phép MIT" />
   <img src="https://img.shields.io/badge/Rust%20%C2%B7%20GPUI-000000?style=flat&amp;logo=rust&amp;logoColor=white" alt="Viết bằng Rust và GPUI" />
-  <img src="https://img.shields.io/badge/macOS%2011%2B-1b3fb8?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="Nền tảng: macOS 11 trở lên" />
+  <img src="https://img.shields.io/badge/macOS%2012%2B-1b3fb8?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="Nền tảng: macOS 12 trở lên" />
 </p>
 
 <p align="center">
@@ -199,7 +199,7 @@ BenCode khởi đầu là bản port native của [MonoCode](https://github.com/
 
 ## Cài đặt
 
-1. Tải bản phù hợp với máy Mac của bạn (macOS 11 trở lên):
+1. Tải bản phù hợp với máy Mac của bạn (macOS 12 trở lên):
    [`BenCode-arm64.dmg`](https://github.com/Benitdev/bencode/releases/latest/download/BenCode-arm64.dmg)
    cho Apple Silicon (M1 trở về sau), hoặc
    [`BenCode-x86_64.dmg`](https://github.com/Benitdev/bencode/releases/latest/download/BenCode-x86_64.dmg)
@@ -217,7 +217,7 @@ Sau đó BenCode tự cập nhật.
 
 ### Yêu cầu
 
-- **macOS 11** trở lên.
+- **macOS 12** trở lên.
 - **git** có trong `PATH`.
 - Ít nhất một CLI agent đã cài và đăng nhập: `claude`, `codex`, `agy`, `grok` hoặc `opencode`.
 - Tuỳ chọn: **`gh`** (GitHub CLI) cho Inbox và pull request; **`ssh`** cho máy từ xa.

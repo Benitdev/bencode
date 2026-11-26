@@ -45,7 +45,7 @@ if [[ "$identity" == "Developer ID Application"* ]]; then
   developer_id=true
 fi
 # Matches LSMinimumSystemVersion in Info.plist.
-export MACOSX_DEPLOYMENT_TARGET=11.0
+export MACOSX_DEPLOYMENT_TARGET=12.0
 
 # The name an architecture has in file names, as `uname -m` prints it.
 arch_of() {

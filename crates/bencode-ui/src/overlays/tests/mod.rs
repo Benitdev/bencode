@@ -33,7 +33,7 @@ fn an_opening_dialog_rises_in_the_box_its_scrim_centers(cx: &mut TestAppContext)
     cx.run_until_parked();
     let top = |cx: &mut VisualTestContext| cx.debug_bounds("rising-body").expect("the body").top();
     let first = top(cx);
-    std::thread::sleep(Duration::from_millis(250));
+    cx.executor().advance_clock(Duration::from_millis(250));
     settle(cx);
     let lift = first - top(cx);
     assert!(

@@ -8,7 +8,7 @@
   <a href="https://github.com/Benitdev/bencode/releases"><img src="https://img.shields.io/github/downloads/Benitdev/bencode/total?style=flat&amp;color=2e7cf2" alt="Total downloads" /></a>
   <img src="https://img.shields.io/badge/license-MIT-2e7cf2?style=flat" alt="License: MIT" />
   <img src="https://img.shields.io/badge/Rust%20%C2%B7%20GPUI-000000?style=flat&amp;logo=rust&amp;logoColor=white" alt="Built with Rust and GPUI" />
-  <img src="https://img.shields.io/badge/macOS%2011%2B-1b3fb8?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="Platform: macOS 11 or later" />
+  <img src="https://img.shields.io/badge/macOS%2012%2B-1b3fb8?style=flat-square&amp;logo=apple&amp;logoColor=white" alt="Platform: macOS 12 or later" />
 </p>
 
 <p align="center">
@@ -202,7 +202,7 @@ BenCode began as a native port of [MonoCode](https://github.com/hardbeat920/mono
 
 ## Install
 
-1. Download the build for your Mac (macOS 11 or later):
+1. Download the build for your Mac (macOS 12 or later):
    [`BenCode-arm64.dmg`](https://github.com/Benitdev/bencode/releases/latest/download/BenCode-arm64.dmg)
    for Apple Silicon (M1 and later), or
    [`BenCode-x86_64.dmg`](https://github.com/Benitdev/bencode/releases/latest/download/BenCode-x86_64.dmg)
@@ -220,7 +220,7 @@ After that BenCode keeps itself up to date.
 
 ### Requirements
 
-- **macOS 11** or later.
+- **macOS 12** or later.
 - **git** on your `PATH`.
 - At least one agent CLI, installed and signed in: `claude`, `codex`, `agy`, `grok` or `opencode`.
 - Optional: **`gh`** (the GitHub CLI) for the Inbox and pull requests; **`ssh`** for machines.
@@ -334,7 +334,7 @@ bencode/
 ├── site/                landing page (GitHub Pages)
 ├── tests/fixtures/      recorded CLI output for parser tests
 ├── vendor/gpui-pre-apple/  GPUI's Metal renderer with the backdrop blur
-├── vendor/gpui-pre-macos/  GPUI's macOS windows, restarting a stalled display link
+├── vendor/gpui-pre-macos/  GPUI's macOS windows, with the browser's cutouts
 └── src/
     ├── main.rs          window, theme, keymap
     ├── app.rs           BenCodeApp: the app's state
@@ -382,7 +382,7 @@ A few core principles:
 | Layer | Technology |
 | :--- | :--- |
 | Language | Rust (2024 edition) |
-| UI | Zed's [GPUI](https://www.gpui.rs/) (`gpui-pre` 0.3.10), its Metal renderer vendored |
+| UI | Zed's [GPUI](https://www.gpui.rs/) (`gpui-pre` 0.3.14), its Metal renderer vendored |
 | Components | `crates/bencode-ui`, adapted from [Ely GPUI Components](https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components) |
 | Database | SQLite via `rusqlite` (bundled) |
 | Agent processes | Tokio |

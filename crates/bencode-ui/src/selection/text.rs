@@ -6,8 +6,7 @@ use std::rc::Rc;
 
 use gpui::{
     App, Bounds, Element, ElementId, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId,
-    IntoElement, LayoutId, Pixels, SharedString, StyledText, TextLayout, TextRun, Window, fill,
-    point, px, size,
+    LayoutId, Pixels, SharedString, StyledText, TextLayout, TextRun, Window, fill, point, px, size,
 };
 
 use super::geometry::bands;
@@ -64,14 +63,6 @@ impl SelectableText {
     /// (links).
     pub fn layout(&self) -> TextLayout {
         self.styled.layout().clone()
-    }
-}
-
-impl IntoElement for SelectableText {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
     }
 }
 

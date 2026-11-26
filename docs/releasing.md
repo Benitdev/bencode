@@ -3,7 +3,7 @@
 BenCode ships through **GitHub Releases** and a **landing page** on GitHub
 Pages, not the App Store. Each release has one disk image per
 architecture, `BenCode-arm64.dmg` (Apple Silicon) and `BenCode-x86_64.dmg`
-(Intel), for macOS 11 or later.
+(Intel), for macOS 12 or later.
 
 | Piece | Where |
 | :--- | :--- |

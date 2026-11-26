@@ -12,7 +12,7 @@ A native, GPU-drawn control plane for coding-agent CLIs (Claude Code,
 Antigravity, Codex, Grok Build, OpenCode): it starts them, streams them
 into transcripts, and keeps files, git, terminal, browser, notes,
 automations and inbox in one window. Rust, [GPUI](https://www.gpui.rs/)
-(crates.io's `gpui-pre` 0.3.10, its Metal renderer vendored) and
+(crates.io's `gpui-pre` 0.3.14, its Metal renderer vendored) and
 `bencode-ui`, BenCode's own components, adapted from
 [Ely GPUI Components](https://git.zacharyzhang.com/ZacharyZhang-NY/Ely-GPUI-Components).
 It began as a port of MonoCode (Tauri + React); MonoCode is now a
@@ -59,8 +59,8 @@ schema, transcript block roles, the checkpoint manifest format, and
   Ely, keeping only what the app reaches. Knows nothing of the app.
 - `vendor/gpui-pre-apple`: GPUI's Metal renderer with the backdrop blur
   (its `NOTICE` says what changed).
-- `vendor/gpui-pre-macos`: GPUI's macOS windows, restarting a stalled display
-  link (its `NOTICE`).
+- `vendor/gpui-pre-macos`: GPUI's macOS windows, passing pointer events
+  through the browser's cutouts (its `NOTICE`).
 - `src/app.rs`: `BenCodeApp`, the app's state; `src/app/`: its logic by
   concern, no rendering. `src/ui/`: every view. The rest of `src/` is
   subsystems (git, db, remote, browser, pty host, bots, …).

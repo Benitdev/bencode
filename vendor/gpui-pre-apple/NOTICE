@@ -1,29 +1,41 @@
-gpui-pre-apple 0.3.10 (Zed's `gpui_apple`, gpui-pre snapshot of zed@08cbb88),
+gpui-pre-apple 0.3.14 (Zed's `gpui_apple`, gpui-pre snapshot of zed@f126950),
 Copyright 2022 - 2025 Zed Industries, Inc., Apache-2.0 (LICENSE-APACHE).
 
 Modified for BenCode with MonoCode's backdrop blur (MonoCode's
 `vendor/gpui-pre-apple`, branch `mc/migrate-monocode-to-gpui`):
 
 - src/metal_renderer.rs: `backdrop_blur_marker(sigma, tint_alpha)` marks a
-  quad as frosted glass; before drawing it, the renderer copies what is
-  already drawn behind it, blurs it with `MPSImageGaussianBlur` and writes it back inside
-  the quad's rounded bounds (`blur_backdrop`). The layer stays readable
-  (`framebuffer_only = false`) in every build so the drawable can be copied.
+  quad as frosted glass; before drawing it, the renderer ends the pass,
+  copies what is already drawn behind it, blurs it with
+  `MPSImageGaussianBlur` and writes it back inside the quad's rounded bounds
+  (`blur_backdrop`), then goes on in a new pass. The layer stays readable
+  (`framebufferOnly` off) in every build so the drawable can be copied.
 - src/shaders.metal: `backdrop_composite_vertex` / `_fragment`.
 
-And so the glass shows: `shadow_fragment` in src/shaders.metal leaves a
-drop shadow out of its element's bounds, as CSS `box-shadow` does, instead
-of filling it underneath (which the blur spread dark across a frosted card).
+GPUI draws opaque rectangles first, front to back, against a depth buffer.
+What a frosted quad copies, and what a cutout clears, must not hold what is
+drawn after it, so the opaque pass stops at the first such quad and
+`quad_vertex` draws the opaque rectangles after it in order
+(`bind_frame_inputs` passes the count in `QuadInputIndex_QuadCount`); a pass
+that follows a blur starts its depth afresh.
+
+And so the glass shows: a frosted card's own drop shadow is not drawn under
+it, as CSS `box-shadow` is not, instead of filling it underneath (which the
+blur spread dark across the card). GPUI gives a drop shadow no element
+bounds, so `frosted_shadows` matches each to the first frosted quad drawn
+after it within its reach and passes that quad's bounds in the shadow's
+unused `corner_radii` (radius in `pad`), which `shadow_fragment` reads.
 
 And so a quiet app gives GPU memory back (after MonoCode's `trim`,
 BenCode's `src/gpu_trim.rs` calling it):
 
-- src/metal_atlas.rs: every atlas is registered; `clear_all` drops their
-  tiles and textures (gpui-pre has no `PlatformAtlas::clear` to do it).
+- src/metal_atlas.rs: every atlas is registered (on the main thread);
+  `clear_all` drops their tiles and textures (gpui-pre has no
+  `PlatformAtlas::clear` to do it).
 - src/metal_renderer.rs: `trim()` clears the atlases and has each
-  renderer's next frame reset the instance buffers to their first 2MB; the
-  path textures are made by the first frame that draws paths and dropped
-  once none has for 2s, instead of with every drawable resize.
+  renderer's next frame reset the instance buffers to their first 2MB and
+  drop its depth buffer; the backdrop's textures go once no frame has
+  frosted anything for 2s.
 
 And so streaming text shapes cheaper (MonoCode's f8540190):
 src/text_system.rs keeps the sized CoreText fonts it shapes with
@@ -37,13 +49,15 @@ And so native views behind GPUI (the in-app browser WKWebView and HTML
 artifacts) stay visible behind dialogs and never clip GPUI tooltips/popovers:
 - src/metal_renderer.rs: `hole_punch_marker(pass_through)` clears a quad's
   clipped bounds to `rgba(0, 0, 0, 0)` using a non-blending quad pipeline
-  (`clear_quads_pipeline_state`), switches `CAMetalLayer.opaque` off while a
-  cutout is present (even in Light mode), and supplies a dark frosted backing
-  in `backdrop_composite_fragment` where frosted popups overlap a cutout.
+  (`clear_quads_pipeline_state`), keeps `CAMetalLayer.opaque` off while a
+  cutout is present (as GPUI does for its own native views), and supplies a
+  dark frosted backing in `backdrop_composite_fragment` where frosted popups
+  overlap a cutout.
 
 Chat backgrounds use `chat_background_corners` to mark a sprite. The image
 shader applies the pane-relative fade and Haze after GPUI cover-crops the art,
-in the same draw as the image.
+in the same draw as the image (`chat_background_fragment`, its pipeline built
+by the first frame that draws one).
 
 Everything else is the crates.io source unchanged. To move to a new
 gpui-pre, copy its `gpui-pre-apple` here and carry those changes over.

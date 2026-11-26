@@ -6,8 +6,8 @@
 use std::time::Duration;
 
 use gpui::{
-    App, Bounds, Element, ElementId, Entity, GlobalElementId, InspectorElementId, IntoElement,
-    LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, Position,
+    App, Bounds, Element, ElementId, Entity, GlobalElementId, InspectorElementId, LayoutId,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, Position,
     ScrollEvent, SharedString, Style, TextLayout, Window, px,
 };
 
@@ -24,14 +24,6 @@ pub struct SelectionLayer(Entity<TextSelection>);
 impl SelectionLayer {
     pub fn new(selection: &Entity<TextSelection>) -> Self {
         Self(selection.clone())
-    }
-}
-
-impl IntoElement for SelectionLayer {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
     }
 }
 

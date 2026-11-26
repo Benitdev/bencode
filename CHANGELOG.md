@@ -4,6 +4,16 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [Unreleased]
+
+- GPUI, which draws BenCode, is updated to 0.3.14, with the frosted glass,
+  the browser's cutouts and the chat wallpaper carried over. Its renderer
+  draws opaque surfaces once against a depth buffer, batches and sorts
+  primitives faster and shapes text without copying it; animations run at
+  full rate on M5 Macs, and macOS 14 and later pace frames with a Metal
+  display link. Text wraps by Unicode line-breaking rules (UAX #14).
+- BenCode now needs macOS 12 or later.
+
 ## [0.2.3] - 2026-11-26
 
 - Adjust reasoning effort directly in the composer and Bot effort menus with a

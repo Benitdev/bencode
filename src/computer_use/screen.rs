@@ -1,5 +1,5 @@
 //! ScreenCaptureKit frames and their mapping to Quartz desktop points.
-//! The framework is loaded on demand so launch and macOS 11–13 keep working.
+//! The framework is loaded on demand so launch and macOS 12–13 keep working.
 
 #![allow(unexpected_cfgs)]
 

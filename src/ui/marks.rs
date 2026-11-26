@@ -140,14 +140,6 @@ struct BusyMark {
     build: Build,
 }
 
-impl IntoElement for BusyMark {
-    type Element = Self;
-
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
 impl Element for BusyMark {
     type RequestLayoutState = ();
     /// Whether the mark paints itself (drawn outside the regions).

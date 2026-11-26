@@ -25,8 +25,8 @@ bencode-core = { path = "crates/bencode-core" }
 
 # BenCode's components (crates/bencode-ui).
 bencode-ui = { path = "crates/bencode-ui" }
-gpui = { package = "gpui-pre", version = "=0.3.10", default-features = false, features = ["font-kit"] }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.10", features = ["font-kit"] }
+gpui = { package = "gpui-pre", version = "=0.3.14", default-features = false, features = ["font-kit"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.14", features = ["font-kit"] }
 
 # Async runtime & Utilities
 tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
@@ -79,7 +79,7 @@ block = "0.1"
 raw-window-handle = "0.6"
 # The Metal renderer GPUI already builds (vendor/gpui-pre-apple), for
 # `metal_renderer::trim` (gpu_trim.rs).
-gpui_apple = { package = "gpui-pre-apple", version = "=0.3.10" }
+gpui_apple = { package = "gpui-pre-apple", version = "=0.3.14" }
 
 # The shipped binary: whole-program LTO and no symbols take it from 33 MB to
 # about 22 MB at the same speed, for a release build about twice as long.
@@ -96,10 +96,10 @@ opt-level = 1
 [profile.dev.package."*"]
 opt-level = 3
 
-# GPUI's Metal renderer with MonoCode's backdrop blur (`backdrop_blur_marker`):
-# 0.3.10 plus that one patch, see vendor/gpui-pre-apple/NOTICE. Its window code
-# with MonoCode's recovery for a stalled display link, see
-# vendor/gpui-pre-macos/NOTICE.
+# GPUI's Metal renderer with MonoCode's backdrop blur (`backdrop_blur_marker`)
+# and BenCode's cutouts: 0.3.14 plus those patches, see
+# vendor/gpui-pre-apple/NOTICE. Its window code with the cutouts' hit testing
+# and a frame fix, see vendor/gpui-pre-macos/NOTICE.
 [patch.crates-io]
 gpui-pre-apple = { path = "vendor/gpui-pre-apple" }
 gpui-pre-macos = { path = "vendor/gpui-pre-macos" }
