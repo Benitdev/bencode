@@ -6,9 +6,22 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-26
+
 - Chat wallpaper fades into the pane below the artwork. Haze keeps the top
   sharp and gradually softens it, including when resizing split chats.
-- The terminal now hides text marked with ANSI Conceal on translucent backgrounds.
+- Unified hover, active and glass surfaces across `bencode-ui` and the app:
+  moved `Fill` / `Ink` / `InteractiveSurface` tokens into `bencode-ui`, extended
+  `IconButton` for muted/active/custom-icon controls, softened the Terminal
+  panel, Composer, `SegmentedControl` and `Toggles` over dark Liquid Glass, and
+  aligned icons to the text baseline at every UI scale.
+- Stopped premature text truncation across thread titles, tabs and chips:
+  opening-prompt titles keep up to 200 characters (and recover full lines for
+  legacy 48-character titles), tight tab/chip width caps were widened, and
+  `EditorTabs`, terminal tabs, composer chips and diff scope headers now fit
+  text with shaped `Ellipsis`.
+- Tightened the gap under a turn's status line in the transcript, and hid text
+  marked with ANSI Conceal in the terminal on translucent backgrounds.
 
 ## [0.2.1] - 2026-11-26
 
