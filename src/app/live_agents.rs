@@ -154,8 +154,12 @@ fn activity_label(blocks: &[Arc<Block>], cwd: &str) -> String {
 }
 
 impl BenCodeApp {
+    /// A turn ended in a thread not in view: it shows its outcome until
+    /// looked at. A Bot's chat and a habit's run are listed elsewhere.
     pub(super) fn record_agent_outcome(&mut self, id: &str, outcome: DoneStatus) {
         if self.selected_session_id.as_deref() != Some(id)
+            && !self.is_bot_session(id)
+            && !self.is_habit_run(id)
             && self.sessions.iter().any(|session| session.id == id)
         {
             self.unseen_agent_outcomes.insert(id.to_string(), outcome);
@@ -199,7 +203,12 @@ impl BenCodeApp {
         let mut agents: Vec<_> = self
             .runs
             .iter()
-            .filter(|(id, run)| run.pending_permission.is_some() && !self.is_habit_run(id))
+            // As the Agents section: a Bot's chat asks on its own rail row.
+            .filter(|(id, run)| {
+                run.pending_permission.is_some()
+                    && !self.is_bot_session(id)
+                    && !self.is_habit_run(id)
+            })
             .filter_map(|(id, _)| self.sessions.iter().find(|session| session.id == *id))
             .filter_map(|session| live_agent(session, self.run_flags(&session.id)))
             .filter(|agent| agent.needs_approval)
@@ -209,13 +218,13 @@ impl BenCodeApp {
     }
 
     pub(crate) fn select_waiting_agent(&mut self, id: &str, cx: &mut Context<Self>) {
+        if self.is_habit_run(id) {
+            return;
+        }
         let Some(request) = self.pending_permission_for(id) else {
             return;
         };
         let question = request.tool == crate::app::QUESTION_TOOL;
-        if self.is_habit_run(id) {
-            return;
-        }
         self.select_live_agent(id, cx);
         self.question_focus_wanted = question;
         if let Some(view) = self.transcripts.get(id) {
