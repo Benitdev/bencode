@@ -4,9 +4,19 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
-## [Unreleased]
+## [0.2.3] - 2026-11-26
 
-- Adjust reasoning effort directly in the composer and Bot effort menus with a stepped, animated slider.
+- Adjust reasoning effort directly in the composer and Bot effort menus with a
+  stepped, animated slider.
+- Made macOS Computer Use faster and more reliable: added `computer_batch`
+  (with checked `wait` steps and automatic held-input release on failure),
+  switched `computer_ui` outlines to breadth-first traversal that skips empty
+  layout containers, preserves list/sidebar labels under `interactiveOnly`,
+  returns element bounds, and adds `click`/`doubleClick` verbs with z-order
+  occlusion checks so background window clicks never hit covering windows.
+  Screenshots now default to JPEG (80%, 1280px) with a visible cursor and
+  clickable `windowId` frames, and MCP tool schemas stay compatible with strict
+  model adapters.
 
 ## [0.2.2] - 2026-11-26
 
