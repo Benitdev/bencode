@@ -58,6 +58,15 @@ pub struct Element(CFType);
 
 impl Element {
     pub fn application(pid: i32) -> Result<Self> {
+        // macOS answers Accessibility calls on our own process in-process,
+        // on the calling thread: from the background executor that runs
+        // AppKit off the main thread and aborts the app.
+        if u32::try_from(pid).is_ok_and(|pid| pid == std::process::id()) {
+            bail!(
+                "BenCode cannot control its own windows through Accessibility. \
+                 Act on another app's window, or use display coordinates."
+            );
+        }
         // SAFETY: queries the calling process and returns an owned AX object.
         if unsafe { AXIsProcessTrusted() } == 0 {
             bail!("Grant BenCode Accessibility access in macOS Privacy & Security, then retry.");
