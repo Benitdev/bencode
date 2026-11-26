@@ -60,8 +60,12 @@ const CODEX: BinarySpec = BinarySpec {
         ".volta/bin",
         "n/bin",
     ],
-    // The Codex app's CLI, and the one the ChatGPT app ships for its Codex.
+    // The Codex app's CLI, and the one the ChatGPT app ships for its Codex:
+    // lately a `codex-cli` package whose `bin/codex` is a
+    // script starting its `CodexCLI.app`; the bare binary before.
     bundled: &[
+        "Applications/Codex.app/Contents/Resources/codex-cli/bin/codex",
+        "Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
         "Applications/Codex.app/Contents/Resources/codex",
         "Applications/ChatGPT.app/Contents/Resources/codex",
     ],
@@ -335,6 +339,7 @@ mod tests {
     fn a_bundled_codex_is_told_from_an_installed_one() {
         for bundled in [
             "/Applications/ChatGPT.app/Contents/Resources/codex",
+            "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
             "/Users/me/Applications/Codex.app/Contents/Resources/codex",
         ] {
             assert!(HarnessResolver::is_bundled_codex(Path::new(bundled)));
