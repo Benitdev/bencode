@@ -6,6 +6,8 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+- Adjust reasoning effort directly in the composer and Bot effort menus with a stepped, animated slider.
+
 ## [0.2.2] - 2026-11-26
 
 - Chat wallpaper fades into the pane below the artwork. Haze keeps the top

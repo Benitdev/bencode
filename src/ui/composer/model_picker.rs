@@ -14,8 +14,8 @@ use gpui::{
 use crate::ui::scale::px;
 use serde_json::{Map, Value};
 
-use super::HARNESS_ORDER;
 use super::menus::popover_surface;
+use super::{HARNESS_ORDER, effort};
 use crate::app::BenCodeApp;
 use crate::harness::HarnessKind;
 use crate::harness::catalog::{self, ModelOption, ModelSetting, SettingKind};
@@ -31,6 +31,7 @@ const SETTING_MENU_WIDTH: f32 = 210.0;
 /// Flyouts overlap the menu by 4px (MonoCode `SUBMENU_OVERLAP`).
 const SUBMENU_OVERLAP: f32 = 4.0;
 const ENTRY_HEIGHT: f32 = 36.0;
+const DIVIDER_HEIGHT: f32 = 9.0;
 const OPTION_HEIGHT: f32 = 32.0;
 const PROVIDER_TAB_SIZE: f32 = 32.0;
 const RECENT_MODELS_SHOWN: usize = 6;
@@ -288,7 +289,7 @@ impl BenCodeApp {
             }
         }
         let menus = &mut self.composer_menus;
-        menus.model_entry = 0;
+        menus.model_entry = None;
         menus.model_submenu = None;
         // MonoCode `coerceModelPickerTab`: a hidden provider falls back to
         // Favorites.
@@ -444,28 +445,40 @@ impl BenCodeApp {
         self.set_model_setting(&setting.id, next, cx);
     }
 
-    /// MonoCode `showEntrySubmenu`: a select or the Model row opens its
-    /// flyout on the current value; a toggle has none.
+    /// Place the inline effort slider at the bottom so rows flow Model → settings → Effort.
+    fn ordered_menu_settings(&self, key: &str) -> Vec<ModelSetting> {
+        let account = self.model_account_for(key);
+        let values = self.current_model_values();
+        let mut settings = catalog::picker_settings_for(key, account.as_deref());
+        settings.sort_by_key(|setting| usize::from(effort::index(setting, values).is_some()));
+        settings
+    }
+
+    /// MonoCode `showEntrySubmenu`: row 0 is Model; settings follow beneath it.
     fn show_entry_submenu(&mut self, entry: usize, cx: &mut Context<Self>) {
         let key = self.current_model_key(cx);
-        let account = self.model_account_for(&key);
-        let settings = catalog::picker_settings_for(&key, account.as_deref());
-        self.composer_menus.model_submenu = match settings.get(entry) {
-            Some(setting) if setting.kind == SettingKind::Select => {
-                let value = setting.value(self.current_model_values());
-                self.composer_menus.setting_index = setting
-                    .options
-                    .iter()
-                    .position(|(v, _)| *v == value)
-                    .unwrap_or(0);
-                Some(Submenu::Setting(entry))
+        let settings = self.ordered_menu_settings(&key);
+        self.composer_menus.model_submenu = if entry == 0 {
+            if self.composer_menus.model_submenu != Some(Submenu::Models) {
+                self.highlight_current_model(cx);
             }
-            Some(_) => None,
-            None => {
-                if self.composer_menus.model_submenu != Some(Submenu::Models) {
-                    self.highlight_current_model(cx);
+            Some(Submenu::Models)
+        } else {
+            let setting_ix = entry - 1;
+            match settings.get(setting_ix) {
+                Some(setting) if effort::index(setting, self.current_model_values()).is_some() => {
+                    None
                 }
-                Some(Submenu::Models)
+                Some(setting) if setting.kind == SettingKind::Select => {
+                    let value = setting.value(self.current_model_values());
+                    self.composer_menus.setting_index = setting
+                        .options
+                        .iter()
+                        .position(|(v, _)| *v == value)
+                        .unwrap_or(0);
+                    Some(Submenu::Setting(setting_ix))
+                }
+                _ => None,
             }
         };
         cx.notify();
@@ -474,8 +487,7 @@ impl BenCodeApp {
     /// MonoCode `onMenuKey` for the model menu.
     pub(super) fn model_menu_key(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
         let model_key = self.current_model_key(cx);
-        let account = self.model_account_for(&model_key);
-        let settings = catalog::picker_settings_for(&model_key, account.as_deref());
+        let settings = self.ordered_menu_settings(&model_key);
         let entries = settings.len() + 1;
         let submenu = self.composer_menus.model_submenu;
         // The models alone have no menu to go back to.
@@ -496,11 +508,34 @@ impl BenCodeApp {
                 };
             }
             ("down" | "up", None) => {
-                let step = if key == "down" { 1 } else { entries - 1 };
-                self.composer_menus.model_entry =
-                    (self.composer_menus.model_entry + step) % entries;
+                let next = match (self.composer_menus.model_entry, key) {
+                    (None, "down") => 0,
+                    (None, _) => entries - 1,
+                    (Some(cur), "down") => (cur + 1) % entries,
+                    (Some(cur), _) => (cur + entries - 1) % entries,
+                };
+                self.composer_menus.model_entry = Some(next);
             }
-            ("right", _) => self.show_entry_submenu(self.composer_menus.model_entry, cx),
+            ("left" | "right", None)
+                if let Some(entry) = self.composer_menus.model_entry
+                    && entry > 0
+                    && let Some(setting) = settings.get(entry - 1)
+                    && let Some(index) = effort::index(setting, self.current_model_values()) =>
+            {
+                let next = if key == "left" {
+                    index.saturating_sub(1)
+                } else {
+                    (index + 1).min(setting.options.len() - 1)
+                };
+                if next != index {
+                    self.set_model_setting(&setting.id, &setting.options[next].0, cx);
+                }
+            }
+            ("right", _) => {
+                let entry = self.composer_menus.model_entry.unwrap_or(0);
+                self.composer_menus.model_entry = Some(entry);
+                self.show_entry_submenu(entry, cx);
+            }
             ("left", _) => self.composer_menus.model_submenu = None,
             ("enter", Some(Submenu::Models)) => self.pick_highlighted_model(cx),
             ("enter", Some(Submenu::Setting(ix))) => {
@@ -510,12 +545,19 @@ impl BenCodeApp {
                 }
                 self.close_model_picker(cx);
             }
-            ("enter", None) => match settings.get(self.composer_menus.model_entry) {
-                Some(setting) if setting.kind == SettingKind::Toggle => {
-                    self.toggle_model_setting(setting, cx)
+            ("enter", None) => {
+                let entry = self.composer_menus.model_entry.unwrap_or(0);
+                self.composer_menus.model_entry = Some(entry);
+                if entry == 0 {
+                    self.show_entry_submenu(0, cx);
+                } else if let Some(setting) = settings.get(entry - 1) {
+                    if setting.kind == SettingKind::Toggle {
+                        self.toggle_model_setting(setting, cx);
+                    } else {
+                        self.show_entry_submenu(entry, cx);
+                    }
                 }
-                _ => self.show_entry_submenu(self.composer_menus.model_entry, cx),
-            },
+            }
             ("escape", _) => self.close_model_picker(cx),
             _ => return false,
         }
@@ -543,19 +585,18 @@ impl BenCodeApp {
         true
     }
 
-    /// MonoCode's model menu: setting rows, then Model, with the open
-    /// flyout beside them.
+    /// Model row at the top, followed by a subtle divider and the model's
+    /// settings (toggles/selects first, inline Effort slider at the bottom).
     pub(super) fn render_model_picker_popover(
         &self,
         current_key: &str,
         cx: &Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
         let colors = &cx.theme().colors;
-        let account = self.model_account_for(current_key);
-        let settings = catalog::picker_settings_for(current_key, account.as_deref());
+        let settings = self.ordered_menu_settings(current_key);
         let values = self.current_model_values();
         let active = self.composer_menus.model_entry;
-        let row = |ix: usize, id: SharedString| {
+        let row = |entry_ix: usize, id: SharedString| {
             let hover = colors.fg.fill(Fill::Hover);
             div()
                 .id(id)
@@ -568,12 +609,14 @@ impl BenCodeApp {
                 .cursor_pointer()
                 .text_size(Text::Md.px())
                 .text_color(colors.fg)
-                .when(ix == active, |el| el.bg(colors.fg.fill(Fill::Selected)))
-                .when(ix != active, |el| el.hover(move |s| s.bg(hover)))
+                .when(active == Some(entry_ix), |el| {
+                    el.bg(colors.fg.fill(Fill::Selected))
+                })
+                .when(active != Some(entry_ix), |el| el.hover(move |s| s.bg(hover)))
                 .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                     if *hovered {
-                        this.composer_menus.model_entry = ix;
-                        this.show_entry_submenu(ix, cx);
+                        this.composer_menus.model_entry = Some(entry_ix);
+                        this.show_entry_submenu(entry_ix, cx);
                     }
                 }))
         };
@@ -582,42 +625,12 @@ impl BenCodeApp {
                 .size(IconSize::Xs)
                 .color(colors.fg.ink(Ink::Muted))
         };
-        let setting_rows = settings.iter().enumerate().map(|(ix, setting)| {
-            let base = row(
-                ix,
-                SharedString::from(format!("model-setting-{}", setting.id)),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .child(setting.menu_label().to_string()),
-            );
-            match setting.kind {
-                SettingKind::Toggle => {
-                    let on = setting.value(values) == "true";
-                    let toggled = setting.clone();
-                    base.on_click(
-                        cx.listener(move |this, _, _, cx| this.toggle_model_setting(&toggled, cx)),
-                    )
-                    .child(toggle_switch(on, cx))
-                }
-                SettingKind::Select => base
-                    .on_click(cx.listener(move |this, _, _, cx| this.show_entry_submenu(ix, cx)))
-                    .child(
-                        div()
-                            .max_w(px(160.0))
-                            .truncate()
-                            .text_color(colors.fg.ink(Ink::Secondary))
-                            .child(setting.value_label(values).to_string()),
-                    )
-                    .child(chevron()),
-            }
-        });
-        let model_ix = settings.len();
         let current_harness = catalog::harness_of(current_key);
-        let model_row = row(model_ix, "model-row".into())
-            .on_click(cx.listener(move |this, _, _, cx| this.show_entry_submenu(model_ix, cx)))
+        let model_row = row(0, "model-row".into())
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.composer_menus.model_entry = Some(0);
+                this.show_entry_submenu(0, cx);
+            }))
             .child(div().flex_1().min_w_0().child("Model"))
             .child(
                 div()
@@ -636,11 +649,86 @@ impl BenCodeApp {
                     ),
             )
             .child(chevron());
-        let menu_height = 2.0 + 8.0 + (settings.len() + 1) as f32 * ENTRY_HEIGHT;
+        let setting_rows = settings.iter().enumerate().map(|(setting_ix, setting)| {
+            let entry_ix = setting_ix + 1;
+            if let Some(index) = effort::index(setting, values) {
+                return self
+                    .effort_control(setting, index, active == Some(entry_ix), cx)
+                    .id(("model-effort-row", setting_ix))
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(move |this, _, window, cx| {
+                            this.composer_menus.model_entry = Some(entry_ix);
+                            this.composer_menus.model_submenu = None;
+                            window.focus(&this.composer_menus.focus, cx);
+                            cx.notify();
+                        }),
+                    )
+                    .on_hover(cx.listener(move |this, over: &bool, _, cx| {
+                        if *over
+                            && (this.composer_menus.model_entry != Some(entry_ix)
+                                || this.composer_menus.model_submenu.is_some())
+                        {
+                            this.composer_menus.model_entry = Some(entry_ix);
+                            this.composer_menus.model_submenu = None;
+                            cx.notify();
+                        }
+                    }));
+            }
+            let base = row(
+                entry_ix,
+                SharedString::from(format!("model-setting-{}", setting.id)),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(setting.menu_label().to_string()),
+            );
+            match setting.kind {
+                SettingKind::Toggle => {
+                    let on = setting.value(values) == "true";
+                    let toggled = setting.clone();
+                    base.on_click(
+                        cx.listener(move |this, _, _, cx| this.toggle_model_setting(&toggled, cx)),
+                    )
+                    .child(toggle_switch(on, cx))
+                }
+                SettingKind::Select => base
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.composer_menus.model_entry = Some(entry_ix);
+                        this.show_entry_submenu(entry_ix, cx);
+                    }))
+                    .child(
+                        div()
+                            .max_w(px(160.0))
+                            .truncate()
+                            .text_color(colors.fg.ink(Ink::Secondary))
+                            .child(setting.value_label(values).to_string()),
+                    )
+                    .child(chevron()),
+            }
+        });
+        let rows_height = |settings: &[ModelSetting]| {
+            settings
+                .iter()
+                .map(|s| {
+                    if effort::index(s, values).is_some() {
+                        effort::ROW_HEIGHT
+                    } else {
+                        ENTRY_HEIGHT
+                    }
+                })
+                .sum::<f32>()
+        };
+        let has_settings = !settings.is_empty();
+        let divider_height = if has_settings { DIVIDER_HEIGHT } else { 0.0 };
+        let menu_height = 2.0 + 8.0 + ENTRY_HEIGHT + divider_height + rows_height(&settings);
         let flyout = match self.composer_menus.model_submenu {
-            Some(Submenu::Setting(ix)) => settings
-                .get(ix)
-                .map(|setting| self.render_setting_flyout(setting, ix, menu_height, cx)),
+            Some(Submenu::Setting(ix)) => settings.get(ix).map(|setting| {
+                let row_top = ENTRY_HEIGHT + DIVIDER_HEIGHT + rows_height(&settings[..ix]);
+                self.render_setting_flyout(setting, row_top, menu_height, cx)
+            }),
             Some(Submenu::Models) => Some(self.render_model_flyout(current_key, cx)),
             None => None,
         };
@@ -657,8 +745,17 @@ impl BenCodeApp {
             .border_1()
             .border_color(colors.border)
             .shadow_xl()
-            .children(setting_rows)
             .child(model_row)
+            .when(has_settings, |el| {
+                el.child(
+                    div()
+                        .h(px(1.0))
+                        .mx_2()
+                        .my_1()
+                        .bg(colors.border.opacity(0.65)),
+                )
+            })
+            .children(setting_rows)
             .children(flyout)
     }
 
@@ -666,7 +763,7 @@ impl BenCodeApp {
     fn render_setting_flyout(
         &self,
         setting: &ModelSetting,
-        row: usize,
+        row_top: f32,
         menu_height: f32,
         cx: &Context<Self>,
     ) -> AnyElement {
@@ -675,7 +772,7 @@ impl BenCodeApp {
         let active = self.composer_menus.setting_index;
         let height = 2.0 + 8.0 + setting.options.len() as f32 * OPTION_HEIGHT;
         // Beside its row, lifted when it would run off the composer's foot.
-        let top = (row as f32 * ENTRY_HEIGHT - 1.0).min(menu_height + 40.0 - height);
+        let top = (row_top - 1.0).min(menu_height + 40.0 - height);
         let options = setting
             .options
             .iter()

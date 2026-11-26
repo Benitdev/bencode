@@ -1,9 +1,12 @@
+mod spectrum;
+
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, Bounds, DragMoveEvent, ElementId, EmptyView, EntityId, InteractiveElement,
     IntoElement, MouseButton, Orientation, ParentElement, Pixels, Point, RenderOnce, Role,
-    StatefulInteractiveElement, Styled, Window, canvas, div, prelude::*, relative,
+    SharedString, StatefulInteractiveElement, Styled, Window, canvas, div, prelude::*, relative,
 };
 
 use super::options::OnNumber;
@@ -39,9 +42,12 @@ pub(crate) fn keyed(key: &str, value: f64, min: f64, max: f64, step: f64) -> Opt
 }
 
 /// How far along a track `at` is, from its start: left, or bottom when vertical.
-fn along(bounds: Bounds<Pixels>, at: Point<Pixels>, vertical: bool) -> f32 {
+fn along(bounds: Bounds<Pixels>, at: Point<Pixels>, vertical: bool, inset_ends: bool) -> f32 {
     if vertical {
         (bounds.bottom() - at.y) / bounds.size.height
+    } else if inset_ends {
+        (at.x - bounds.left() - bounds.size.height * 0.5)
+            / (bounds.size.width - bounds.size.height).max(gpui::px(1.0))
     } else {
         (at.x - bounds.left()) / bounds.size.width
     }
@@ -62,6 +68,7 @@ struct Track {
     range: (f64, f64, f64),
     vertical: bool,
     disabled: bool,
+    spectrum: Option<(SharedString, SharedString)>,
     commit: Commit,
 }
 
@@ -93,9 +100,19 @@ impl Track {
             true => Orientation::Vertical,
             false => Orientation::Horizontal,
         };
+        let styled = self.spectrum.is_some();
+        let motion = styled.then(|| {
+            spectrum::motion(
+                self.id.clone(),
+                fraction(self.values[0], min, max),
+                window,
+                cx,
+            )
+        });
         let theme = cx.theme();
         let colors = &theme.colors;
         let (thumb, line) = (theme.slider_thumb(), theme.slider_track());
+        let height = thumb + line;
         let fractions: Vec<f32> = self
             .values
             .iter()
@@ -163,6 +180,9 @@ impl Track {
                     .aria_max_numeric_value(ceiling)
                     .aria_numeric_value_step(step)
                     .aria_orientation(orientation)
+                    .when_some(self.spectrum.clone(), |el, (label, value)| {
+                        el.aria_label(label).aria_value(value)
+                    })
                     .when_some(unavailable.clone(), |thumb, text| {
                         thumb.aria_description(text)
                     })
@@ -171,15 +191,27 @@ impl Track {
                     .size(thumb)
                     .rounded_full()
                     .bg(colors.surface)
-                    .border_1()
-                    .border_color(if focused {
-                        colors.focus
-                    } else {
-                        colors.border_strong
+                    .when(!styled || focused, |thumb_box| {
+                        thumb_box.border_1().border_color(if focused {
+                            colors.focus
+                        } else {
+                            colors.border_strong
+                        })
                     })
                     .shadow(theme.elevation(Elevation::Raised))
                     .map(|thumb_box| {
-                        if vertical {
+                        if let Some(motion) = motion {
+                            let stretch = thumb * (motion.velocity.abs() * 0.045).min(0.14);
+                            let width = thumb + stretch;
+                            let thumb_h = thumb - stretch * 0.18;
+                            thumb_box
+                                .w(width)
+                                .h(thumb_h)
+                                .bg(colors.on_media)
+                                .left(relative(motion.at))
+                                .ml(height * (0.5 - motion.at) - width * 0.5)
+                                .top((height - thumb_h) * 0.5)
+                        } else if vertical {
                             thumb_box.left_0().bottom(relative(*at)).mb(thumb * -0.5)
                         } else {
                             thumb_box.top_0().left(relative(*at)).ml(thumb * -0.5)
@@ -213,8 +245,16 @@ impl Track {
             .id((self.id.clone(), "inner"))
             .relative()
             .size_full()
-            .child(rail)
-            .child(fill)
+            .map(|inner| match motion {
+                Some(motion) => inner.cursor_pointer().child(spectrum::rail(
+                    motion,
+                    ((max - min) / step).round() as usize,
+                    colors.chart[4],
+                    colors.on_media,
+                    colors.ink,
+                )),
+                None => inner.child(rail).child(fill),
+            })
             .children(thumbs)
             .child(
                 canvas(
@@ -243,7 +283,7 @@ impl Track {
                         }
                         let index = thumb.index.unwrap_or(*grabbed.read(cx));
                         let next = value_at(
-                            along(event.bounds, event.event.position, vertical),
+                            along(event.bounds, event.event.position, vertical, styled),
                             min,
                             max,
                             step,
@@ -252,8 +292,12 @@ impl Track {
                     })
                     .on_mouse_down(MouseButton::Left, move |event, window, cx| {
                         let bounds = *measured.read(cx);
-                        let next =
-                            value_at(along(bounds, event.position, vertical), min, max, step);
+                        let next = value_at(
+                            along(bounds, event.position, vertical, styled),
+                            min,
+                            max,
+                            step,
+                        );
                         let index = match values.as_slice() {
                             [low, high] if (next - high).abs() < (next - low).abs() => 1,
                             _ => 0,
@@ -268,7 +312,9 @@ impl Track {
             .id(self.id)
             .flex_none()
             .map(|outer| {
-                if vertical {
+                if styled {
+                    outer.h(height)
+                } else if vertical {
                     outer.h_full().w(thumb).py(thumb * 0.5)
                 } else {
                     outer.h(thumb).px(thumb * 0.5)
@@ -288,6 +334,7 @@ pub struct Slider {
     range: (f64, f64, f64),
     vertical: bool,
     disabled: bool,
+    spectrum: Option<(SharedString, SharedString)>,
     on_change: Option<OnNumber>,
 }
 
@@ -299,6 +346,7 @@ impl Slider {
             range: (0.0, 100.0, 1.0),
             vertical: false,
             disabled: false,
+            spectrum: None,
             on_change: None,
         }
     }
@@ -316,6 +364,16 @@ impl Slider {
         self
     }
 
+    /// A luminous stepped track with a spoken name and value.
+    pub fn spectrum(
+        mut self,
+        label: impl Into<SharedString>,
+        value: impl Into<SharedString>,
+    ) -> Self {
+        self.spectrum = Some((label.into(), value.into()));
+        self
+    }
+
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
@@ -330,10 +388,12 @@ impl Slider {
 impl RenderOnce for Slider {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let (id, value, on_change) = (self.id.clone(), self.value, self.on_change);
+        let last = Cell::new(value);
         let commit: Commit = Rc::new(move |_, next, window, cx| {
-            if next == value {
+            if next == last.get() {
                 return;
             }
+            last.set(next);
             log::debug!("slider {id:?}: {next}");
             if let Some(on_change) = &on_change {
                 on_change(next, window, cx);
@@ -345,6 +405,7 @@ impl RenderOnce for Slider {
             range: self.range,
             vertical: self.vertical,
             disabled: self.disabled,
+            spectrum: self.spectrum,
             commit,
         }
         .render(window, cx)

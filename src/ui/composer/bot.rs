@@ -575,6 +575,11 @@ impl BenCodeApp {
         let fg = colors.fg;
         let grouped = menu.len() > 1;
         let sections = menu.iter().map(|setting| {
+            if let Some(index) = super::effort::index(setting, values) {
+                return self
+                    .effort_control(setting, index, false, cx)
+                    .when(grouped, |el| el.mb(px(2.0)));
+            }
             let current = setting.value(values).to_string();
             let options = setting.options.iter().map(|(value, label)| {
                 let (id, picked) = (setting.id.clone(), value.clone());

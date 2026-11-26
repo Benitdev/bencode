@@ -23,7 +23,7 @@ pub struct MenuState {
     pub access_automation: bool,
     /// Model menu: highlighted row, open flyout, highlighted choice in a
     /// setting flyout, and the provider tab of the models flyout.
-    pub model_entry: usize,
+    pub model_entry: Option<usize>,
     pub model_submenu: Option<Submenu>,
     pub setting_index: usize,
     pub model_tab: ModelTab,
@@ -53,7 +53,7 @@ impl MenuState {
             focus,
             access_index: 0,
             access_automation: false,
-            model_entry: 0,
+            model_entry: None,
             model_submenu: None,
             setting_index: 0,
             model_tab: ModelTab::default(),
