@@ -18,12 +18,25 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, ContentMask, Context, Element, ElementId, EntityId,
     GlobalElementId, InspectorElementId, IntoElement, LayoutId, Pixels, Render, Styled, TextStyle,
     TextStyleRefinement, Window, canvas,
 };
+
+/// How often a mark asks the app's clock (`start_clock`) to step it while
+/// it is drawn in a region.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pace {
+    /// Steps on every spinner frame (`spinner::FRAME`): spinners, pulses,
+    /// shimmers, rings, working figures.
+    Busy,
+    /// Moves on its own sparse schedule (`idle_figure_wake`): a figure at
+    /// rest that blinks, breathes or sparks without an agent running.
+    Idle,
+}
 
 /// What draws a mark at the clock's current step.
 type Build = Rc<dyn Fn(&App) -> AnyElement>;
@@ -33,6 +46,7 @@ struct Slot {
     bounds: Bounds<Pixels>,
     mask: ContentMask<Pixels>,
     text: TextStyle,
+    pace: Pace,
     build: Build,
 }
 
@@ -42,10 +56,19 @@ struct Registry {
     regions: HashSet<EntityId>,
     /// Each region's marks as it last drew them.
     slots: HashMap<EntityId, Vec<Slot>>,
+    /// Armed while `start_clock` is sleeping past `spinner::FRAME`, so a
+    /// newly drawn `Pace::Busy` mark wakes it at once.
+    wake_on_busy: bool,
 }
 
 thread_local! {
     static REGISTRY: RefCell<Registry> = RefCell::default();
+}
+
+static BUSY_WAKE: OnceLock<tokio::sync::Notify> = OnceLock::new();
+
+fn busy_wake() -> &'static tokio::sync::Notify {
+    BUSY_WAKE.get_or_init(tokio::sync::Notify::new)
 }
 
 /// A region's view exists: marks drawn in it go to the layer.
@@ -67,11 +90,45 @@ pub fn clear_region(view: EntityId) {
     REGISTRY.with(|registry| registry.borrow_mut().slots.remove(&view));
 }
 
-/// A busy mark: `build` draws it at the clock's current step.
+/// Whether any region currently drawn holds a `Pace::Busy` mark.
+pub fn has_busy() -> bool {
+    REGISTRY.with(|registry| {
+        registry
+            .borrow()
+            .slots
+            .values()
+            .flatten()
+            .any(|slot| slot.pace == Pace::Busy)
+    })
+}
+
+/// Arms or disarms the wake-up fired when a `Pace::Busy` mark is next
+/// recorded in a region.
+pub fn arm_busy_wake(armed: bool) {
+    REGISTRY.with(|registry| registry.borrow_mut().wake_on_busy = armed);
+}
+
+/// Resolves when a `Pace::Busy` mark is recorded while `arm_busy_wake(true)`
+/// is set.
+pub async fn wait_for_busy() {
+    busy_wake().notified().await;
+}
+
+/// A busy mark: `build` draws it at the clock's current step (`Pace::Busy`).
 pub fn mark(build: impl Fn(&App) -> AnyElement + 'static, cx: &App) -> AnyElement {
+    mark_at(Pace::Busy, build, cx)
+}
+
+/// A mark that moves at rest on its own sparse schedule (`Pace::Idle`).
+pub fn idle_mark(build: impl Fn(&App) -> AnyElement + 'static, cx: &App) -> AnyElement {
+    mark_at(Pace::Idle, build, cx)
+}
+
+fn mark_at(pace: Pace, build: impl Fn(&App) -> AnyElement + 'static, cx: &App) -> AnyElement {
     let build: Build = Rc::new(build);
     BusyMark {
         inner: build(cx),
+        pace,
         build,
     }
     .into_any_element()
@@ -79,6 +136,7 @@ pub fn mark(build: impl Fn(&App) -> AnyElement + 'static, cx: &App) -> AnyElemen
 
 struct BusyMark {
     inner: AnyElement,
+    pace: Pace,
     build: Build,
 }
 
@@ -123,6 +181,7 @@ impl Element for BusyMark {
         cx: &mut App,
     ) -> bool {
         let owner = window.current_view();
+        let mut wake = false;
         let left = REGISTRY.with(|registry| {
             let mut registry = registry.borrow_mut();
             if !registry.regions.contains(&owner) {
@@ -132,10 +191,18 @@ impl Element for BusyMark {
                 bounds,
                 mask: window.content_mask(),
                 text: window.text_style(),
+                pace: self.pace,
                 build: self.build.clone(),
             });
+            if self.pace == Pace::Busy && registry.wake_on_busy {
+                registry.wake_on_busy = false;
+                wake = true;
+            }
             true
         });
+        if wake {
+            busy_wake().notify_one();
+        }
         if !left {
             self.inner.prepaint(window, cx);
         }
@@ -240,5 +307,53 @@ fn refinement(style: &TextStyle) -> TextStyleRefinement {
         text_overflow: style.text_overflow.clone(),
         text_align: Some(style.text_align),
         line_clamp: style.line_clamp,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::{Bounds, ContentMask, EntityId, IntoElement, TextStyle, div};
+
+    use super::*;
+
+    fn push_slot(view: EntityId, pace: Pace) {
+        let build: Build = Rc::new(|_| div().into_any_element());
+        REGISTRY.with(|registry| {
+            registry
+                .borrow_mut()
+                .slots
+                .entry(view)
+                .or_default()
+                .push(Slot {
+                    bounds: Bounds::default(),
+                    mask: ContentMask {
+                        bounds: Bounds::default(),
+                    },
+                    text: TextStyle::default(),
+                    pace,
+                    build,
+                });
+        });
+    }
+
+    #[test]
+    fn only_busy_marks_report_active_busy_pace() {
+        let view = EntityId::from(9_001u64);
+        register_region(view);
+        assert!(!has_busy());
+
+        push_slot(view, Pace::Idle);
+        assert!(!has_busy());
+
+        push_slot(view, Pace::Busy);
+        assert!(has_busy());
+
+        clear_region(view);
+        assert!(!has_busy());
+
+        push_slot(view, Pace::Busy);
+        assert!(has_busy());
+        forget_region(view);
+        assert!(!has_busy());
     }
 }

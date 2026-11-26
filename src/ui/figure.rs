@@ -187,10 +187,17 @@ pub fn figure_view(figure: Figure, size: f32, color: Hsla, look: Look, cx: &App)
     if !look.moves() {
         return painted(figure, look.frame(marks, cx), size, color);
     }
-    crate::ui::marks::mark(
-        move |cx| painted(figure, look.frame(marks, cx), size, color),
-        cx,
-    )
+    if look.mood == Mood::Working {
+        crate::ui::marks::mark(
+            move |cx| painted(figure, look.frame(marks, cx), size, color),
+            cx,
+        )
+    } else {
+        crate::ui::marks::idle_mark(
+            move |cx| painted(figure, look.frame(marks, cx), size, color),
+            cx,
+        )
+    }
 }
 
 #[cfg(test)]

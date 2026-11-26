@@ -64,23 +64,28 @@ impl BenCodeApp {
             .map(|bot| self.bot_color(bot))
             .unwrap_or(fg);
         let faint = fg.ink(Ink::Faint);
-        // Pulsing while live: a busy mark (`ui/marks.rs`).
-        let dot = crate::ui::marks::mark(
-            move |cx| {
-                let dot = if live {
-                    color.opacity(0.4 + 0.6 * spinner::pulse(cx))
-                } else {
-                    faint
-                };
-                div()
-                    .flex_none()
-                    .size(px(6.0))
-                    .rounded_full()
-                    .bg(dot)
-                    .into_any_element()
-            },
-            cx,
-        );
+        // Pulsing while live: a busy mark (`ui/marks.rs`); finished turns
+        // stay static so they do not wake the clock.
+        let dot = if live {
+            crate::ui::marks::mark(
+                move |cx| {
+                    div()
+                        .flex_none()
+                        .size(px(6.0))
+                        .rounded_full()
+                        .bg(color.opacity(0.4 + 0.6 * spinner::pulse(cx)))
+                        .into_any_element()
+                },
+                cx,
+            )
+        } else {
+            div()
+                .flex_none()
+                .size(px(6.0))
+                .rounded_full()
+                .bg(faint)
+                .into_any_element()
+        };
         let line = div()
             .flex()
             .min_w_0()

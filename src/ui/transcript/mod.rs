@@ -339,19 +339,74 @@ pub struct TranscriptUiState {
 /// The fold line's clock ticks once a second while an agent runs.
 const CLOCK_TICK: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// What one tick of `start_clock` does next.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ClockStep {
+    /// Whether to notify `MarkLayer` on this tick.
+    step_marks: bool,
+    /// How long to sleep before the next tick.
+    wait: std::time::Duration,
+    /// Whether a newly drawn `Pace::Busy` mark should wake the sleep early.
+    arm_busy_wake: bool,
+}
+
+fn clock_step(
+    running: bool,
+    watched: bool,
+    busy_marks: bool,
+    still: bool,
+    idle: Option<std::time::Duration>,
+    woken_by_busy: bool,
+    until_frame: std::time::Duration,
+) -> ClockStep {
+    let active_busy = !still && busy_marks;
+    let idle = (!running && !still).then_some(idle).flatten();
+    let step_marks = !woken_by_busy && (running || active_busy || idle.is_some());
+    let wait = if running {
+        if watched {
+            crate::ui::spinner::WATCHED_FRAME
+        } else {
+            until_frame
+        }
+    } else if active_busy {
+        idle.map_or(until_frame, |next| until_frame.min(next))
+    } else if let Some(next) = idle {
+        next.min(CLOCK_TICK)
+    } else {
+        CLOCK_TICK
+    };
+    let arm_busy_wake = !running && !active_busy && !still && wait > crate::ui::spinner::FRAME;
+    ClockStep {
+        step_marks,
+        wait,
+        arm_busy_wake,
+    }
+}
+
 impl BenCodeApp {
-    /// Steps the busy marks (`ui/spinner.rs`) while any agent runs: a step
-    /// every spinner frame (80ms), and smoothly (`WATCHED_FRAME`) while a
-    /// running thread is in view. A step redraws the mark layer
-    /// (`ui/marks.rs`) and the floating chat, never a region; the regions
-    /// that show a run's time redraw once a second. Usage-limit countdowns
-    /// tick once a second.
+    /// Steps the busy marks (`ui/spinner.rs`) while any agent runs or any
+    /// drawn region holds a `Pace::Busy` mark (such as a pull request's
+    /// running checks in the Inbox): a step on every spinner frame (80ms),
+    /// and smoothly (`WATCHED_FRAME`) while a running thread is in view. A
+    /// step redraws the mark layer (`ui/marks.rs`) and the floating chat,
+    /// never a region; the regions that show a run's time redraw once a
+    /// second. Usage-limit countdowns tick once a second.
     pub fn start_clock(&mut self, cx: &mut Context<Self>) {
+        crate::ui::marks::arm_busy_wake(true);
         cx.spawn(async move |this, cx| {
             let mut wait = CLOCK_TICK;
+            let mut arm_wake = true;
             let mut last_second = Instant::now();
             loop {
-                cx.background_executor().timer(wait).await;
+                let woken_by_busy = if arm_wake {
+                    tokio::select! {
+                        _ = cx.background_executor().timer(wait) => false,
+                        _ = crate::ui::marks::wait_for_busy() => true,
+                    }
+                } else {
+                    cx.background_executor().timer(wait).await;
+                    false
+                };
                 let ticked = this.update(cx, |app, cx| {
                     let second = last_second.elapsed() >= CLOCK_TICK;
                     let countdown = if second {
@@ -363,45 +418,51 @@ impl BenCodeApp {
                     let running = app.is_agent_running();
                     // The menu bar's dot, for a bot that needs you.
                     app.sync_bot_menu_bar_alert();
+                    let still = crate::ui::spinner::still(cx);
+                    let busy_marks = crate::ui::marks::has_busy();
                     // Bots' figures move at rest (one that needs you, a
                     // finished turn's sparks, the greeting's breath), at
                     // their own steps.
-                    let idle = (!running && !crate::ui::spinner::still(cx))
+                    let idle = (!running && !still)
                         .then(|| app.idle_figure_wake())
                         .flatten();
+                    let watched = app.alerts.window_active && app.running_thread_in_view();
+                    let step = clock_step(
+                        running,
+                        watched,
+                        busy_marks,
+                        still,
+                        idle,
+                        woken_by_busy,
+                        crate::ui::spinner::until_step(crate::ui::spinner::FRAME),
+                    );
                     if countdown {
                         cx.notify();
-                    } else if running || idle.is_some() {
-                        // The marks move on the layer (`ui/marks.rs`); the
-                        // shell's own (a Bot's settings dialog) are drawn
-                        // with it.
-                        app.step_marks(cx);
+                    } else {
+                        if step.step_marks {
+                            // The marks move on the layer (`ui/marks.rs`); the
+                            // shell's own (a Bot's settings dialog) are drawn
+                            // with it.
+                            app.step_marks(cx);
+                        }
                         // What the regions show of a run's time ("Working
                         // for 12s", a habit's run) moves once a second.
                         if running && second {
                             app.redraw_run_clocks(cx);
                         }
                     }
-                    let next = if let Some(next) = idle {
-                        next.min(CLOCK_TICK)
-                    } else if !running {
-                        CLOCK_TICK
-                    } else if app.alerts.window_active && app.running_thread_in_view() {
-                        crate::ui::spinner::WATCHED_FRAME
-                    } else {
-                        // The rail's busy figures show over the views too.
-                        crate::ui::spinner::FRAME
-                    };
+                    crate::ui::marks::arm_busy_wake(step.arm_busy_wake);
                     // The floating chat follows the app's notifies; a step
                     // that did not notify the app reaches it here.
-                    let float = (!countdown && (running || idle.is_some()))
+                    let float = (!countdown && !woken_by_busy && (running || idle.is_some()))
                         .then(|| app.bot_float_window())
                         .flatten();
-                    (next, float)
+                    (step.wait, step.arm_busy_wake, float)
                 });
                 match ticked {
-                    Ok((next, float)) => {
+                    Ok((next, next_arm, float)) => {
                         wait = next;
+                        arm_wake = next_arm;
                         if let Some(float) = float {
                             let stepped = float.update(cx, |float, _, cx| {
                                 if float.refresh(cx) {
@@ -787,5 +848,104 @@ impl BenCodeApp {
                 )
                 .into_any_element(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::{CLOCK_TICK, ClockStep, clock_step};
+    use crate::ui::spinner::{FRAME, WATCHED_FRAME};
+
+    #[test]
+    fn clock_steps_for_busy_marks_even_with_no_agent_running() {
+        let step_wait = Duration::from_millis(41);
+        assert_eq!(
+            clock_step(false, false, true, false, None, false, step_wait),
+            ClockStep {
+                step_marks: true,
+                wait: step_wait,
+                arm_busy_wake: false,
+            }
+        );
+        // Woken right after the first paint of a new busy mark: wait until
+        // the next 80ms frame edge instead of redrawing the same frame twice.
+        assert_eq!(
+            clock_step(false, false, true, false, None, true, step_wait),
+            ClockStep {
+                step_marks: false,
+                wait: step_wait,
+                arm_busy_wake: false,
+            }
+        );
+    }
+
+    #[test]
+    fn clock_stays_idle_without_busy_marks_and_arms_early_wake() {
+        let step_wait = FRAME;
+        assert_eq!(
+            clock_step(false, false, false, false, None, false, step_wait),
+            ClockStep {
+                step_marks: false,
+                wait: CLOCK_TICK,
+                arm_busy_wake: true,
+            }
+        );
+        let idle = Duration::from_millis(500);
+        assert_eq!(
+            clock_step(false, false, false, false, Some(idle), false, step_wait),
+            ClockStep {
+                step_marks: true,
+                wait: idle,
+                arm_busy_wake: true,
+            }
+        );
+        // A busy mark overrides a slower idle figure schedule.
+        assert_eq!(
+            clock_step(false, false, true, false, Some(idle), false, step_wait),
+            ClockStep {
+                step_marks: true,
+                wait: step_wait,
+                arm_busy_wake: false,
+            }
+        );
+    }
+
+    #[test]
+    fn clock_honours_reduced_motion_and_running_agents() {
+        let step_wait = Duration::from_millis(60);
+        assert_eq!(
+            clock_step(
+                false,
+                false,
+                true,
+                true,
+                Some(Duration::from_millis(200)),
+                false,
+                step_wait
+            ),
+            ClockStep {
+                step_marks: false,
+                wait: CLOCK_TICK,
+                arm_busy_wake: false,
+            }
+        );
+        assert_eq!(
+            clock_step(true, true, true, false, None, false, step_wait),
+            ClockStep {
+                step_marks: true,
+                wait: WATCHED_FRAME,
+                arm_busy_wake: false,
+            }
+        );
+        assert_eq!(
+            clock_step(true, false, true, false, None, false, step_wait),
+            ClockStep {
+                step_marks: true,
+                wait: step_wait,
+                arm_busy_wake: false,
+            }
+        );
     }
 }

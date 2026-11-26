@@ -134,7 +134,7 @@ pub fn terminal_spinner(color: Hsla, cx: &App) -> impl IntoElement {
                 // where a tile or an icon slot centres the box.
                 .text_align(TextAlign::Center)
                 .text_color(color)
-                .child(frame_at(epoch().elapsed(), cx.reduce_motion()))
+                .child(frame_at(epoch().elapsed(), still(cx)))
                 .into_any_element()
         },
         cx,
