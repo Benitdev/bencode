@@ -6,6 +6,24 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-26
+
+- Simplified the prompt composer layout with quieter borderless toolbar chips,
+  neutral disabled Send styling, and workspace controls placed cleanly above
+  the centred empty-thread prompt.
+- Unified selected and hover row backgrounds across frosted popovers, pickers,
+  context menus, command palettes and lists (`Fill::Selected` / `Fill::Hover`),
+  removed extra top padding on terminals moved into file pane tabs, and
+  optically aligned activity fold and step icons with 14px row text.
+- Preserved unsent composer drafts on their original thread during navigation,
+  clarified pending agent requests in "Needs you" and actual turn outcomes
+  (leaving Bots and habits out of "Needs you" and unseen outcomes), identified
+  each review tab's source with a direct link from mixed changes to the
+  working-tree diff, stepped busy marks smoothly when idle, and kept unfinished
+  tasks still once a turn ends.
+- Computer Use now refuses macOS Accessibility control of BenCode's own windows
+  so background calls cannot call AppKit window APIs off the main thread.
+
 ## [0.2.0] - 2026-11-25
 
 - Local agents can use the macOS desktop after you enable Computer Use in
