@@ -8,6 +8,7 @@ tagging (`docs/releasing.md`).
 
 - Chat wallpaper fades into the pane below the artwork. Haze keeps the top
   sharp and gradually softens it, including when resizing split chats.
+- The terminal now hides text marked with ANSI Conceal on translucent backgrounds.
 
 ## [0.2.1] - 2026-11-26
 

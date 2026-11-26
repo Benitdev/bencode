@@ -82,13 +82,14 @@ pub(crate) fn frame<T: EventListener>(
     for indexed in content.display_iter {
         let (point, cell) = (indexed.point, indexed.cell);
         let row = (point.line.0 + offset) as usize;
-        let spacer = cell
+        // A concealed cell still occupies its column and paints its background.
+        let blank = cell
             .flags
-            .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER);
+            .intersects(Flags::HIDDEN | Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER);
         let look = style(cell, ink, content.colors);
         let cluster = cell
             .zerowidth()
-            .filter(|marks| !marks.is_empty())
+            .filter(|marks| !blank && !marks.is_empty())
             .map(|marks| {
                 std::iter::once(cell.c)
                     .chain(marks.iter().copied())
@@ -96,7 +97,7 @@ pub(crate) fn frame<T: EventListener>(
             });
         push(
             &mut rows[row],
-            if spacer || cluster.is_some() {
+            if blank || cluster.is_some() {
                 ' '
             } else {
                 cell.c
@@ -160,16 +161,14 @@ fn style(cell: &Cell, ink: &Ink, set: &Colors) -> Style {
     if flags.contains(Flags::DIM) {
         fg = fg.opacity(0.7);
     }
-    if flags.contains(Flags::HIDDEN) {
-        fg = bg;
-    }
+    let visible = !flags.contains(Flags::HIDDEN);
     Style {
         fg,
         bg: (bg != ink.bg).then_some(bg),
         bold: flags.contains(Flags::BOLD),
         italic: flags.contains(Flags::ITALIC),
-        underline: flags.intersects(Flags::ALL_UNDERLINES),
-        strike: flags.contains(Flags::STRIKEOUT),
+        underline: visible && flags.intersects(Flags::ALL_UNDERLINES),
+        strike: visible && flags.contains(Flags::STRIKEOUT),
     }
 }
 
@@ -209,5 +208,27 @@ mod tests {
             shown.rows[0].text.chars().take(3).collect::<String>(),
             "中 a"
         );
+    }
+
+    #[test]
+    fn concealed_cells_paint_only_their_background() {
+        let term = replayed("A\x1b[8;4;9me\u{301}中\x1b[41mX\x1b[28mB".as_bytes());
+        let shown = frame(&term, &ink(), &[], None);
+        let row = &shown.rows[0];
+        assert!(row.text.starts_with("A    B"));
+        assert!(row.clusters.is_empty());
+        let styles: Vec<_> = row
+            .runs
+            .iter()
+            .flat_map(|(len, style)| std::iter::repeat_n(style, *len))
+            .collect();
+        assert_eq!(styles[1].bg, None);
+        assert_eq!(styles[4].bg, Some(gpui::red()));
+        assert!(
+            styles[1..=4]
+                .iter()
+                .all(|style| !style.underline && !style.strike)
+        );
+        assert!(styles[5].underline && styles[5].strike);
     }
 }
