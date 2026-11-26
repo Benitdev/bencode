@@ -6,6 +6,9 @@ tagging (`docs/releasing.md`).
 
 ## [Unreleased]
 
+- Chat wallpaper fades into the pane below the artwork. Haze keeps the top
+  sharp and gradually softens it, including when resizing split chats.
+
 ## [0.2.1] - 2026-11-26
 
 - Simplified the prompt composer layout with quieter borderless toolbar chips,

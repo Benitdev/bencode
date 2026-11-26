@@ -3,6 +3,8 @@
 //! The tree is the shell's; each pane is a region of its own
 //! (`ui/region.rs`), drawn by `render_session_pane`.
 
+use std::time::Duration;
+
 use bencode_ui::buttons::{ButtonVariant, IconButton};
 use bencode_ui::feedback::EmptyState;
 use bencode_ui::layout::SplitPane;
@@ -10,8 +12,8 @@ use bencode_ui::primitives::{DragGhost, Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, Axis, Context, DragMoveEvent, FollowMode, IntoElement, ListState, MouseButton,
-    ObjectFit, ParentElement, SharedString, Stateful, Styled, div, img, list,
+    Animation, AnimationExt as _, AnyElement, Axis, Context, DragMoveEvent, FollowMode,
+    IntoElement, ListState, MouseButton, ParentElement, SharedString, Stateful, Styled, div, list,
 };
 
 use crate::app::BenCodeApp;
@@ -193,7 +195,7 @@ impl BenCodeApp {
         let empty = !session.blocks.iter().any(|b| b.role == "user");
         let frame = self
             .with_pane_listeners(frame, session_id, cx)
-            .children(self.render_chat_background(session_id, empty))
+            .children(self.render_chat_background(session_id, empty, cx))
             .when(in_split, |el| {
                 el.child(self.render_pane_header(session, is_focused, cx))
             });
@@ -223,25 +225,39 @@ impl BenCodeApp {
             .into_any_element()
     }
 
-    /// The chat background behind the floating pane card, rounded directly on
-    /// the `img` element so GPUI's sprite shader clips all four corners cleanly
-    /// (`overflow_hidden` clips to a rectangle only).
-    fn render_chat_background(&self, session_id: &str, session_empty: bool) -> Option<AnyElement> {
+    /// The cover-cropped artwork behind the pane's content.
+    fn render_chat_background(
+        &self,
+        session_id: &str,
+        session_empty: bool,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
         // A Bot's own image covers its chat (MonoCode `monoChatBackground`).
-        let own = self.bot_background_for(session_id);
-        let (image, opacity) = own
-            .clone()
-            .or_else(|| self.chat_background_for(session_empty))?;
-        Some(
-            img(image)
-                .absolute()
-                .inset_0()
-                .size_full()
-                .rounded(px(PANEL_RADIUS - 1.0))
-                .object_fit(ObjectFit::Cover)
-                .opacity(opacity)
-                .into_any_element(),
-        )
+        let (image, opacity, haze) = self
+            .bot_background_for(session_id)
+            .map(|(image, opacity)| (image, opacity, true))
+            .or_else(|| {
+                let (image, opacity) = self.chat_background_for(session_empty)?;
+                Some((image, opacity, self.chat_background.uses_haze()))
+            })?;
+        let artwork = crate::ui::chat_background::artwork(
+            image,
+            opacity,
+            px(PANEL_RADIUS - 1.0),
+            session_empty,
+            haze,
+        );
+        Some(if crate::ui::spinner::still(cx) {
+            artwork.into_any_element()
+        } else {
+            artwork
+                .with_animation(
+                    "chat-background-entrance",
+                    Animation::new(Duration::from_millis(240)),
+                    move |artwork, t| artwork.opacity(opacity * (1.0 - (1.0 - t) * (1.0 - t))),
+                )
+                .into_any_element()
+        })
     }
 
     /// Focus on click, pane docking and file attachment drops. Drag-move

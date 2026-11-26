@@ -41,5 +41,9 @@ artifacts) stay visible behind dialogs and never clip GPUI tooltips/popovers:
   cutout is present (even in Light mode), and supplies a dark frosted backing
   in `backdrop_composite_fragment` where frosted popups overlap a cutout.
 
+Chat backgrounds use `chat_background_corners` to mark a sprite. The image
+shader applies the pane-relative fade and Haze after GPUI cover-crops the art,
+in the same draw as the image.
+
 Everything else is the crates.io source unchanged. To move to a new
 gpui-pre, copy its `gpui-pre-apple` here and carry those changes over.

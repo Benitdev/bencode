@@ -7,8 +7,9 @@ use anyhow::{Context as _, Result};
 use block2::RcBlock;
 use core_graphics::geometry::CGSize;
 use gpui::{
-    AtlasTextureId, Background, Bounds, ContentMask, DevicePixels, Hsla, PaintSurface, Path, Point,
-    PrimitiveBatch, Quad, ScaledPixels, Scene, Size, point, size,
+    AtlasTextureId, Background, Bounds, ContentMask, Corners, DevicePixels, Hsla, PaintSurface,
+    Path, Pixels, Point, PolychromeSprite, PrimitiveBatch, Quad, ScaledPixels, Scene, Size, point,
+    size,
 };
 #[cfg(any(test, feature = "bench-support", feature = "test-support"))]
 use image::RgbaImage;
@@ -168,6 +169,8 @@ pub struct MetalRenderer {
     underlines_pipeline_state: metal::RenderPipelineState,
     monochrome_sprites_pipeline_state: metal::RenderPipelineState,
     polychrome_sprites_pipeline_state: metal::RenderPipelineState,
+    chat_background_pipeline_state: Option<metal::RenderPipelineState>,
+    chat_background_library: Option<metal::Library>,
     surfaces_pipeline_state: metal::RenderPipelineState,
     backdrop_composite_pipeline_state: metal::RenderPipelineState,
     /// `MPSImageGaussianBlur` kernels by sigma, most recently used last.
@@ -498,6 +501,8 @@ impl MetalRenderer {
             underlines_pipeline_state,
             monochrome_sprites_pipeline_state,
             polychrome_sprites_pipeline_state,
+            chat_background_pipeline_state: None,
+            chat_background_library: Some(library),
             surfaces_pipeline_state,
             backdrop_composite_pipeline_state,
             backdrop_kernels: Vec::new(),
@@ -1008,7 +1013,8 @@ impl MetalRenderer {
                 PrimitiveBatch::PolychromeSprites { texture_id, range } => self
                     .draw_polychrome_sprites(
                         texture_id,
-                        range,
+                        &scene.polychrome_sprites[range.clone()],
+                        range.start,
                         instance_bindings,
                         viewport_size,
                         command_encoder,
@@ -1555,14 +1561,15 @@ impl MetalRenderer {
     }
 
     fn draw_polychrome_sprites(
-        &self,
+        &mut self,
         texture_id: AtlasTextureId,
-        sprites: Range<usize>,
+        batch: &[PolychromeSprite],
+        first_sprite: usize,
         instance_bindings: &InstanceBindings,
         viewport_size: Size<DevicePixels>,
         command_encoder: &metal::RenderCommandEncoderRef,
     ) {
-        if sprites.is_empty() {
+        if batch.is_empty() {
             return;
         }
 
@@ -1573,7 +1580,6 @@ impl MetalRenderer {
             DevicePixels(texture.width() as i32),
             DevicePixels(texture.height() as i32),
         );
-        command_encoder.set_render_pipeline_state(&self.polychrome_sprites_pipeline_state);
         command_encoder.set_vertex_buffer(
             SpriteInputIndex::Vertices as u64,
             Some(&self.unit_vertices),
@@ -1601,13 +1607,36 @@ impl MetalRenderer {
         );
         command_encoder.set_fragment_texture(SpriteInputIndex::AtlasTexture as u64, Some(&texture));
 
-        command_encoder.draw_primitives_instanced_base_instance(
-            metal::MTLPrimitiveType::Triangle,
-            0,
-            6,
-            sprites.len() as u64,
-            sprites.start as u64,
-        );
+        let is_background = |sprite: &PolychromeSprite| sprite.corner_radii.top_left.0 < 0.0;
+        let mut start = first_sprite;
+        for group in batch.chunk_by(|a, b| is_background(a) == is_background(b)) {
+            // Keep the ordinary image shader fast and defer the wallpaper
+            // pipeline until the first frame that actually needs it.
+            let pipeline = if is_background(&group[0]) {
+                self.chat_background_pipeline_state.get_or_insert_with(|| {
+                    let library = self.chat_background_library.take().expect("shader library");
+                    build_pipeline_state(
+                        &self.device,
+                        &library,
+                        "chat_background",
+                        "polychrome_sprite_vertex",
+                        "chat_background_fragment",
+                        MTLPixelFormat::BGRA8Unorm,
+                    )
+                })
+            } else {
+                &self.polychrome_sprites_pipeline_state
+            };
+            command_encoder.set_render_pipeline_state(pipeline);
+            command_encoder.draw_primitives_instanced_base_instance(
+                metal::MTLPrimitiveType::Triangle,
+                0,
+                6,
+                group.len() as u64,
+                start as u64,
+            );
+            start += group.len();
+        }
     }
 
     fn draw_surfaces(
@@ -1802,6 +1831,17 @@ fn build_pipeline_state(
         .expect("could not create render pipeline state")
 }
 
+/// Mark a wallpaper sprite for pane-relative fading and optional Haze.
+/// Radius must be positive. GPUI passes the signs through to the sprite shader,
+/// which reads the flags and clamps the restored radii to the sprite bounds.
+pub fn chat_background_corners(radius: Pixels, empty: bool, haze: bool) -> Corners<Pixels> {
+    Corners {
+        top_left: -radius,
+        top_right: if empty { -radius } else { radius },
+        bottom_left: if haze { -radius } else { radius },
+        bottom_right: radius,
+    }
+}
 
 // BenCode: transparent cutout for native views layered behind GPUI (e.g. an
 // in-app browser WKWebView). A quad marked with this border colour (with a

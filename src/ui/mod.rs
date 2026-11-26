@@ -13,6 +13,7 @@ pub mod bots;
 pub mod browser_pane;
 pub mod browser_sign_in;
 pub mod buttons;
+mod chat_background;
 pub mod caret_follow;
 pub mod composer;
 pub mod definition_picker;

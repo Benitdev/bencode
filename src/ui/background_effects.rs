@@ -1,8 +1,7 @@
 //! MonoCode `features/settings/model/newThreadBackgroundEffects.worker.ts`:
 //! the chat background redrawn as Dither, ASCII, Halftone or Scanlines, one
-//! pixel for one. Haze is MonoCode's `.gradient-blur-background` CSS (two
-//! blurred copies under vertical masks, fading into the background), which
-//! GPUI cannot composite, so it is baked into the image here.
+//! pixel for one. On macOS, the Metal sprite shader handles Haze after
+//! cover cropping. Other platforms bake the blur and fade into the image.
 //!
 //! Pure pixel work on RGBA bytes; `app/chat_background.rs` runs it on the
 //! background executor.
@@ -70,6 +69,7 @@ impl Source {
 pub fn render(source: &Source, effect: BackgroundEffect, light: bool) -> Vec<u8> {
     match effect {
         BackgroundEffect::None => source.pixels.clone(),
+        BackgroundEffect::GradientBlur if cfg!(target_os = "macos") => source.pixels.clone(),
         BackgroundEffect::Dither => dither(source),
         BackgroundEffect::Ascii => ascii(source, light),
         BackgroundEffect::Halftone => halftone(source, light),

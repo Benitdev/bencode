@@ -7,8 +7,8 @@ use bencode_ui::overlays::Dialog;
 use bencode_ui::primitives::IconName;
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
-    AnyElement, Context, InteractiveElement, IntoElement, ObjectFit, ParentElement,
-    StatefulInteractiveElement, Styled, StyledImage, div, img, prelude::*, rgb,
+    AnyElement, Context, InteractiveElement, IntoElement, ParentElement,
+    StatefulInteractiveElement, Styled, div, prelude::*, rgb,
 };
 
 use crate::app::BenCodeApp;
@@ -28,6 +28,7 @@ impl BenCodeApp {
         let busy = self.bot_backgrounds.busy;
         let fg = cx.theme().colors.fg;
         let red_400: gpui::Hsla = rgb(crate::ui::tokens::RED_400).into();
+        let radius = px(12.0);
 
         // `overflow-hidden rounded-xl border border-content/10
         // bg-background-base`, `h-40`.
@@ -36,19 +37,18 @@ impl BenCodeApp {
             .h(px(160.0))
             .w_full()
             .overflow_hidden()
-            .rounded(px(12.0))
+            .rounded(radius)
             .border_1()
             .border_color(fg.fill(Fill::Strong))
             .bg(cx.theme().colors.bg)
             .map(|el| match self.bot_background_image(&id) {
-                Some(image) => el.child(
-                    img(image)
-                        .absolute()
-                        .inset_0()
-                        .size_full()
-                        .object_fit(ObjectFit::Cover)
-                        .opacity(CHAT_BACKGROUND_OPACITY_DEFAULT),
-                ),
+                Some(image) => el.child(crate::ui::chat_background::artwork(
+                    image,
+                    CHAT_BACKGROUND_OPACITY_DEFAULT,
+                    radius,
+                    true,
+                    true,
+                )),
                 None if has_image => el,
                 None => el
                     .flex()

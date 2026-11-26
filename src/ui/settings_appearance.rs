@@ -9,8 +9,8 @@ use bencode_ui::primitives::{Icon, IconName, Tooltip, raise};
 use bencode_ui::settings::{Appearance, ThemeSelector};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
-    Anchor, Context, Hsla, IntoElement, MouseButton, ObjectFit, ParentElement, SharedString,
-    Styled, anchored, div, img, point, prelude::*,
+    Anchor, Context, Hsla, IntoElement, MouseButton, ParentElement, SharedString, Styled, anchored,
+    div, point, prelude::*,
 };
 
 use crate::app::BenCodeApp;
@@ -493,6 +493,7 @@ impl BenCodeApp {
         let busy = state.busy;
         let empty_percent = (prefs.empty_opacity * 100.0).round();
         let session_percent = (prefs.session_opacity * 100.0).round();
+        let radius = px(8.0);
         // `h-36 overflow-hidden rounded-lg border border-content/10`
         let frame = div()
             .id("chat-background-preview")
@@ -500,19 +501,18 @@ impl BenCodeApp {
             .h(px(144.0))
             .w_full()
             .overflow_hidden()
-            .rounded(px(8.0))
+            .rounded(radius)
             .border_1()
             .border_color(fg.fill(Fill::Strong));
-        let preview = if has_image {
+        let preview = if let Some(image) = state.image().filter(|_| has_image) {
             frame
-                .children(state.image().map(|image| {
-                    img(image.clone())
-                        .absolute()
-                        .inset_0()
-                        .size_full()
-                        .object_fit(ObjectFit::Cover)
-                        .opacity(prefs.empty_opacity)
-                }))
+                .child(crate::ui::chat_background::artwork(
+                    image.clone(),
+                    prefs.empty_opacity,
+                    radius,
+                    true,
+                    state.uses_haze(),
+                ))
                 .child(
                     // `absolute bottom-2 left-2 text-[11px] text-content/40`
                     div()
@@ -523,6 +523,14 @@ impl BenCodeApp {
                         .text_color(fg.ink(Ink::Muted))
                         .child(format!("Empty chat preview at {empty_percent}%")),
                 )
+        } else if has_image {
+            frame
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(Text::Sm.px())
+                .text_color(fg.ink(Ink::Muted))
+                .when(state.error.is_none(), |el| el.child("Loading preview…"))
         } else {
             // `flex-col items-center justify-center gap-2 text-content/40
             // hover:bg-content/5 hover:text-content/70 disabled:opacity-40`

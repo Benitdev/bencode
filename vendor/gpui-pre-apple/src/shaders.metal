@@ -740,6 +740,87 @@ fragment float4 polychrome_sprite_fragment(
   return color;
 }
 
+// MonoCode GPUI's fade stops, measured after cover cropping.
+float chat_background_fade(float y, bool empty, bool haze) {
+  if (empty) {
+    if (y <= 0.19) return 1.;
+    if (haze) {
+      if (y <= 0.30) return mix(1., 0.94, (y - 0.19) / 0.11);
+      if (y <= 0.42) return mix(0.94, 0.72, (y - 0.30) / 0.12);
+      if (y <= 0.54) return mix(0.72, 0.42, (y - 0.42) / 0.12);
+      if (y <= 0.66) return mix(0.42, 0.16, (y - 0.54) / 0.12);
+      if (y <= 0.78) return mix(0.16, 0.04, (y - 0.66) / 0.12);
+      return mix(0.04, 0., saturate((y - 0.78) / 0.12));
+    }
+    if (y <= 0.30) return mix(1., 0.79, (y - 0.19) / 0.11);
+    if (y <= 0.42) return mix(0.79, 0.50, (y - 0.30) / 0.12);
+    if (y <= 0.54) return mix(0.50, 0.20, (y - 0.42) / 0.12);
+    if (y <= 0.64) return mix(0.20, 0.05, (y - 0.54) / 0.10);
+    return mix(0.05, 0., saturate((y - 0.64) / 0.08));
+  }
+  if (y <= 0.18) return 1.;
+  if (haze) return 1. - saturate((y - 0.18) / 0.58);
+  if (y <= 0.32) return mix(1., 0.61, (y - 0.18) / 0.14);
+  if (y <= 0.47) return mix(0.61, 0.32, (y - 0.32) / 0.15);
+  if (y <= 0.62) return mix(0.32, 0.11, (y - 0.47) / 0.15);
+  return mix(0.11, 0., saturate((y - 0.62) / 0.10));
+}
+
+float4 chat_background_blur(texture2d<float> atlas, sampler atlas_sampler,
+                            AtlasTile tile, float2 uv, float2 pane_size,
+                            float radius, float4 center) {
+  const float2 atlas_size = float2(atlas.get_width(), atlas.get_height());
+  const float2 tile_origin = float2(tile.bounds.origin.x, tile.bounds.origin.y);
+  const float2 tile_size = float2(tile.bounds.size.width, tile.bounds.size.height);
+  // Clamp to texel centers so the kernel cannot pick up adjacent atlas tiles.
+  const float2 lo = (tile_origin + 0.5) / atlas_size;
+  const float2 hi = (tile_origin + max(tile_size - 0.5, 0.5)) / atlas_size;
+  const float2 step = radius * tile_size / (pane_size * atlas_size);
+  // A staggered disk gives Haze soft edges without a separate render pass.
+  const float2 offsets[] = {
+    float2(0.25, 0.15), float2(-0.26, 0.24), float2(-0.08, -0.40),
+    float2(0.38, -0.29), float2(0.13, 0.54), float2(-0.55, -0.16),
+    float2(0.59, 0.28), float2(-0.30, 0.64), float2(-0.29, -0.70),
+    float2(0.75, -0.36), float2(0.25, 0.83), float2(-0.89, 0.17),
+  };
+  float4 sum = float4(center.rgb * center.a, center.a) * 2.;
+  for (uint i = 0; i < 12; ++i) {
+    float4 tap = atlas.sample(atlas_sampler, clamp(uv + offsets[i] * step, lo, hi));
+    sum += float4(tap.rgb * tap.a, tap.a);
+  }
+  return float4(sum.rgb / max(sum.a, 1e-6), sum.a / 14.);
+}
+
+fragment float4 chat_background_fragment(
+    PolychromeSpriteFragmentInput input [[stage_in]],
+    constant PolychromeSprite *sprites [[buffer(SpriteInputIndex_Sprites)]],
+    texture2d<float> atlas_texture [[texture(SpriteInputIndex_AtlasTexture)]]) {
+  PolychromeSprite sprite = sprites[input.sprite_id];
+  constexpr sampler atlas_texture_sampler(mag_filter::linear,
+                                          min_filter::linear);
+  // The signs are reserved by chat_background_corners in metal_renderer.rs.
+  auto corners = sprite.corner_radii;
+  bool empty = corners.top_right < 0.;
+  bool haze = corners.bottom_left < 0.;
+  const float2 pane_size = float2(sprite.bounds.size.width, sprite.bounds.size.height);
+  float y = (input.position.y - sprite.bounds.origin.y) / pane_size.y;
+  float fade = chat_background_fade(y, empty, haze);
+  if (fade <= 0.) return float4(0.);
+  float max_corner = min(pane_size.x, pane_size.y) * 0.5;
+  corners.top_left = min(abs(corners.top_left), max_corner);
+  corners.top_right = min(abs(corners.top_right), max_corner);
+  corners.bottom_left = min(abs(corners.bottom_left), max_corner);
+  float distance = quad_sdf(input.position.xy, sprite.bounds, corners);
+  float4 color = atlas_texture.sample(atlas_texture_sampler, input.tile_position);
+  float radius = haze ? smoothstep(0.18, 0.66, y) * min(max_corner * 0.07, 42.) : 0.;
+  if (radius > 0.5) {
+    color = chat_background_blur(atlas_texture, atlas_texture_sampler, sprite.tile,
+                                 input.tile_position, pane_size, radius, color);
+  }
+  color.a *= sprite.opacity * fade * saturate(0.5 - distance);
+  return color;
+}
+
 struct PathRasterizationVertexOutput {
   float4 position [[position]];
   float2 st_position;

@@ -48,6 +48,12 @@ impl ChatBackground {
     pub fn image(&self) -> Option<&Arc<RenderImage>> {
         self.image.as_ref()
     }
+
+    pub fn uses_haze(&self) -> bool {
+        self.shown
+            .as_ref()
+            .is_some_and(|key| key.effect == BackgroundEffect::GradientBlur)
+    }
 }
 
 /// BenCode's `backgrounds` folder, beside `settings.json`.

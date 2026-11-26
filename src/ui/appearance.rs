@@ -239,7 +239,7 @@ impl BackgroundEffect {
 
     /// Whether the effect is drawn differently in the light theme.
     pub fn follows_theme(self) -> bool {
-        !matches!(self, BackgroundEffect::None | BackgroundEffect::Dither)
+        matches!(self, Self::Ascii | Self::Halftone | Self::Scanlines)
     }
 }
 
