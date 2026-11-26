@@ -30,6 +30,10 @@ use crate::ui::transcript::selection::OwnsPress;
 /// MonoCode fades a step in as it lands (`zen-step-in`).
 const STEP_ENTRANCE: Duration = Duration::from_millis(180);
 const ICON_BOX: f32 = 14.0;
+/// Optical vertical nudge for `ICON_BOX` beside `Text::Lg` (14px): GPUI
+/// centers `ascent + descent`, which includes diacritic headroom above cap
+/// height, leaving a geometrically centered icon ~1px above the glyph center.
+const ICON_OPTICAL_Y: f32 = 1.0;
 
 fn muted(color: Hsla, opacity: f32) -> Hsla {
     color.opacity(opacity)
@@ -58,6 +62,8 @@ fn small_icon(icon: IconName, color: Hsla) -> AnyElement {
 /// the `ml(7px)` fold rail and vertically with the row's text.
 fn icon_box(icon: AnyElement) -> gpui::Div {
     div()
+        .relative()
+        .top(px(ICON_OPTICAL_Y))
         .flex()
         .flex_none()
         .items_center()
@@ -76,6 +82,7 @@ fn icon_slot(icon: AnyElement, open: bool, expandable: bool, group: &str, cx: &A
     let hover_group = group.clone();
     div()
         .relative()
+        .top(px(ICON_OPTICAL_Y))
         .flex()
         .flex_none()
         .items_center()
