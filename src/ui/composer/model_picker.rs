@@ -802,6 +802,7 @@ impl BenCodeApp {
         let chip = super::composer_chip(
             id,
             HarnessIcon::new(harness).size(px(16.0)).into_any_element(),
+            px(16.0),
             catalog::display_label(harness, model),
             None,
             open,

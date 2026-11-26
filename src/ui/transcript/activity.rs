@@ -11,10 +11,11 @@ use bencode_ui::primitives::{Icon, IconName};
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Hsla, InteractiveElement, IntoElement,
-    ParentElement, SharedString, Styled, div, prelude::*, relative,
+    ParentElement, Pixels, SharedString, Styled, div, prelude::*, relative,
 };
 
-use crate::ui::scale::px;
+use crate::ui::baseline::{self, Line};
+use crate::ui::scale::{px, ui_scale};
 use crate::ui::spinner;
 
 use super::blocks::markdown;
@@ -30,10 +31,38 @@ use crate::ui::transcript::selection::OwnsPress;
 /// MonoCode fades a step in as it lands (`zen-step-in`).
 const STEP_ENTRANCE: Duration = Duration::from_millis(180);
 const ICON_BOX: f32 = 14.0;
-/// Optical vertical nudge for `ICON_BOX` beside `Text::Lg` (14px): GPUI
-/// centers `ascent + descent`, which includes diacritic headroom above cap
-/// height, leaving a geometrically centered icon ~1px above the glyph center.
-const ICON_OPTICAL_Y: f32 = 1.0;
+/// `IconSize::Xs`, the rows' small icons, at 100%.
+const SMALL_ICON: f32 = 12.0;
+/// The text a row's leading icon lines up with: the tallest in the row,
+/// so its line box starts at the row's top.
+#[derive(Clone, Copy)]
+struct RowText {
+    size: Text,
+    mono: bool,
+    /// The line height at 100%, or `None` for GPUI's default.
+    line: Option<f32>,
+}
+
+impl RowText {
+    /// The work rows' dim label (`dim_label`, a tool's verb).
+    const LABEL: Self = Self {
+        size: Text::Lg,
+        mono: false,
+        line: None,
+    };
+    /// A tool's target, in a row with no verb.
+    const TARGET: Self = Self {
+        size: Text::Md,
+        mono: true,
+        line: None,
+    };
+    /// A Bot's name in its pill (`bot::signature_name`).
+    const BOT_NAME: Self = Self {
+        size: Text::Lg,
+        mono: false,
+        line: Some(20.0),
+    };
+}
 
 fn muted(color: Hsla, opacity: f32) -> Hsla {
     color.opacity(opacity)
@@ -58,60 +87,90 @@ fn small_icon(icon: IconName, color: Hsla) -> AnyElement {
         .into_any_element()
 }
 
-/// Centered 14×14 slot for a row's leading icon so it aligns horizontally with
-/// the `ml(7px)` fold rail and vertically with the row's text.
-fn icon_box(icon: AnyElement) -> gpui::Div {
+/// How far below the row's top an icon `height` tall (at 100%) starts, in
+/// line with `text`, whose line box starts at the row's top
+/// (`ui::baseline`: centred, it drifted a pixel from one scale to the next).
+fn icon_top(text: RowText, height: f32, cx: &App) -> Pixels {
+    let theme = cx.theme();
+    let family = if text.mono {
+        &theme.mono_family
+    } else {
+        &theme.font_family
+    };
+    let size = text.size.px();
+    let line = Line {
+        family,
+        size,
+        height: text.line.map_or(size * baseline::PHI, px),
+    };
+    line.icon_top(baseline::round(line.baseline(cx)), px(height))
+}
+
+/// The 14px-wide slot for a row's leading icon, `height` tall at 100%: in
+/// line with the `ml(7px)` fold rail and, vertically, with `text`.
+fn icon_box(icon: AnyElement, height: f32, text: RowText, cx: &App) -> gpui::Div {
     div()
-        .relative()
-        .top(px(ICON_OPTICAL_Y))
         .flex()
         .flex_none()
-        .items_center()
+        .self_start()
+        .mt(icon_top(text, height, cx))
         .justify_center()
-        .size(px(ICON_BOX))
+        .w(px(ICON_BOX))
+        .h(px(height))
         .child(icon)
 }
 
 /// The 14px slot that shows an icon, or a chevron on hover / when open.
-fn icon_slot(icon: AnyElement, open: bool, expandable: bool, group: &str, cx: &App) -> AnyElement {
+fn icon_slot(
+    icon: AnyElement,
+    open: bool,
+    expandable: bool,
+    group: &str,
+    text: RowText,
+    cx: &App,
+) -> AnyElement {
     let chevron = muted(cx.theme().colors.fg, 0.45);
     if open {
-        return icon_box(small_icon(IconName::ChevronDown, chevron)).into_any_element();
+        return icon_box(
+            small_icon(IconName::ChevronDown, chevron),
+            SMALL_ICON,
+            text,
+            cx,
+        )
+        .into_any_element();
     }
     let group = SharedString::from(group.to_string());
     let hover_group = group.clone();
-    div()
-        .relative()
-        .top(px(ICON_OPTICAL_Y))
-        .flex()
-        .flex_none()
-        .items_center()
-        .justify_center()
-        .size(px(ICON_BOX))
-        .child(
+    icon_box(
+        div()
+            .when(expandable, |el| {
+                el.group_hover(hover_group, |s| s.opacity(0.0))
+            })
+            .child(icon)
+            .into_any_element(),
+        ICON_BOX,
+        text,
+        cx,
+    )
+    .relative()
+    .when(expandable, |el| {
+        // The chevron a whole number of pixels into the slot, so it
+        // rounds as the slot does.
+        let inset = ((ICON_BOX - SMALL_ICON) / 2.0 * ui_scale()).round();
+        el.child(
             div()
+                .absolute()
+                .top(gpui::px(inset))
+                .left_0()
                 .flex()
-                .items_center()
                 .justify_center()
-                .when(expandable, |el| {
-                    el.group_hover(hover_group, |s| s.opacity(0.0))
-                })
-                .child(icon),
+                .w_full()
+                .opacity(0.0)
+                .group_hover(group, |s| s.opacity(1.0))
+                .child(small_icon(IconName::ChevronRight, chevron)),
         )
-        .when(expandable, |el| {
-            el.child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .opacity(0.0)
-                    .group_hover(group, |s| s.opacity(1.0))
-                    .child(small_icon(IconName::ChevronRight, chevron)),
-            )
-        })
-        .into_any_element()
+    })
+    .into_any_element()
 }
 
 /// Text in the dim 14px voice of the work rows; brighter on hover.
@@ -210,7 +269,14 @@ impl BenCodeApp {
             .gap_1p5()
             .px_4()
             .py_1()
-            .child(icon_slot(icon, open, expandable, &group, cx))
+            .child(icon_slot(
+                icon,
+                open,
+                expandable,
+                &group,
+                RowText::LABEL,
+                cx,
+            ))
             .child(label);
         if !expandable {
             return row.into_any_element();
@@ -254,7 +320,14 @@ impl BenCodeApp {
         let shown = self.bot_activity_shown(&session.id) == Some(turn_id.as_str());
         let mark = crate::ui::figure::figure_still(bot.figure(), ICON_BOX, self.bot_color(bot));
         let pill = bot::signature_pill(
-            icon_slot(mark, open || shown, expandable, &group, cx),
+            icon_slot(
+                mark,
+                open || shown,
+                expandable,
+                &group,
+                RowText::BOT_NAME,
+                cx,
+            ),
             bot::signature_name(bot.display_name(), cx),
             cx,
         );
@@ -492,7 +565,7 @@ impl BenCodeApp {
                     cx,
                 );
             }))
-            .child(icon_slot(icon, false, true, &group, cx))
+            .child(icon_slot(icon, false, true, &group, RowText::LABEL, cx))
             .child(label);
         div()
             .min_w_0()
@@ -543,10 +616,12 @@ impl BenCodeApp {
                     .items_center()
                     .gap_1p5()
                     .py_1()
-                    .child(icon_box(small_icon(
-                        icon,
-                        muted(cx.theme().colors.fg, 0.45),
-                    )))
+                    .child(icon_box(
+                        small_icon(icon, muted(cx.theme().colors.fg, 0.45)),
+                        SMALL_ICON,
+                        RowText::LABEL,
+                        cx,
+                    ))
                     .child(label)
                     .into_any_element(),
                 None => label,
@@ -615,7 +690,12 @@ impl BenCodeApp {
                 );
             }))
             .when_some(leading_icon, |el, icon| {
-                el.child(icon_box(small_icon(icon, muted(fg, 0.45))))
+                el.child(icon_box(
+                    small_icon(icon, muted(fg, 0.45)),
+                    SMALL_ICON,
+                    RowText::LABEL,
+                    cx,
+                ))
             })
             .child(dim_label(summary, &group, cx));
         div()
@@ -663,6 +743,11 @@ impl BenCodeApp {
             muted(colors.fg, 0.7)
         };
         let mono_font = cx.theme().mono_family.clone();
+        let row_text = if verb.is_some() {
+            RowText::LABEL
+        } else {
+            RowText::TARGET
+        };
         let row = div()
             .id(SharedString::from(format!("tool-row-{key}")))
             .flex()
@@ -690,7 +775,12 @@ impl BenCodeApp {
                     }))
             })
             .when_some(leading_icon, |el, icon| {
-                el.child(icon_box(small_icon(icon, muted(colors.fg, 0.45))))
+                el.child(icon_box(
+                    small_icon(icon, muted(colors.fg, 0.45)),
+                    SMALL_ICON,
+                    row_text,
+                    cx,
+                ))
             })
             .when_some(verb, |el, verb| {
                 el.child(

@@ -4,6 +4,7 @@ pub mod artifacts;
 pub mod attachment_chip;
 pub mod automations;
 pub mod background_effects;
+pub mod baseline;
 pub mod bot_background;
 pub mod bot_digest;
 pub mod bot_float;

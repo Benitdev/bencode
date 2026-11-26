@@ -251,6 +251,7 @@ impl BenCodeApp {
             HarnessIcon::new(&session.harness)
                 .size(px(16.0))
                 .into_any_element(),
+            px(16.0),
             "Choose another model".to_string(),
             None,
             open,

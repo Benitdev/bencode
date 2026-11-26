@@ -47,6 +47,7 @@ use crate::db::SessionRow;
 use crate::harness::{HarnessKind, catalog};
 use crate::ui::HarnessIcon;
 use crate::ui::app_callback::app_callback;
+use crate::ui::baseline::{self, Line};
 use crate::ui::frost::{POPOVER_RADIUS, frost};
 use crate::ui::scale::px;
 use crate::ui::scrollbar;
@@ -62,6 +63,8 @@ pub(crate) const COMPOSER_MAX_WIDTH: f32 = 896.0;
 const PROMPT_MAX_HEIGHT: f32 = 160.0;
 pub const PROMPT_PLACEHOLDER: &str = "Describe a task…  / commands · @ references";
 const COMPOSER_RADIUS: f32 = 14.0;
+/// The model and access chips.
+const CHIP_HEIGHT: f32 = 28.0;
 /// MonoCode `CwdPicker` `PREVIEW`.
 const RECENT_PROJECTS_SHOWN: usize = 5;
 const HARNESS_ORDER: [HarnessKind; 5] = [
@@ -91,9 +94,13 @@ pub enum TokenPicker {
 }
 
 /// Model and access triggers share the toolbar's quiet resting state.
+/// Icon, label, detail and chevron sit on the label's baseline
+/// (`ui::baseline`), not each centred on its own, which left them a pixel
+/// apart at some interface scales.
 fn composer_chip(
     id: &'static str,
     icon: gpui::AnyElement,
+    icon_size: Pixels,
     label: String,
     detail: Option<String>,
     open: bool,
@@ -106,46 +113,65 @@ fn composer_chip(
         colors.fg.fill(Fill::Hover),
         colors.fg.fill(Fill::Selected),
     );
+    let family = &cx.theme().font_family;
+    let height = f32::from(px(CHIP_HEIGHT)).round();
+    let line = Line::new(family, Text::Base.px());
+    let label_top = ((height - f32::from(line.height)) / 2.0).round();
+    let baseline = label_top + baseline::round(line.baseline(cx));
+    let chevron = px(12.0);
     div()
         .id(id)
-        .h(px(28.0))
+        .h(gpui::px(height))
         .max_w(px(max_width))
         .min_w_0()
         .px_2()
         .rounded(px(7.0))
         .flex()
-        .items_center()
+        .items_start()
         .gap_1p5()
         .cursor_pointer()
         .text_color(fg.ink(Ink::Strong))
         .hover(move |s| s.bg(hover).text_color(fg))
         .active(move |s| s.bg(selected))
         .when(open, |el| el.bg(selected).text_color(fg))
-        .child(div().flex_none().child(icon))
+        .child(
+            div()
+                .flex_none()
+                .mt(line.icon_top(baseline, icon_size))
+                .child(icon),
+        )
         .child(
             div()
                 .min_w_0()
+                .mt(gpui::px(label_top))
                 .truncate()
-                .text_size(Text::Base.px())
+                .text_size(line.size)
                 .child(label),
         )
+        // The effort is a word or two: it stays whole and the model's name
+        // gives way first, never both cut to a stub ("GPT-6.2-A… Hi…").
         .children(detail.map(|detail| {
+            let small = Line::new(family, Text::Sm.px());
             div()
-                .min_w_0()
-                .truncate()
-                .text_size(Text::Sm.px())
+                .flex_none()
+                .mt(small.top_for(baseline, cx))
+                .whitespace_nowrap()
+                .text_size(small.size)
                 .text_color(colors.fg.ink(Ink::Secondary))
                 .child(detail)
         }))
         .child(
-            div().flex_none().child(
-                Icon::new(IconName::ChevronDown)
-                    .size(IconSize::Xs)
-                    .color(colors.fg.ink(Ink::Secondary))
-                    .when(open, |icon| {
-                        icon.rotate(gpui::radians(std::f32::consts::PI))
-                    }),
-            ),
+            div()
+                .flex_none()
+                .mt(line.icon_top(baseline, chevron))
+                .child(
+                    Icon::new(IconName::ChevronDown)
+                        .size(IconSize::Xs)
+                        .color(colors.fg.ink(Ink::Secondary))
+                        .when(open, |icon| {
+                            icon.rotate(gpui::radians(std::f32::consts::PI))
+                        }),
+                ),
         )
 }
 
@@ -877,6 +903,7 @@ impl BenCodeApp {
         let model = composer_chip(
             "composer-model-chip",
             HarnessIcon::new(&harness).size(px(16.0)).into_any_element(),
+            px(16.0),
             catalog::label_for(key),
             catalog::effort_setting_for(key, account.as_deref()).map(|effort| {
                 effort
@@ -938,6 +965,7 @@ impl BenCodeApp {
                 .size(IconSize::Xs)
                 .color(perm_color)
                 .into_any_element(),
+            px(12.0),
             perm_label.to_string(),
             None,
             self.popover_open(ComposerPopover::Access),
@@ -948,9 +976,11 @@ impl BenCodeApp {
         .on_click(
             cx.listener(|this, _, _, cx| this.toggle_composer_popover(ComposerPopover::Access, cx)),
         );
+        // Access is short and its colour is a warning: the model chip
+        // shrinks, never this one.
         let access = div()
             .relative()
-            .min_w_0()
+            .flex_none()
             .child(popover_anchor(access, cx))
             .when(
                 focused
@@ -962,7 +992,7 @@ impl BenCodeApp {
             .flex()
             .items_center()
             .px(px(10.0))
-            .pb(px(10.0))
+            .pb(px(8.0))
             .gap_2()
             .child(
                 // Shrinks before Send: the chips' labels truncate.
@@ -1538,6 +1568,7 @@ impl BenCodeApp {
                 .size(IconSize::Xs)
                 .color(color)
                 .into_any_element(),
+            px(12.0),
             label.to_string(),
             None,
             open,
