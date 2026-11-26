@@ -27,7 +27,13 @@ use crate::harness::{
 use crate::ui::composer::cards::ComposerCard;
 use crate::ui::composer::mode_commands::{self, ModeCommand};
 
-const TITLE_PREVIEW_CHARS: usize = 48;
+/// Maximum characters kept when naming a thread from its opening prompt.
+/// Wide headers, tooltips and search rows truncate to their own pixel width;
+/// this only caps pathological multi-kilobyte opening lines.
+pub(crate) const TITLE_MAX_CHARS: usize = 200;
+/// Previous 48-char cap kept so existing stored titles can be recognized and
+/// displayed from the opening user prompt without mutating the database.
+pub(crate) const LEGACY_TITLE_PREVIEW_CHARS: usize = 48;
 const MAX_TOOL_OUTPUT_CHARS: usize = 4_000;
 pub const STOPPED_NOTICE: &str = "Agent execution stopped by user.";
 /// MonoCode `INTERRUPT_MESSAGE` (inFlight.ts), with BenCode's name.
@@ -1677,10 +1683,14 @@ pub fn start_turn(session: &mut SessionRow, prompt: &str, now: i64, files: &[Att
     }
 }
 
-fn title_from_prompt(prompt: &str) -> String {
-    let first_line = prompt.lines().next().unwrap_or(prompt).trim();
-    match first_line.char_indices().nth(TITLE_PREVIEW_CHARS) {
-        Some((cut, _)) => format!("{}…", &first_line[..cut]),
+pub(crate) fn title_from_prompt(prompt: &str) -> String {
+    let first_line = prompt
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or_else(|| prompt.trim());
+    match first_line.char_indices().nth(TITLE_MAX_CHARS) {
+        Some((cut, _)) => format!("{}…", first_line[..cut].trim_end()),
         None => first_line.to_string(),
     }
 }
@@ -2024,6 +2034,13 @@ mod tests {
             s.blocks[0].turn_model.as_ref().unwrap().name.as_deref(),
             Some("Opus")
         );
+
+        let long_prompt = "Ở monocode gpui, khi setting ảnh background ở chat pane thì nền bị tối hơn so với phần còn lại";
+        assert_eq!(title_from_prompt(long_prompt), long_prompt);
+        let huge = "a".repeat(TITLE_MAX_CHARS + 20);
+        let cut = title_from_prompt(&huge);
+        assert!(cut.ends_with('…'));
+        assert_eq!(cut.chars().count(), TITLE_MAX_CHARS + 1);
     }
 
     #[test]

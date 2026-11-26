@@ -14,6 +14,7 @@ use bencode_ui::files::FileIcon;
 use bencode_ui::forms::{code_highlights, json_highlights};
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::typography::Ellipsis;
 use gpui::{
     AnyElement, Context, FontWeight, HighlightStyle, Hsla, InteractiveElement, IntoElement,
     ListAlignment, ListOffset, ListState, ParentElement, Pixels, ScrollEvent, SharedString,
@@ -1070,11 +1071,11 @@ impl BenCodeApp {
                     .tooltip(Tooltip::text(format!("{title}\n{cwd}")))
                     .child(
                         div()
-                            .truncate()
+                            .min_w_0()
                             .text_size(Text::Base.px())
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(colors.fg)
-                            .child(title),
+                            .child(Ellipsis::new(title)),
                     )
                     .child(
                         div()

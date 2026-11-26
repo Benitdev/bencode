@@ -264,7 +264,7 @@ impl Theme {
 
     /// Narrowest and widest window tab.
     pub fn tab_width(&self) -> (Rems, Rems) {
-        (px_to_rems(96.0), px_to_rems(200.0))
+        (px_to_rems(96.0), px_to_rems(280.0))
     }
 
     /// The line that marks a chosen tab.

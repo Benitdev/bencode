@@ -227,7 +227,7 @@ impl BenCodeApp {
                                 .child(
                                     div()
                                         .flex_none()
-                                        .max_w(px(150.0))
+                                        .max_w(px(200.0))
                                         .truncate()
                                         .child(account.label.clone()),
                                 )

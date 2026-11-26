@@ -440,7 +440,7 @@ impl BenCodeApp {
                                     .child(
                                         div()
                                             .flex_none()
-                                            .max_w(px(140.0))
+                                            .max_w(px(200.0))
                                             .truncate()
                                             .child(chip.active_label().to_string()),
                                     )

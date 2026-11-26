@@ -196,15 +196,15 @@ fn thread_hits(tokens: &[String], all: bool, src: &Sources) -> Vec<SearchHit> {
 fn match_thread(tokens: &[String], s: &SessionRow) -> Option<(u8, SearchHit)> {
     // As shown: a linked item's key is found in what was said instead.
     let shown = linked_title(s);
-    if let Some(marks) = find_all(shown, tokens) {
+    if let Some(marks) = find_all(&shown, tokens) {
         let tier = if marks[0].start == 0 {
             0
-        } else if marks.iter().all(|m| word_start(shown, m.start)) {
+        } else if marks.iter().all(|m| word_start(&shown, m.start)) {
             1
         } else {
             2
         };
-        let hit = thread_hit(s, Marked::new(shown.to_string(), marks), place(s));
+        let hit = thread_hit(s, Marked::new(shown.into_owned(), marks), place(s));
         return Some((tier, hit));
     }
     let said = || {
@@ -218,7 +218,7 @@ fn match_thread(tokens: &[String], s: &SessionRow) -> Option<(u8, SearchHit)> {
     // The first token found only in what was said: the excerpt shows it.
     let mut unsaid: Option<&str> = None;
     for token in tokens {
-        if let Some(at) = find_folded(shown, token) {
+        if let Some(at) = find_folded(&shown, token) {
             title_marks.push(at);
         } else if let Some(at) = find_folded(&where_.text, token) {
             place_marks.push(at);

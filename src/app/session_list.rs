@@ -3,6 +3,7 @@
 //! (`sessionDisplayTitle`, `formatGitLabel`, `formatRelative`), the list's
 //! shape (`buildSessionList`) and multi-selection (`sessionSelection.ts`).
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -191,22 +192,53 @@ pub fn without_item_key<'a>(title: &'a str, key: &str) -> &'a str {
     if rest.trim().is_empty() { title } else { rest }
 }
 
+/// Recovers the full opening-prompt line for threads whose stored title was
+/// pre-truncated at the legacy 48-character cap (`LEGACY_TITLE_PREVIEW_CHARS`),
+/// leaving manually renamed titles untouched.
+fn unclip_legacy_title<'a>(session: &SessionRow, title: &'a str) -> Cow<'a, str> {
+    let Some(prefix) = title.strip_suffix('…') else {
+        return Cow::Borrowed(title);
+    };
+    if prefix.chars().count() != crate::app::agent::LEGACY_TITLE_PREVIEW_CHARS {
+        return Cow::Borrowed(title);
+    }
+    let Some(text) = session
+        .blocks
+        .iter()
+        .find(|block| block.role == "user")
+        .and_then(|block| block.text.as_deref())
+    else {
+        return Cow::Borrowed(title);
+    };
+    let full = crate::app::agent::title_from_prompt(text);
+    if full.starts_with(prefix) && full.len() > title.len() {
+        Cow::Owned(full)
+    } else {
+        Cow::Borrowed(title)
+    }
+}
+
 /// A thread's title as shown (`display_title`), without its linked item's
 /// key: the item's badge names it. The stored title keeps it.
 pub fn session_title(session: &SessionRow) -> String {
     let title = display_title(&session.title, &session.harness);
+    let title = unclip_legacy_title(session, &title);
     match &session.linked_work_item {
         Some(item) => without_item_key(&title, &item.identifier()).to_string(),
-        None => title,
+        None => title.into_owned(),
     }
 }
 
 /// The stored title without its linked item's key, for what shows the
 /// title as stored (the tabs, search).
-pub fn linked_title(session: &SessionRow) -> &str {
+pub fn linked_title(session: &SessionRow) -> Cow<'_, str> {
+    let title = unclip_legacy_title(session, &session.title);
     match &session.linked_work_item {
-        Some(item) => without_item_key(&session.title, &item.identifier()),
-        None => &session.title,
+        Some(item) => match title {
+            Cow::Borrowed(s) => Cow::Borrowed(without_item_key(s, &item.identifier())),
+            Cow::Owned(s) => Cow::Owned(without_item_key(&s, &item.identifier()).to_string()),
+        },
+        None => title,
     }
 }
 
@@ -541,6 +573,30 @@ mod tests {
         assert_eq!(without_item_key("#42 Fix the rail", "#42"), "Fix the rail");
         assert_eq!(without_item_key("#421 Fix", "#42"), "#421 Fix");
         assert_eq!(without_item_key("anything", ""), "anything");
+    }
+
+    #[test]
+    fn legacy_48_char_titles_recover_from_first_user_prompt() {
+        let full = "Ở monocode gpui, khi setting ảnh backgrounf ở chat pane thì nền bị tối hơn";
+        let cut_at = full
+            .char_indices()
+            .nth(crate::app::agent::LEGACY_TITLE_PREVIEW_CHARS)
+            .unwrap()
+            .0;
+        let legacy = format!("{}…", &full[..cut_at]);
+        let mut session = SessionRow {
+            title: legacy.clone(),
+            harness: "claude".into(),
+            blocks: vec![crate::db::Block::new("u1", "user", format!("{full}\nline 2")).into()],
+            ..Default::default()
+        };
+        assert_eq!(session_title(&session), full);
+        assert_eq!(linked_title(&session), full);
+
+        // Manually renamed titles ending in `…` stay untouched when they do not match the prompt.
+        session.title = "Custom renamed thread that happens to be long 48…".into();
+        assert_eq!(session_title(&session), session.title);
+        assert_eq!(linked_title(&session), session.title);
     }
 
     #[test]

@@ -606,7 +606,7 @@ impl BenCodeApp {
                     .on_click(cx.listener(move |this, _, _, cx| this.show_entry_submenu(ix, cx)))
                     .child(
                         div()
-                            .max_w(px(112.0))
+                            .max_w(px(160.0))
                             .truncate()
                             .text_color(colors.fg.ink(Ink::Secondary))
                             .child(setting.value_label(values).to_string()),
@@ -625,7 +625,7 @@ impl BenCodeApp {
                     .items_center()
                     .gap_1()
                     .min_w_0()
-                    .max_w(px(144.0))
+                    .max_w(px(196.0))
                     .text_color(colors.fg.ink(Ink::Secondary))
                     .children(current_harness.map(|h| HarnessIcon::new(h.id()).size(px(14.0))))
                     .child(

@@ -27,6 +27,7 @@ use bencode_ui::layout::SplitPane;
 use bencode_ui::primitives::{DragGhost, Icon, IconName};
 use bencode_ui::terminal::{Launch, Terminal, TerminalEvent};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
+use bencode_ui::typography::Ellipsis;
 use gpui::{
     AnyElement, Axis, Context, Entity, InteractiveElement, IntoElement, ParentElement,
     SharedString, StyleRefinement, Styled, Subscription, Window, div, prelude::*,
@@ -1079,7 +1080,7 @@ impl BenCodeApp {
             .h(px(TAB_HEIGHT))
             .pl_2()
             .pr_1()
-            .max_w(px(200.0))
+            .max_w(px(260.0))
             .rounded(px(7.0))
             .border_1()
             .border_color(gpui::transparent_black())
@@ -1117,7 +1118,7 @@ impl BenCodeApp {
                     .size(IconSize::Xs)
                     .color(colors.fg_muted),
             )
-            .child(div().min_w_0().truncate().child(title))
+            .child(Ellipsis::new(title))
             .child(close)
     }
 }

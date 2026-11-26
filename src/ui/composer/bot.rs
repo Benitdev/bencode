@@ -532,7 +532,7 @@ impl BenCodeApp {
                 let label = setting.value_label(values).to_string();
                 let pill_id = setting.id.clone();
                 let trigger = text_control(id, open, fg)
-                    .max_w(px(112.0))
+                    .max_w(px(180.0))
                     .tooltip(Tooltip::text(format!("{}: {label}", setting.menu_label())))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         let next = (this.composer_menus.pill_menu.as_deref()

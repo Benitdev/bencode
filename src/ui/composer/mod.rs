@@ -37,6 +37,7 @@ use bencode_ui::buttons::{ButtonVariant, IconButton};
 use bencode_ui::menus::{DropdownMenu, Menu, MenuItem};
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, IconSize};
+use bencode_ui::typography::Ellipsis;
 use gpui::{
     AnimationExt, AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
     Pixels, SharedString, Styled, div, prelude::*,
@@ -144,9 +145,8 @@ fn composer_chip(
             div()
                 .min_w_0()
                 .mt(gpui::px(label_top))
-                .truncate()
                 .text_size(line.size)
-                .child(label),
+                .child(Ellipsis::new(label)),
         )
         // The effort is a word or two: it stays whole and the model's name
         // gives way first, never both cut to a stub ("GPT-6.2-A… Hi…").

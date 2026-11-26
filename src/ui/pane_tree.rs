@@ -26,9 +26,9 @@ use crate::ui::tokens::{Fill, Ink, PANEL_GAP, PANEL_RADIUS, Status, Text, Tone a
 
 const UNTITLED: &str = "Untitled thread";
 
-fn display_title(session: &SessionRow) -> &str {
+fn display_title(session: &SessionRow) -> std::borrow::Cow<'_, str> {
     if session.title.trim().is_empty() {
-        UNTITLED
+        std::borrow::Cow::Borrowed(UNTITLED)
     } else {
         crate::app::session_list::linked_title(session)
     }
@@ -532,7 +532,7 @@ impl BenCodeApp {
             .child(
                 div()
                     .flex_none()
-                    .max_w(px(140.0))
+                    .max_w(px(220.0))
                     .truncate()
                     .text_size(Text::Sm.px())
                     .text_color(fg.ink(Ink::Muted))

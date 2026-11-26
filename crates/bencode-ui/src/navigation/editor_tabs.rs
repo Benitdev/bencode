@@ -13,6 +13,7 @@ use crate::{
     i18n,
     primitives::{DragGhost, Icon, IconName, Tooltip},
     theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    typography::Ellipsis,
 };
 
 /// One open document: its id, title and state.
@@ -325,14 +326,7 @@ impl RenderOnce for EditorTabs {
                     .when_some(tab.icon, |el, icon| {
                         el.child(Icon::new(icon).size(IconSize::Sm).color(fg))
                     })
-                    .child(
-                        div()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_ellipsis()
-                            .child(tab.title.clone()),
-                    )
+                    .child(Ellipsis::new(tab.title.clone()))
                     .child(slot)
                     .into_any_element()
             })

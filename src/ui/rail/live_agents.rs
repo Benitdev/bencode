@@ -432,7 +432,7 @@ impl BenCodeApp {
                     .child(
                         div()
                             .flex_none()
-                            .max_w(px(80.0))
+                            .max_w(px(140.0))
                             .truncate()
                             .text_color(fg.ink(Ink::Muted))
                             .child(project),

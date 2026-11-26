@@ -35,8 +35,8 @@ use crate::ui::tokens::{Fill, Ink, InteractiveSurface as _, Text, Tone as _};
 use crate::ui::window_drag::claim_press;
 use tabs::{CloseMany, TitleTab, closable, close_ids, strip_overflow, tab_copy};
 
-/// MonoCode `w-56 min-w-28`, in one line here.
-const TAB_WIDTH: f32 = 208.0;
+/// MonoCode `w-56 min-w-28`, widened slightly so longer titles fit when room allows.
+const TAB_WIDTH: f32 = 240.0;
 const TAB_MIN_WIDTH: f32 = 104.0;
 const TAB_GAP: f32 = 2.0;
 /// Left inset of the tab strip: matches `workspace_left_inset` beside the
@@ -123,7 +123,8 @@ fn project_name(cwd: &str) -> String {
 impl BenCodeApp {
     fn conversation_title(&self, id: &str) -> Option<String> {
         let session = self.sessions.iter().find(|s| s.id == id)?;
-        let title = crate::app::session_list::linked_title(session).trim();
+        let raw = crate::app::session_list::linked_title(session);
+        let title = raw.trim();
         Some(if title == NEW_SESSION_TITLE {
             String::new()
         } else {

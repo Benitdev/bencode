@@ -140,7 +140,7 @@ pub fn attachment_chip(
         .child(icon.size(IconSize::Sm))
         .child(
             div()
-                .max_w(px(140.0))
+                .max_w(px(220.0))
                 .truncate()
                 .text_size(Text::Sm.px())
                 .text_color(colors.fg.ink(Ink::Strong))
