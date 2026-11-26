@@ -2,9 +2,10 @@
 //! top right under the due reminders, each with Update; Update all when
 //! several can start.
 
+use bencode_ui::buttons::IconButton;
 use bencode_ui::motion::Spinner;
 use bencode_ui::primitives::{Icon, IconName};
-use bencode_ui::theme::{ActiveTheme, IconSize};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
     AnyElement, Context, FontWeight, InteractiveElement, IntoElement, MouseButton, ParentElement,
     SharedString, Styled, deferred, div, prelude::*, relative, rgb,
@@ -268,7 +269,7 @@ impl BenCodeApp {
                                 .text_size(Text::Sm.px())
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(fg.ink(Ink::Body))
-                                .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))
+                                .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.update_harnesses(pending.clone(), cx)
                                 }))
@@ -278,24 +279,17 @@ impl BenCodeApp {
                     // `grid size-6 place-items-center text-content/40
                     // hover:bg-content/10 hover:text-content disabled:opacity-40`
                     .child(
-                        header_button("harness-update-dismiss")
-                            .size(px(24.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .when(busy, |el| el.opacity(0.4))
+                        IconButton::new("harness-update-dismiss", IconName::X)
+                            .size(ControlSize::Sm)
+                            .icon_size(IconSize::Xs)
+                            .muted()
+                            .disabled(busy)
+                            .tooltip("Dismiss")
                             .when(!busy, |el| {
-                                el.cursor_pointer()
-                                    .hover(move |s| s.bg(fg.fill(Fill::Strong)))
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.dismiss_harness_updates(cx)
-                                    }))
-                            })
-                            .child(
-                                Icon::new(IconName::X)
-                                    .size(IconSize::Xs)
-                                    .color(fg.ink(Ink::Muted)),
-                            ),
+                                el.on_click(
+                                    cx.listener(|this, _, _, cx| this.dismiss_harness_updates(cx)),
+                                )
+                            }),
                     ),
             )
             .children(rows)

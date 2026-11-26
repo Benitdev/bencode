@@ -8,7 +8,7 @@ use gpui::{
 use super::avatar::{initials, tint};
 use crate::{
     primitives::{Icon, IconName, Severity},
-    theme::{ActiveTheme, ControlSize, IconSize, Palette, Radius, TextSize},
+    theme::{ActiveTheme, ControlSize, Fill, IconSize, Palette, Radius, TextSize, Tone as _},
     typography::Ellipsis,
 };
 
@@ -40,7 +40,7 @@ impl Tone {
     pub(crate) fn colors(self, colors: &Palette) -> (Hsla, Hsla) {
         let severity = |severity: Severity| (severity.subtle(colors), severity.color(colors));
         match self {
-            Self::Neutral => (colors.hover, colors.fg_muted),
+            Self::Neutral => (colors.fg.fill(Fill::Line), colors.fg_muted),
             Self::Accent => (colors.accent, colors.on_accent),
             Self::Info => severity(Severity::Info),
             Self::Success => severity(Severity::Success),
@@ -186,11 +186,12 @@ impl RenderOnce for Tag {
             Tone::Neutral if self.selected => (colors.selection, colors.fg),
             // An off toggle is outlined, quieter than a tag that is on.
             Tone::Neutral if toggle => (gpui::transparent_black(), colors.fg_muted),
-            Tone::Neutral => (colors.hover, colors.fg),
+            Tone::Neutral => (colors.fg.fill(Fill::Line), colors.fg),
             other => other.colors(colors),
         };
         let (remove, named) = (self.id.clone(), self.id.clone());
-        let hover = colors.hover;
+        let hover = colors.fg.fill(Fill::Hover);
+        let remove_hover = colors.fg.fill(Fill::Selected);
         div()
             .id((self.id.clone(), "tag"))
             .debug_selector(move || format!("tag {named}"))
@@ -260,7 +261,7 @@ impl RenderOnce for Tag {
                         .flex_none()
                         .rounded(theme.radius(Radius::Sm))
                         .cursor_pointer()
-                        .hover(|style| style.bg(colors.active))
+                        .hover(move |style| style.bg(remove_hover))
                         .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
                         .on_click(move |_, window, cx| {
                             cx.stop_propagation();

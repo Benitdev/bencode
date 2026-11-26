@@ -8,7 +8,7 @@ use gpui::{
 use crate::{
     forms::{Choice, Listing, OnValue, listing},
     primitives::{Icon, IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius},
+    theme::{ActiveTheme, ControlSize, Fill, IconSize, Radius, Tone as _},
 };
 
 /// A small icon button that lists `rows`; picking one runs `on_pick`.
@@ -42,7 +42,10 @@ pub(crate) fn list_button(
             gpui::transparent_black()
         })
         .cursor_pointer()
-        .hover(|style| style.bg(colors.hover))
+        .hover({
+            let hover = colors.fg.fill(Fill::Hover);
+            move |style| style.bg(hover)
+        })
         .child(Icon::new(icon).size(IconSize::Sm).color(colors.fg_muted));
     let list = Listing {
         id,

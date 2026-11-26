@@ -20,7 +20,7 @@ use crate::github::Kind;
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
 use crate::ui::sidebar_popovers::popover_frame;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, InteractiveSurface as _, Text, Tone as _};
 use crate::work_items::Provider;
 
 /// MonoCode `INBOX_FILTER_MENU_WIDTH`, which the group-and-sort menu
@@ -250,8 +250,7 @@ impl BenCodeApp {
             .justify_center()
             .rounded(px(6.0))
             .cursor_pointer()
-            .when(active, |el| el.bg(fg.fill(Fill::Selected)))
-            .when(!active, |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
+            .ghost_surface(active, fg)
             .tooltip(Tooltip::text(tip))
             .on_mouse_down(
                 MouseButton::Left,

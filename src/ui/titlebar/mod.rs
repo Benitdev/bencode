@@ -31,7 +31,7 @@ use crate::ui::explorer_menu::{self, MenuAction, MenuEntry};
 use crate::ui::layout::WorkspaceTab;
 use crate::ui::scale::px;
 use crate::ui::sidebar::SessionDialog;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, InteractiveSurface as _, Text, Tone as _};
 use crate::ui::window_drag::claim_press;
 use tabs::{CloseMany, TitleTab, closable, close_ids, strip_overflow, tab_copy};
 
@@ -1097,7 +1097,7 @@ impl BenCodeApp {
                 crate::ui::scale::logical(scroll.max_offset().x),
             )
         };
-        let drop_wash = cx.theme().colors.hover;
+        let drop_wash = cx.theme().colors.fg.fill(Fill::Hover);
         div()
             .id("title-tab-drop")
             .relative()
@@ -1278,14 +1278,7 @@ impl BenCodeApp {
                 .rounded(px(6.0))
                 .cursor_pointer()
                 .text_size(Text::Sm.px())
-                .map(|el| {
-                    if active {
-                        el.bg(fg.fill(Fill::Selected)).text_color(fg)
-                    } else {
-                        el.text_color(fg.ink(Ink::Secondary))
-                            .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))
-                    }
-                })
+                .ghost_surface_ink(active, fg)
                 .tooltip(Tooltip::text(tip))
                 .on_click(cx.listener(move |this, _, _, cx| this.toggle_inspector_mode(mode, cx)))
         };

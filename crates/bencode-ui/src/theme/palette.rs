@@ -95,6 +95,10 @@ mixable!(
 
 mixable!(
     /// Semantic colors. Components read these, never literals.
+    ///
+    /// Note: `hover` and `active` are opaque canvas shades (used by the opaque
+    /// code editor). Interactive chrome over glass or frosted surfaces uses
+    /// translucent washes from [`Fill`](super::Fill) / [`InteractiveSurface`](super::InteractiveSurface).
     Palette {
         bg,
         surface,

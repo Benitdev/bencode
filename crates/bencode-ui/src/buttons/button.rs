@@ -8,7 +8,10 @@ use crate::{
     i18n,
     motion::Spinner,
     primitives::{FocusRing, Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Mix, Palette, Platform, Radius, TextSize},
+    theme::{
+        ActiveTheme, ControlSize, Fill, IconSize, Mix, Palette, Platform, Radius, TextSize,
+        Tone as _,
+    },
     typography::{
         Ellipsis,
         keys::{keystroke, keystroke_labels},
@@ -41,6 +44,9 @@ pub(crate) struct Tone {
 
 pub(crate) fn tone(variant: ButtonVariant, colors: &Palette) -> Tone {
     let clear = transparent_black();
+    let hover = colors.fg.fill(Fill::Hover);
+    let selected = colors.fg.fill(Fill::Selected);
+    let pressed = colors.fg.fill(Fill::Bold);
     match variant {
         ButtonVariant::Primary => Tone {
             bg: colors.accent,
@@ -50,30 +56,30 @@ pub(crate) fn tone(variant: ButtonVariant, colors: &Palette) -> Tone {
             border: clear,
         },
         ButtonVariant::Secondary => Tone {
-            bg: colors.surface,
-            hover: colors.hover,
-            pressed: colors.active,
+            bg: colors.fg.fill(Fill::Faint),
+            hover: selected,
+            pressed,
             fg: colors.fg,
             border: colors.border,
         },
         ButtonVariant::Outline => Tone {
             bg: clear,
-            hover: colors.hover,
-            pressed: colors.active,
+            hover,
+            pressed: selected,
             fg: colors.fg,
             border: colors.border_strong,
         },
         ButtonVariant::Ghost => Tone {
             bg: clear,
-            hover: colors.hover,
-            pressed: colors.active,
+            hover,
+            pressed: selected,
             fg: colors.fg,
             border: clear,
         },
         ButtonVariant::Subtle => Tone {
-            bg: colors.hover,
-            hover: colors.active,
-            pressed: colors.active.mix(&colors.border_strong, 0.5),
+            bg: hover,
+            hover: selected,
+            pressed,
             fg: colors.fg,
             border: clear,
         },

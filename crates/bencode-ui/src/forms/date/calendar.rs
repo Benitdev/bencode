@@ -13,7 +13,7 @@ use crate::{
     layout::seeded::use_seeded,
     motion,
     primitives::{IconName, tab_stop},
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, ControlSize, Fill, Radius, TextSize, Tone as _},
 };
 
 const WEEKDAYS: [&str; 7] = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
@@ -272,15 +272,16 @@ impl RenderOnce for Calendar {
                         if chosen {
                             day.bg(colors.accent)
                         } else if inside {
-                            day.bg(colors.active)
+                            day.bg(colors.fg.fill(Fill::Selected))
                         } else {
                             day
                         }
                     })
                     .when(open, |day| {
+                        let hover_bg = colors.fg.fill(Fill::Hover);
                         day.cursor_pointer()
                             .when(!chosen && !inside, |day| {
-                                day.hover(|style| style.bg(colors.hover))
+                                day.hover(move |style| style.bg(hover_bg))
                             })
                             .on_hover(move |over, window, cx| {
                                 if *over {

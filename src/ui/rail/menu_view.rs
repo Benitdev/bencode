@@ -423,7 +423,7 @@ impl BenCodeApp {
                         .items_center()
                         .justify_center()
                         .rounded(px(6.0))
-                        .hover(move |s| s.bg(fg.fill(Fill::Strong)))
+                        .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                         .tooltip(bencode_ui::primitives::Tooltip::text("Remove project logo"))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.update_rail_prefs(|prefs| prefs.with_logo(&clear_path, None), cx);
@@ -558,7 +558,7 @@ impl BenCodeApp {
                             .border_1()
                             .border_color(fg.ink(Ink::Secondary))
                     } else {
-                        el.hover(move |s| s.bg(fg.fill(Fill::Selected)))
+                        el.hover(move |s| s.bg(fg.fill(Fill::Hover)))
                     }
                 })
                 .tooltip(bencode_ui::primitives::Tooltip::text(tip))

@@ -24,7 +24,7 @@ use std::path::PathBuf;
 
 use bencode_ui::buttons::{ButtonVariant, IconButton};
 use bencode_ui::layout::SplitPane;
-use bencode_ui::primitives::{DragGhost, Icon, IconName, Tooltip};
+use bencode_ui::primitives::{DragGhost, Icon, IconName};
 use bencode_ui::terminal::{Launch, Terminal, TerminalEvent};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -45,7 +45,9 @@ use crate::ui::layout::{
     LayoutNode, PaneEdge, SplitDir, pane_edge_from_point, set_split_sizes, split_shares,
 };
 use crate::ui::region::Region;
-use crate::ui::tokens::{Fill, Ink, PANEL_GAP, Text, Tone as _, resize_pill};
+use crate::ui::tokens::{
+    Fill, Ink, InteractiveSurface as _, PANEL_GAP, Text, Tone as _, resize_pill,
+};
 
 const TAB_HEIGHT: f32 = 28.0;
 /// The least a split's sash leaves a terminal.
@@ -974,7 +976,6 @@ impl BenCodeApp {
 
     fn render_terminal_tabs(&self, side: DockSide, cx: &Context<Self>) -> impl IntoElement + use<> {
         let colors = &cx.theme().colors;
-        let fg = colors.fg;
         let tabs = self
             .terminals(cx)
             .dock(&self.current_cwd)
@@ -1003,6 +1004,8 @@ impl BenCodeApp {
             .gap_0p5()
             .px_2()
             .h(px(34.0))
+            .border_b_1()
+            .border_color(colors.border)
             .child(
                 div()
                     .id("terminal-tab-strip")
@@ -1021,30 +1024,16 @@ impl BenCodeApp {
                     .tooltip("New Terminal (⌘`)")
                     .on_click(cx.listener(|this, _, _, cx| this.new_terminal(cx))),
             )
-            // A bencode-ui `IconButton` takes bencode-ui's icons only; Lucide's
-            // `panel-top` is one of BenCode's own.
             .child(
-                div()
-                    .id("terminal-move")
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .justify_center()
-                    .size(px(24.0))
-                    .rounded(px(6.0))
-                    .cursor_pointer()
-                    .when(menu_open, |el| el.bg(fg.fill(Fill::Selected)))
-                    .when(!menu_open, |el| {
-                        el.hover(move |s| s.bg(fg.fill(Fill::Hover)))
-                    })
-                    .on_mouse_down(gpui::MouseButton::Left, |_, window, _| {
-                        window.prevent_default()
-                    })
+                IconButton::new("terminal-move", side_icon(side))
+                    .size(ControlSize::Sm)
+                    .icon_size(IconSize::Sm)
+                    .muted()
+                    .active(menu_open)
+                    .tooltip("Move Terminal")
                     .on_click(cx.listener(|this, event: &gpui::ClickEvent, _, cx| {
                         this.toggle_dock_side_menu(event.position(), cx)
-                    }))
-                    .tooltip(Tooltip::text("Move Terminal"))
-                    .child(side_icon(side).size(IconSize::Sm).color(fg.ink(Ink::Body))),
+                    })),
             )
             .child(
                 IconButton::new("terminal-drawer-hide", hide_icon(side))
@@ -1101,10 +1090,7 @@ impl BenCodeApp {
             } else {
                 colors.fg_muted
             })
-            .when(active, |el| el.bg(colors.fg.fill(Fill::Selected)))
-            .when(!active, |el| {
-                el.hover(|s| s.bg(colors.fg.fill(Fill::Hover)))
-            })
+            .ghost_surface(active, colors.fg)
             .on_click(cx.listener(move |this, _, _, cx| this.select_terminal(id, cx)))
             .on_mouse_down(
                 gpui::MouseButton::Right,

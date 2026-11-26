@@ -443,7 +443,7 @@ impl BenCodeApp {
                 .text_size(Text::Md.px())
                 .text_color(fg.ink(Ink::Strong))
                 .cursor_pointer()
-                .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
                 .child(
                     Icon::new(icon)
                         .size(IconSize::Sm)

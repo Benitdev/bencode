@@ -13,6 +13,7 @@
 //! are no `/` or `@` pickers, no project, checkout or branch, and no Stop:
 //! Escape stops a reply.
 
+use bencode_ui::buttons::IconButton;
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
@@ -29,7 +30,7 @@ use crate::harness::catalog::{self, ModelSetting, SettingKind};
 use crate::ui::HarnessIcon;
 use crate::ui::frost::{POPOVER_RADIUS, frost};
 use crate::ui::scale::px;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, InteractiveSurface as _, Text, Tone as _};
 
 /// MonoCode `MAX_HEIGHT`: the field grows to this before it scrolls.
 const MAX_FIELD_HEIGHT: f32 = 160.0;
@@ -74,43 +75,18 @@ fn text_control(id: SharedString, open: bool, fg: Hsla) -> gpui::Stateful<gpui::
         .rounded(px(6.0))
         .text_size(Text::Base.px())
         .cursor_pointer()
-        .map(|el| {
-            if open {
-                el.bg(fg.fill(Fill::Selected)).text_color(fg)
-            } else {
-                el.text_color(fg.ink(Ink::Secondary))
-                    .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
-            }
-        })
+        .ghost_surface_ink(open, fg)
 }
 
 /// MonoCode `TOOL_BUTTON`: `grid size-6.5 place-items-center rounded-md
 /// text-content/55 hover:bg-content/8 hover:text-content`.
-fn tool_button(
-    id: &'static str,
-    icon: IconName,
-    open: bool,
-    fg: Hsla,
-) -> gpui::Stateful<gpui::Div> {
-    let ink = if open { fg } else { fg.ink(Ink::Secondary) };
-    div()
-        .id(id)
-        .group(id)
-        .flex()
-        .flex_none()
-        .size(px(26.0))
-        .items_center()
-        .justify_center()
-        .rounded(px(6.0))
-        .cursor_pointer()
-        .when(open, |el| el.bg(fg.fill(Fill::Selected)))
-        .hover(move |s| s.bg(fg.fill(Fill::Selected)))
-        .child(
-            Icon::new(icon)
-                .size(IconSize::Sm)
-                .color(ink)
-                .group_hover_color(id, fg),
-        )
+fn tool_button(id: &'static str, icon: IconName, open: bool, tip: &'static str) -> IconButton {
+    IconButton::new(id, icon)
+        .side(px(26.0))
+        .icon_size(IconSize::Sm)
+        .muted()
+        .active(open)
+        .tooltip(tip)
 }
 
 impl BenCodeApp {
@@ -310,15 +286,14 @@ impl BenCodeApp {
     fn render_bot_composer_tools(&self, session: &SessionRow, cx: &Context<Self>) -> AnyElement {
         let fg = cx.theme().colors.fg;
         let emoji_open = self.bots.emoji.is_open();
-        let attach = tool_button("bot-attach", IconName::Plus, false, fg)
-            .tooltip(Tooltip::text("Attach files"))
+        let attach = tool_button("bot-attach", IconName::Plus, false, "Attach files")
             .on_click(cx.listener(|this, _, _, cx| this.open_attachment_dialog(cx)));
-        let emoji = tool_button("bot-emoji", IconName::SmilePlus, emoji_open, fg)
-            .tooltip(Tooltip::text("Emoji"))
-            .on_click(cx.listener(|this, _, _, cx| {
+        let emoji = tool_button("bot-emoji", IconName::SmilePlus, emoji_open, "Emoji").on_click(
+            cx.listener(|this, _, _, cx| {
                 this.bots.emoji.toggle();
                 cx.notify();
-            }));
+            }),
+        );
         let picker = self.bots.emoji.render(
             "bot-emoji-picker",
             |app: &mut BenCodeApp| &mut app.bots.emoji,
@@ -361,7 +336,7 @@ impl BenCodeApp {
                             .items_center()
                             .justify_center()
                             .rounded(px(6.0))
-                            .hover(move |s| s.bg(fg.fill(Fill::Selected)))
+                            .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                             .children(self.context_meter(session, false, cx)),
                     ),
             )

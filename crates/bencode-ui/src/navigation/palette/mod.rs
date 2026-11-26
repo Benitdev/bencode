@@ -11,7 +11,7 @@ use crate::{
     forms::{Down, Enter, OnValue, Pick, Run, TextInput, Up},
     motion,
     primitives::{Backdrop, FocusScope, Icon, IconName, frost, give_back, take_focus},
-    theme::{ActiveTheme, ControlSize, Elevation, IconSize, Radius, TextSize},
+    theme::{ActiveTheme, ControlSize, Elevation, Fill, IconSize, Radius, TextSize, Tone as _},
 };
 
 pub use kinds::SearchPalette;
@@ -191,7 +191,7 @@ impl Palette {
                         .h(theme.control_height(ControlSize::Lg))
                         .px_2()
                         .rounded(theme.radius(Radius::Md))
-                        .when(ix == at, |row| row.bg(colors.fg.opacity(0.09)))
+                        .when(ix == at, |row| row.bg(colors.fg.fill(Fill::Selected)))
                         .cursor_pointer()
                         .on_mouse_move(move |_, _, cx| {
                             if hover.read(cx).at != here {

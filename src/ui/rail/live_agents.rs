@@ -164,7 +164,7 @@ impl BenCodeApp {
                 .text_size(Text::Sm.px())
                 .text_color(fg.ink(Ink::Secondary))
                 .cursor_pointer()
-                .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.live_agents_ui.expanded = !this.live_agents_ui.expanded;
                     this.redraw_regions(&[Region::Rail], cx);
@@ -373,7 +373,7 @@ impl BenCodeApp {
                     el.bg(amber.opacity(0.08))
                         .hover(move |s| s.bg(amber.opacity(0.14)))
                 } else {
-                    el.hover(move |s| s.bg(fg.fill(Fill::Selected)))
+                    el.hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 }
             })
             .tooltip(Tooltip::text(tip))

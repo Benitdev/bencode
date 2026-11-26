@@ -144,7 +144,7 @@ impl BenCodeApp {
             .text_size(Text::Base.px())
             .text_color(fg.ink(Ink::Body))
             .cursor_pointer()
-            .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))
+            .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
             .on_click(cx.listener(|this, _, _, cx| this.start_new_skill(cx)))
             .child(Icon::new(IconName::Plus).size(IconSize::Xs))
             .child("New skill")

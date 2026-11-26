@@ -24,7 +24,7 @@ use crate::ui::appearance::CollapsedRailMode;
 use crate::ui::scale::px;
 use crate::ui::sidebar_menus::SidebarMenuKind;
 use crate::ui::thumbnail::{LOGO, thumbnail};
-use crate::ui::tokens::{Fill, Ink, Status, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, InteractiveSurface as _, Status, Text, Tone as _};
 
 /// MonoCode `w-12`.
 pub const COMPACT_RAIL_WIDTH: f32 = 48.0;
@@ -230,7 +230,7 @@ impl BenCodeApp {
                 .cursor_pointer()
                 .text_size(Text::Sm.px())
                 .text_color(fg.ink(Ink::Secondary))
-                .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
                 .tooltip(Tooltip::text(format!("{extra} more agents")))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.is_rail_open = true;
@@ -309,7 +309,7 @@ impl BenCodeApp {
                     el.bg(amber.opacity(0.10))
                         .hover(move |s| s.bg(amber.opacity(0.18)))
                 } else {
-                    el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
+                    el.hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 }
             })
             .tooltip(Tooltip::text(tip))
@@ -361,7 +361,7 @@ impl BenCodeApp {
                     if selected {
                         el.bg(selection)
                     } else {
-                        el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
+                        el.hover(move |s| s.bg(fg.fill(Fill::Hover)))
                     }
                 })
                 .tooltip(Tooltip::text(bot.display_name()))
@@ -412,8 +412,8 @@ impl BenCodeApp {
             .justify_center()
             .rounded(px(6.0))
             .cursor_pointer()
-            .when(open, |el| el.bg(fg.fill(Fill::Strong)))
-            .hover(move |el| el.bg(fg.fill(Fill::Strong)))
+            .when(open, |el| el.bg(fg.fill(Fill::Selected)))
+            .when(!open, |el| el.hover(move |el| el.bg(fg.fill(Fill::Hover))))
             .tooltip(Tooltip::text(label))
             .child(
                 canvas(
@@ -512,7 +512,7 @@ impl BenCodeApp {
                 .text_size(Text::Md.px())
                 .text_color(fg.ink(Ink::Strong))
                 .cursor_pointer()
-                .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
         };
         let projects = self.rail_order().into_iter().enumerate().map(|(ix, path)| {
             let current = same_project_path(&path, &self.current_cwd);
@@ -626,7 +626,7 @@ impl BenCodeApp {
             .justify_center()
             .rounded(px(5.0))
             .cursor_pointer()
-            .hover(move |s| s.bg(fg.fill(Fill::Selected)))
+            .hover(move |s| s.bg(fg.fill(Fill::Hover)))
             .tooltip(Tooltip::text("New thread (⌘T)"))
             .on_click(cx.listener(|this, _, _, cx| {
                 this.close_sidebar_menu(cx);
@@ -701,7 +701,7 @@ impl BenCodeApp {
                 .text_color(fg.ink(Ink::Strong))
                 .cursor_pointer()
                 .when(selected, |el| el.bg(fg.fill(Fill::Selected)).text_color(fg))
-                .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.close_sidebar_menu(cx);
                     this.select_live_agent(&id, cx);
@@ -743,7 +743,7 @@ impl BenCodeApp {
                 .text_size(Text::Sm.px())
                 .text_color(fg.ink(Ink::Secondary))
                 .cursor_pointer()
-                .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.close_sidebar_menu(cx);
                     this.is_rail_open = true;
@@ -796,7 +796,6 @@ fn compact_action(
 ) -> Stateful<Div> {
     let theme = cx.theme();
     let (fg, accent) = (theme.colors.fg, theme.colors.accent);
-    let selection = fg.fill(Fill::Selected);
     div()
         .id(id)
         .group(id)
@@ -809,13 +808,7 @@ fn compact_action(
         .rounded(px(6.0))
         .cursor_pointer()
         .tooltip(Tooltip::text(label))
-        .map(|el| {
-            if active {
-                el.bg(selection)
-            } else {
-                el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
-            }
-        })
+        .ghost_surface(active, fg)
         .child(
             Icon::new(icon)
                 .size(IconSize::Md)

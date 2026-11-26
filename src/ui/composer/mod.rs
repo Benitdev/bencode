@@ -574,13 +574,15 @@ impl BenCodeApp {
                         colors.accent.opacity(0.32)
                     } else if prompt_focused {
                         colors.border_strong
-                    } else if has_bg_image {
+                    } else if dark || has_bg_image {
                         colors.fg.fill(Fill::Selected)
                     } else {
                         colors.border
                     })
                     .bg(if dark && has_bg_image {
-                        colors.surface.opacity(0.92)
+                        colors.surface.opacity(0.88)
+                    } else if dark {
+                        colors.fg.fill(Fill::Faint)
                     } else {
                         colors.surface
                     })
@@ -884,7 +886,7 @@ impl BenCodeApp {
                     .to_string()
             }),
             self.popover_open(ComposerPopover::Model) || self.composer_menus.recent_open,
-            160.0,
+            260.0,
             cx,
         )
         .tooltip(Tooltip::text(model_tip))

@@ -11,7 +11,10 @@ use crate::{
     data_display::Avatar,
     motion,
     primitives::{Icon, IconName, frost, raise},
-    theme::{ActiveTheme, AvatarSize, ControlSize, Elevation, IconSize, Radius, TextSize},
+    theme::{
+        ActiveTheme, AvatarSize, ControlSize, Elevation, IconSize, InteractiveSurface as _, Radius,
+        TextSize,
+    },
     typography::Ellipsis,
 };
 
@@ -131,13 +134,8 @@ pub(crate) fn marked_row(
         .py_1()
         .rounded(theme.radius(Radius::Md))
         .text_color(fg)
-        .when(highlighted && !choice.disabled, |row| {
-            row.bg(colors.fg.opacity(0.09))
-        })
         .when(!choice.disabled, |row| {
-            let hover = colors.fg.opacity(0.05);
-            row.cursor_pointer()
-                .when(!highlighted, |row| row.hover(move |style| style.bg(hover)))
+            row.cursor_pointer().ghost_surface(highlighted, colors.fg)
         })
         .when_some(checked, |row, on| {
             row.child(

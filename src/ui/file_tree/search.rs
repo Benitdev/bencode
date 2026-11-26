@@ -3,8 +3,9 @@
 //! Regex, include and exclude globs, a status line, then the matches
 //! grouped by file; a click opens the match in the editor.
 
-use bencode_ui::primitives::{Icon, IconName, Tooltip};
-use bencode_ui::theme::{ActiveTheme, IconSize};
+use bencode_ui::buttons::IconButton;
+use bencode_ui::primitives::{Icon, IconName};
+use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::prelude::*;
 use gpui::{
     AnyElement, Context, Entity, FontWeight, HighlightStyle, Hsla, IntoElement, SharedString,
@@ -121,26 +122,14 @@ impl BenCodeApp {
                     .border_b_1()
                     .border_color(stroke)
                     .child(
-                        div()
-                            .id("project-search-back")
-                            .group("project-search-back")
-                            .size(px(28.0))
-                            .flex()
-                            .flex_none()
-                            .items_center()
-                            .justify_center()
-                            .rounded(px(6.0))
-                            .hover(move |s| s.bg(fg.fill(Fill::Strong)))
-                            .tooltip(Tooltip::text("Back to files"))
+                        IconButton::new("project-search-back", IconName::ChevronLeft)
+                            .size(ControlSize::Md)
+                            .icon_size(IconSize::Md)
+                            .muted()
+                            .tooltip("Back to files")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.close_project_search(cx);
-                            }))
-                            .child(
-                                Icon::new(IconName::ChevronLeft)
-                                    .size(IconSize::Md)
-                                    .color(fg.ink(Ink::Secondary))
-                                    .group_hover_color("project-search-back", fg),
-                            ),
+                            })),
                     )
                     .child(
                         div()
@@ -181,8 +170,6 @@ impl BenCodeApp {
         toggle: SearchToggle,
         cx: &Context<Self>,
     ) -> impl IntoElement {
-        let colors = &cx.theme().colors;
-        let fg = colors.fg;
         let on = self.project_search.is_on(toggle);
         let (id, icon, tip) = match toggle {
             SearchToggle::MatchCase => ("search-match-case", IconName::CaseSensitive, "Match case"),
@@ -191,26 +178,14 @@ impl BenCodeApp {
             }
             SearchToggle::Regex => ("search-regex", IconName::Regex, "Use regular expression"),
         };
-        div()
-            .id(id)
-            .group(id)
-            .size(px(24.0))
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .rounded(px(4.0))
-            .when(on, |el| el.bg(fg.fill(Fill::Selected)))
-            .when(!on, |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
-            .tooltip(Tooltip::text(tip))
+        IconButton::new(id, icon)
+            .size(ControlSize::Sm)
+            .icon_size(GLYPH)
+            .muted()
+            .active(on)
+            .tooltip(tip)
             .on_click(
                 cx.listener(move |this, _, _, cx| this.toggle_project_search_option(toggle, cx)),
-            )
-            .child(
-                Icon::new(icon)
-                    .size(GLYPH)
-                    .color(if on { fg } else { fg.ink(Ink::Muted) })
-                    .group_hover_color(id, if on { fg } else { fg.ink(Ink::Body) }),
             )
     }
 

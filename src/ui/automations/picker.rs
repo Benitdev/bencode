@@ -90,7 +90,7 @@ impl BenCodeApp {
                             el.bg(fg).text_color(colors.bg)
                         } else {
                             el.text_color(muted)
-                                .hover(|style| style.bg(fg.fill(Fill::Selected)).text_color(fg))
+                                .hover(|style| style.bg(fg.fill(Fill::Hover)).text_color(fg))
                         }
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {

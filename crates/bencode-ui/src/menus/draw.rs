@@ -12,7 +12,7 @@ use crate::{
     forms::{Run, surface},
     navigation::marked,
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, Radius},
+    theme::{ActiveTheme, ControlSize, Fill, IconSize, Radius, Tone as _},
     typography::KbdCombo,
 };
 
@@ -39,7 +39,7 @@ fn row(item: &MenuItem, ix: usize, current: bool, cx: &App) -> Stateful<Div> {
         .rounded(theme.radius(Radius::Md))
         .text_color(fg)
         .when(current && !item.disabled, |row| {
-            row.bg(colors.fg.opacity(0.09))
+            row.bg(colors.fg.fill(Fill::Selected))
         })
         .when(!item.disabled, |row| row.cursor_pointer())
         .child(

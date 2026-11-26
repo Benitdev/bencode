@@ -316,7 +316,7 @@ impl BenCodeApp {
                     .rounded(px(4.0))
                     .invisible()
                     .group_hover(section.clone(), |s| s.visible())
-                    .hover(move |s| s.bg(fg.fill(Fill::Selected)))
+                    .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                     .tooltip(Tooltip::text(if staged {
                         "Unstage All Changes"
                     } else {

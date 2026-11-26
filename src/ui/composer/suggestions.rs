@@ -345,11 +345,14 @@ impl BenCodeApp {
             .right_0()
             .mb_1()
             .overflow_hidden()
-            .rounded(px(8.0))
+            .rounded(px(12.0))
             .border_1()
             .border_color(colors.border)
-            .bg(colors.surface)
-            .shadow_lg();
+            .child(crate::ui::frost::frost(
+                crate::ui::frost::POPOVER_RADIUS,
+                cx,
+            ))
+            .shadow_xl();
         if let Some(draft) = self.skill_draft.as_ref().filter(|_| slash) {
             return Some(
                 frame

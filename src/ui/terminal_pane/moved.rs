@@ -166,6 +166,8 @@ impl BenCodeApp {
             .flex_1()
             .min_w_0()
             .min_h_0()
+            .border_t_1()
+            .border_color(colors.border)
             .px_1p5()
             .pb_1p5()
             .child(div().flex_1().min_h_0().min_w_0().child(tab.view.clone()))

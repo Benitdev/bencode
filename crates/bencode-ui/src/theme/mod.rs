@@ -24,7 +24,10 @@ use web_time::Instant;
 use crate::motion;
 pub use palette::{HUE_NAMES, Mix, Palette, Syntax};
 pub use platform::Platform;
-pub use tokens::{AvatarSize, ControlSize, Density, Elevation, IconSize, Radius, TextSize};
+pub use tokens::{
+    AvatarSize, ControlSize, Density, Elevation, Fill, IconSize, Ink, InteractiveSurface, Radius,
+    TextSize, Tone,
+};
 
 const FRAME: Duration = Duration::from_millis(8);
 

@@ -15,81 +15,12 @@ use gpui::{
     Pixels, RenderOnce, SharedString, Styled, Window, div, point, prelude::*, rgb,
 };
 
+pub use bencode_ui::theme::{Fill, Ink, InteractiveSurface, Tone};
+
 /// Corner radius of floating workspace panels (Chat, File/Browser, Terminal, Surface, Bot).
 pub const PANEL_RADIUS: f32 = 10.0;
 /// Open channel between floating workspace panels and window edges.
 pub const PANEL_GAP: f32 = 6.0;
-
-/// Text and icons over `fg`, strongest first.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Ink {
-    /// Titles in rows and cards.
-    Strong,
-    /// Body text a step below a title.
-    Body,
-    /// Secondary text: a label beside a value, an idle control.
-    Secondary,
-    /// Muted text: a row's second line, hints, idle icons.
-    Muted,
-    /// Barely there: counts beside a title, disabled marks.
-    Faint,
-}
-
-impl Ink {
-    pub const fn alpha(self) -> f32 {
-        match self {
-            Self::Strong => 0.85,
-            Self::Body => 0.7,
-            Self::Secondary => 0.55,
-            Self::Muted => 0.45,
-            Self::Faint => 0.3,
-        }
-    }
-}
-
-/// Washes of `fg` behind things, faintest first.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Fill {
-    Faint,
-    /// A row under the pointer; a tile behind an icon.
-    Hover,
-    /// Hairlines between areas.
-    Line,
-    /// The selected row or tab.
-    Selected,
-    /// A pressed control, a strong tile.
-    Strong,
-    Bold,
-}
-
-impl Fill {
-    pub const fn alpha(self) -> f32 {
-        match self {
-            Self::Faint => 0.03,
-            Self::Hover => 0.05,
-            Self::Line => 0.06,
-            Self::Selected => 0.09,
-            Self::Strong => 0.1,
-            Self::Bold => 0.15,
-        }
-    }
-}
-
-/// `fg.ink(..)` and `fg.fill(..)`.
-pub trait Tone {
-    fn ink(self, ink: Ink) -> Hsla;
-    fn fill(self, fill: Fill) -> Hsla;
-}
-
-impl Tone for Hsla {
-    fn ink(self, ink: Ink) -> Hsla {
-        self.opacity(ink.alpha())
-    }
-
-    fn fill(self, fill: Fill) -> Hsla {
-        self.opacity(fill.alpha())
-    }
-}
 
 /// Type sizes, before the interface scale.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -371,29 +302,6 @@ impl From<crate::app::bot_sessions::LaunchedState> for Status {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn levels_step_down() {
-        let ink = [
-            Ink::Strong,
-            Ink::Body,
-            Ink::Secondary,
-            Ink::Muted,
-            Ink::Faint,
-        ];
-        assert!(ink.windows(2).all(|w| w[0].alpha() > w[1].alpha()));
-        let fill = [
-            Fill::Faint,
-            Fill::Hover,
-            Fill::Line,
-            Fill::Selected,
-            Fill::Strong,
-            Fill::Bold,
-        ];
-        assert!(fill.windows(2).all(|w| w[0].alpha() < w[1].alpha()));
-        // Ink never washes out into a fill.
-        assert!(Ink::Faint.alpha() > Fill::Bold.alpha());
-    }
 
     #[test]
     fn a_state_has_one_colour_everywhere() {

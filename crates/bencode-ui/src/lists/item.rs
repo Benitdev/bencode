@@ -7,7 +7,7 @@ use gpui::{
 };
 
 use crate::{
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, ControlSize, Fill, Radius, TextSize, Tone as _},
     typography::{Ellipsis, LEADING},
 };
 
@@ -132,11 +132,11 @@ impl RenderOnce for ListItem {
             })
             .when(self.selected, |row| {
                 row.debug_selector(|| format!("item-selected-{}", self.title))
-                    .bg(colors.fg.opacity(0.09))
+                    .bg(colors.fg.fill(Fill::Selected))
             })
             .when(self.disabled, |row| row.opacity(0.5))
             .when_some(self.on_click.filter(|_| pressable), |row, on_click| {
-                let hover = colors.fg.opacity(0.05);
+                let hover = colors.fg.fill(Fill::Hover);
                 row.cursor_pointer()
                     .when(!self.selected, |row| {
                         row.hover(move |style| style.bg(hover))

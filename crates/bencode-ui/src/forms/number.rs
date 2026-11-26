@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     primitives::{Icon, IconName},
-    theme::{ActiveTheme, ControlSize, IconSize, TextSize},
+    theme::{ActiveTheme, ControlSize, Fill, IconSize, TextSize, Tone as _},
     typography::format::{self, Separators},
 };
 
@@ -358,8 +358,9 @@ impl RenderOnce for NumberInput {
                 .w(theme.icon_size(IconSize::Lg))
                 .map(|half| {
                     if enabled {
+                        let hover = colors.fg.fill(Fill::Hover);
                         half.cursor_pointer()
-                            .hover(|style| style.bg(colors.hover))
+                            .hover(move |style| style.bg(hover))
                             .on_mouse_down(MouseButton::Left, |_, window, _| {
                                 window.prevent_default()
                             })

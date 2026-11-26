@@ -3,6 +3,7 @@
 //! diff stat and figure.
 
 use crate::ui::appearance::DiffColors;
+use bencode_ui::buttons::IconButton;
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
@@ -18,7 +19,7 @@ use crate::ui::scale::px;
 /// MonoCode `h-8`: every rail row.
 pub(crate) const ROW_HEIGHT: f32 = 32.0;
 pub(super) use crate::ui::tokens::{AMBER_400, EMERALD_400};
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, InteractiveSurface as _, Text, Tone as _};
 
 /// MonoCode `formatInteger`: thousands grouped with commas.
 pub(super) fn format_diff_number(n: usize) -> String {
@@ -192,7 +193,6 @@ pub(super) fn rail_icon_button(
 ) -> Stateful<Div> {
     let theme = cx.theme();
     let (fg, accent) = (theme.colors.fg, theme.colors.accent);
-    let selection = fg.fill(Fill::Selected);
     div()
         .id(id)
         .group(id)
@@ -204,13 +204,7 @@ pub(super) fn rail_icon_button(
         .justify_center()
         .rounded(px(6.0))
         .tooltip(Tooltip::text(tip))
-        .map(|el| {
-            if active {
-                el.bg(selection)
-            } else {
-                el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
-            }
-        })
+        .ghost_surface(active, fg)
         .on_click(cx.listener(on_click))
         .child(rail_icon(id, icon, active, fg))
         .when(dot, |el| {
@@ -259,7 +253,7 @@ fn rail_row(id: &'static str, active: bool, selection: Hsla, fg: Hsla) -> Statef
                 el.bg(selection).text_color(fg)
             } else {
                 el.text_color(fg.ink(Ink::Secondary))
-                    .hover(move |s| s.bg(fg.fill(Fill::Strong)).text_color(fg))
+                    .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
             }
         })
 }
@@ -301,8 +295,7 @@ pub(super) fn section_button(
         .items_center()
         .justify_center()
         .rounded(px(6.0))
-        .when(open, |el| el.bg(fg.fill(Fill::Selected)))
-        .hover(move |s| s.bg(fg.fill(Fill::Selected)))
+        .ghost_surface(open, fg)
         .tooltip(Tooltip::text(tip))
         .child(
             Icon::new(icon)
@@ -333,32 +326,15 @@ pub(super) fn title_icon_button(
 ) -> impl IntoElement {
     let fg = cx.theme().colors.fg;
     let id: SharedString = id.into();
-    let color = match state {
-        TitleButtonState::Normal => fg.ink(Ink::Secondary),
-        TitleButtonState::Active => fg,
-        TitleButtonState::Disabled => fg.ink(Ink::Faint),
-    };
     let enabled = state != TitleButtonState::Disabled;
-    div()
-        .id(id.clone())
-        .group(id.clone())
-        .flex()
-        .flex_none()
-        .size(px(26.0))
-        .items_center()
-        .justify_center()
-        .rounded(px(6.0))
-        .tooltip(Tooltip::text(tip))
-        .when(enabled, |el| {
-            el.hover(move |s| s.bg(fg.fill(Fill::Strong)))
-                .on_click(cx.listener(on_click))
-        })
-        .child(
-            Icon::new(icon)
-                .size(IconSize::Sm)
-                .color(color)
-                .when(enabled, |icon| icon.group_hover_color(id, fg)),
-        )
+    let button = IconButton::new(id, icon)
+        .side(px(26.0))
+        .icon_size(IconSize::Sm)
+        .muted()
+        .disabled(!enabled)
+        .tooltip(tip)
+        .when(state == TitleButtonState::Active, |el| el.icon_color(fg));
+    button.when(enabled, |el| el.on_click(cx.listener(on_click)))
 }
 
 #[cfg(test)]

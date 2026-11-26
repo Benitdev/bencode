@@ -3,11 +3,12 @@
 //! inline renames, and the thread-level dialogs. The list itself is
 //! `sidebar_sessions.rs`, its cards `sidebar_cards.rs`.
 
+use bencode_ui::buttons::IconButton;
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
-    ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, SharedString, Styled,
-    Window, div, prelude::*,
+    ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, Styled, Window, div,
+    prelude::*,
 };
 
 use crate::app::BenCodeApp;
@@ -214,7 +215,14 @@ impl BenCodeApp {
             })
             .when(focus.is_some(), |el| el.bg(fg.fill(Fill::Hover)))
             .when(open, |el| el.bg(fg.fill(Fill::Selected)))
-            .hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
+            .when(!open, |el| {
+                let hover = if focus.is_some() {
+                    Fill::Selected
+                } else {
+                    Fill::Hover
+                };
+                el.hover(move |s| s.bg(fg.fill(hover)).text_color(fg))
+            })
             .tooltip(Tooltip::text(tip))
             .on_mouse_down(
                 gpui::MouseButton::Left,
@@ -243,27 +251,13 @@ fn section_icon_button(
     id: &'static str,
     icon: IconName,
     tip: &'static str,
-    cx: &Context<BenCodeApp>,
+    _cx: &Context<BenCodeApp>,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
-    let fg = cx.theme().colors.fg;
-    let group = SharedString::from(id);
-    div()
-        .id(id)
-        .group(group.clone())
-        .flex()
-        .flex_none()
-        .size_5()
-        .items_center()
-        .justify_center()
-        .rounded(px(6.0))
-        .hover(move |s| s.bg(fg.fill(Fill::Selected)))
-        .tooltip(Tooltip::text(tip))
+    IconButton::new(id, icon)
+        .side(px(20.0))
+        .icon_size(IconSize::Sm)
+        .muted()
+        .tooltip(tip)
         .on_click(on_click)
-        .child(
-            Icon::new(icon)
-                .size(IconSize::Sm)
-                .color(fg.ink(Ink::Secondary))
-                .group_hover_color(group, fg),
-        )
 }

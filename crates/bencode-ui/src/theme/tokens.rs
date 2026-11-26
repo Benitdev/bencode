@@ -1,6 +1,123 @@
-use gpui::{BoxShadow, Hsla, Pixels, Rems, Size, px, rems, size};
+use gpui::{
+    BoxShadow, Div, Hsla, InteractiveElement, Pixels, Rems, Size, Stateful, Styled, px, rems, size,
+};
 
 use super::{Mode, Theme};
+
+/// Text and icons over `fg`, strongest first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ink {
+    /// Titles in rows and cards.
+    Strong,
+    /// Body text a step below a title.
+    Body,
+    /// Secondary text: a label beside a value, an idle control.
+    Secondary,
+    /// Muted text: a row's second line, hints, idle icons.
+    Muted,
+    /// Barely there: counts beside a title, disabled marks.
+    Faint,
+}
+
+impl Ink {
+    pub const fn alpha(self) -> f32 {
+        match self {
+            Self::Strong => 0.85,
+            Self::Body => 0.7,
+            Self::Secondary => 0.55,
+            Self::Muted => 0.45,
+            Self::Faint => 0.3,
+        }
+    }
+}
+
+/// Translucent washes of `fg` behind interactive chrome, rows and tiles —
+/// faintest first. Safe over opaque surfaces, Liquid Glass and frosted popovers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fill {
+    Faint,
+    /// A row or ghost control under the pointer; a resting tonal tile.
+    Hover,
+    /// Hairlines between areas; neutral tags.
+    Line,
+    /// The selected row, active toggle, open menu trigger, or pressed ghost control.
+    Selected,
+    /// A strong tile or border.
+    Strong,
+    /// A pressed tonal control or bold border.
+    Bold,
+}
+
+impl Fill {
+    pub const fn alpha(self) -> f32 {
+        match self {
+            Self::Faint => 0.03,
+            Self::Hover => 0.05,
+            Self::Line => 0.06,
+            Self::Selected => 0.09,
+            Self::Strong => 0.1,
+            Self::Bold => 0.15,
+        }
+    }
+}
+
+/// `fg.ink(..)` and `fg.fill(..)`.
+pub trait Tone {
+    fn ink(self, ink: Ink) -> Hsla;
+    fn fill(self, fill: Fill) -> Hsla;
+}
+
+impl Tone for Hsla {
+    fn ink(self, ink: Ink) -> Hsla {
+        self.opacity(ink.alpha())
+    }
+
+    fn fill(self, fill: Fill) -> Hsla {
+        self.opacity(fill.alpha())
+    }
+}
+
+/// Shared rest / hover / active fills for interactive `Stateful<Div>` surfaces
+/// so controls across `bencode-ui` and the app share one translucent scale.
+pub trait InteractiveSurface: Sized {
+    /// Transparent at rest → `Fill::Hover` on hover → `Fill::Selected` when active.
+    fn ghost_surface(self, active: bool, fg: Hsla) -> Self;
+
+    /// Like [`ghost_surface`](Self::ghost_surface), plus `Ink::Secondary` ink at rest
+    /// brightening to `fg` on hover or while active.
+    fn ghost_surface_ink(self, active: bool, fg: Hsla) -> Self;
+
+    /// `Fill::Hover` at rest → `Fill::Selected` on hover or while active.
+    fn tonal_surface(self, active: bool, fg: Hsla) -> Self;
+}
+
+impl InteractiveSurface for Stateful<Div> {
+    fn ghost_surface(self, active: bool, fg: Hsla) -> Self {
+        if active {
+            self.bg(fg.fill(Fill::Selected))
+        } else {
+            self.hover(move |s| s.bg(fg.fill(Fill::Hover)))
+        }
+    }
+
+    fn ghost_surface_ink(self, active: bool, fg: Hsla) -> Self {
+        if active {
+            self.bg(fg.fill(Fill::Selected)).text_color(fg)
+        } else {
+            self.text_color(fg.ink(Ink::Secondary))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
+        }
+    }
+
+    fn tonal_surface(self, active: bool, fg: Hsla) -> Self {
+        if active {
+            self.bg(fg.fill(Fill::Selected))
+        } else {
+            self.bg(fg.fill(Fill::Hover))
+                .hover(move |s| s.bg(fg.fill(Fill::Selected)))
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Density {
@@ -275,4 +392,32 @@ impl Theme {
 
 fn shadow(color: Hsla, y: f32, blur: f32) -> BoxShadow {
     BoxShadow::new(px(0.0), px(y), color).blur_radius(px(blur))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn levels_step_down() {
+        let ink = [
+            Ink::Strong,
+            Ink::Body,
+            Ink::Secondary,
+            Ink::Muted,
+            Ink::Faint,
+        ];
+        assert!(ink.windows(2).all(|w| w[0].alpha() > w[1].alpha()));
+        let fill = [
+            Fill::Faint,
+            Fill::Hover,
+            Fill::Line,
+            Fill::Selected,
+            Fill::Strong,
+            Fill::Bold,
+        ];
+        assert!(fill.windows(2).all(|w| w[0].alpha() < w[1].alpha()));
+        // Ink never washes out into a fill.
+        assert!(Ink::Faint.alpha() > Fill::Bold.alpha());
+    }
 }

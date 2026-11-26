@@ -231,7 +231,7 @@ impl BenCodeApp {
                 .justify_center()
                 .gap(px(5.0))
                 .rounded(px(6.0))
-                .hover(move |s| s.bg(fg.fill(Fill::Strong)))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 .child(HarnessIcon::new(provider.id()).size(px(14.0)))
                 .child(usage_bar(tightest, 3.0, colors).w(px(18.0)).flex_none()),
             // MonoCode `USAGE_CHIP_CLASSES`: `h-5 rounded px-1
@@ -247,7 +247,7 @@ impl BenCodeApp {
                 .rounded(px(6.0))
                 .text_color(fg.ink(Ink::Secondary))
                 .whitespace_nowrap()
-                .hover(move |s| s.bg(fg.opacity(0.10)).text_color(fg))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
                 .child(HarnessIcon::new(provider.id()).size(px(12.0)))
                 .map(|el| {
                     if limits.is_loading() {
@@ -433,7 +433,7 @@ impl BenCodeApp {
                                     .text_size(Text::Xs.px())
                                     .text_color(fg.ink(Ink::Secondary))
                                     .cursor_pointer()
-                                    .hover(move |s| s.bg(fg.fill(Fill::Strong)))
+                                    .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.set_usage_view(UsageView::Accounts, cx)
                                     }))

@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     primitives::IconName,
-    theme::{ActiveTheme, ControlSize, Radius, TextSize},
+    theme::{ActiveTheme, ControlSize, Fill, Radius, TextSize, Tone as _},
 };
 
 type OnTime = Rc<dyn Fn(Time, &mut Window, &mut App)>;
@@ -72,8 +72,9 @@ fn time_columns(
                 if on {
                     cell.bg(colors.accent).text_color(colors.on_accent)
                 } else {
+                    let hover = colors.fg.fill(Fill::Hover);
                     cell.text_color(colors.fg)
-                        .hover(|style| style.bg(colors.hover))
+                        .hover(move |style| style.bg(hover))
                 }
             })
             .on_click(move |_, window, cx| pick(window, cx))

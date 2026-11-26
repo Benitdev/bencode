@@ -35,7 +35,7 @@ use crate::ui::figure::{Look, figure_still, figure_view};
 use crate::ui::scale::px;
 use crate::ui::settings_parts::{SettingsGroup, SettingsRow};
 use crate::ui::sidebar_popovers::pretty_path;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, InteractiveSurface as _, Text, Tone as _};
 
 /// The look popover's width (MonoCode `width={272}`).
 const LOOK_WIDTH: f32 = 272.0;
@@ -638,8 +638,7 @@ impl BenCodeApp {
             .rounded(px(16.0))
             .border_1()
             .border_color(fg.fill(Fill::Line))
-            .bg(fg.fill(if open { Fill::Selected } else { Fill::Hover }))
-            .hover(move |s| s.bg(fg.fill(Fill::Selected)))
+            .tonal_surface(open, fg)
             .cursor_pointer()
             .tooltip(Tooltip::text("Change look and color"))
             .on_click(cx.listener(|this, _, _, cx| {

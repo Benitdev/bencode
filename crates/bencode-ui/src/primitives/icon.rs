@@ -242,6 +242,18 @@ impl Icon {
         self.scale = factor;
         self
     }
+
+    /// Stem of the SVG path, used as an accessible fallback name when no tooltip is set.
+    pub(crate) fn fallback_name(&self) -> SharedString {
+        let stem = self
+            .path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&self.path)
+            .strip_suffix(".svg")
+            .unwrap_or(&self.path);
+        SharedString::from(stem.to_string())
+    }
 }
 
 impl From<IconName> for Icon {

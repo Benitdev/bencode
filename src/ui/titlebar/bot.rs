@@ -164,7 +164,11 @@ impl BenCodeApp {
                     .text_size(Text::Base.px())
                     .cursor_pointer()
                     .text_color(ink)
-                    .bg(fg.opacity(if overview { 0.10 } else { 0.05 }))
+                    .bg(fg.fill(if overview {
+                        Fill::Selected
+                    } else {
+                        Fill::Hover
+                    }))
                     .when(!overview, |el| {
                         el.hover(move |s| s.bg(fg.fill(Fill::Selected)).text_color(fg))
                     })

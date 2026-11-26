@@ -1411,7 +1411,7 @@ fn header_button(
         .map(|el| {
             if enabled {
                 el.cursor_pointer()
-                    .hover(move |s| s.bg(fg.fill(Fill::Selected)))
+                    .hover(move |s| s.bg(fg.fill(Fill::Hover)))
             } else {
                 el.opacity(0.3)
             }

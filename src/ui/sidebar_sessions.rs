@@ -25,7 +25,7 @@ use crate::ui::icons::ExtraIcon;
 use crate::ui::region::Region;
 use crate::ui::scale::px;
 use crate::ui::sidebar_folders::SessionGroup;
-use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
+use crate::ui::tokens::{Fill, Ink, InteractiveSurface as _, Text, Tone as _};
 use crate::ui::virtual_rows;
 
 /// The least the threads keep in the navigator: the search and about two
@@ -553,8 +553,7 @@ impl BenCodeApp {
                     .justify_center()
                     .rounded(px(6.0))
                     .cursor_pointer()
-                    .when(active, |el| el.bg(fg.fill(Fill::Selected)))
-                    .when(!active, |el| el.hover(move |s| s.bg(fg.fill(Fill::Strong))))
+                    .ghost_surface(active, fg)
                     .tooltip(Tooltip::text("Filter sessions"))
                     .on_mouse_down(
                         MouseButton::Left,

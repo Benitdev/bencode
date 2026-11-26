@@ -127,7 +127,7 @@ fn page_header(back: gpui::Stateful<gpui::Div>, title: String, fg: Hsla) -> gpui
                 .justify_center()
                 .size(px(24.0))
                 .rounded(px(6.0))
-                .hover(move |s| s.bg(fg.fill(Fill::Strong)))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 .child(
                     Icon::new(IconName::ArrowLeft)
                         .size(IconSize::Sm)
@@ -327,7 +327,7 @@ impl BenCodeApp {
                     .text_size(Text::Sm.px())
                     .text_color(fg.ink(Ink::Secondary))
                     .cursor_pointer()
-                    .hover(move |s| s.bg(fg.fill(Fill::Line)).text_color(fg))
+                    .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
                     .on_click(cx.listener(|this, _, _, cx| this.set_usage_view(UsageView::Add, cx)))
                     .child(
                         Icon::new(IconName::Plus)
@@ -348,7 +348,7 @@ impl BenCodeApp {
                     .text_size(Text::Sm.px())
                     .text_color(fg.ink(Ink::Muted))
                     .cursor_pointer()
-                    .hover(move |s| s.bg(fg.fill(Fill::Line)).text_color(fg))
+                    .hover(move |s| s.bg(fg.fill(Fill::Hover)).text_color(fg))
                     .on_click(cx.listener(|this, _, _, cx| this.manage_accounts(cx)))
                     .child("Manage accounts…"),
             )

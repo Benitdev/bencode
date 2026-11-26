@@ -74,7 +74,7 @@ impl SearchPopover<'_> {
                     .justify_center()
                     .rounded(px(6.0))
                     .cursor_pointer()
-                    .hover(move |s| s.bg(fg.fill(Fill::Selected)))
+                    .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                     .tooltip(Tooltip::text(close_tip))
                     .on_click(cx.listener(move |this, _, _, cx| close(this, cx)))
                     .child(
@@ -110,10 +110,13 @@ impl SearchPopover<'_> {
             .right_0()
             .mb_1()
             .overflow_hidden()
-            .rounded(px(8.0))
+            .rounded(px(12.0))
             .border_1()
             .border_color(colors.border)
-            .bg(colors.surface)
+            .child(crate::ui::frost::frost(
+                crate::ui::frost::POPOVER_RADIUS,
+                cx,
+            ))
             .shadow_xl()
             .on_mouse_down_out(cx.listener(move |this, _, _, cx| dismiss(this, cx)))
             .child(search)

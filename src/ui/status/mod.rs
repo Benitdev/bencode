@@ -11,6 +11,7 @@ mod usage_chip;
 pub(crate) use account_views::{account_status_label, usage_meter};
 pub use usage_chip::UsageChipVariant;
 
+use bencode_ui::buttons::IconButton;
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, prelude::*};
@@ -112,27 +113,20 @@ impl BenCodeApp {
         } else {
             fg.ink(Ink::Muted)
         };
-        div()
-            .id("toolbar-terminal-toggle")
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .size(px(26.0))
-            .rounded(px(6.0))
-            .cursor_pointer()
-            .hover(move |s| s.bg(fg.fill(Fill::Strong)))
+        IconButton::new("toolbar-terminal-toggle", IconName::Terminal)
+            .side(px(26.0))
+            .icon_size(IconSize::Sm)
+            .icon_color(tint)
+            .tooltip(if terminal_open {
+                "Hide Terminal (⌘J)"
+            } else {
+                "Show Terminal (⌘J)"
+            })
             .on_click(
                 cx.listener(|this, _, _, cx| {
                     this.set_terminal_open(!this.is_terminal_open(cx), cx)
                 }),
             )
-            .tooltip(Tooltip::text(if terminal_open {
-                "Hide Terminal (⌘J)"
-            } else {
-                "Show Terminal (⌘J)"
-            }))
-            .child(Icon::new(IconName::Terminal).size(IconSize::Sm).color(tint))
             .into_any_element()
     }
 
@@ -158,7 +152,7 @@ impl BenCodeApp {
                     ))
                 } else {
                     el.cursor_pointer()
-                        .hover(move |s| s.bg(fg.opacity(0.10)))
+                        .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                         .on_click(cx.listener(|this, _, _, cx| this.refresh_usage(cx)))
                         .child(
                             Icon::new(IconName::RefreshCw)
@@ -181,18 +175,11 @@ impl BenCodeApp {
         } else {
             fg.ink(Ink::Muted)
         };
-        div()
-            .id("toolbar-browser-toggle")
-            .flex()
-            .flex_none()
-            .items_center()
-            .justify_center()
-            .size(px(26.0))
-            .rounded(px(6.0))
-            .cursor_pointer()
-            .hover(move |s| s.bg(fg.fill(Fill::Strong)))
+        IconButton::new("toolbar-browser-toggle", IconName::Globe)
+            .side(px(26.0))
+            .icon_size(IconSize::Sm)
+            .icon_color(tint)
+            .tooltip("Browser (⌘⇧O opens a new tab)")
             .on_click(cx.listener(|this, _, window, cx| this.show_browser(window, cx)))
-            .tooltip(Tooltip::text("Browser (⌘⇧O opens a new tab)"))
-            .child(Icon::new(IconName::Globe).size(IconSize::Sm).color(tint))
     }
 }

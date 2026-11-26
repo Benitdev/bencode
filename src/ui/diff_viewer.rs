@@ -9,7 +9,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
-use bencode_ui::buttons::{Button, ButtonVariant};
+use bencode_ui::buttons::{Button, ButtonVariant, IconButton};
 use bencode_ui::files::FileIcon;
 use bencode_ui::forms::{code_highlights, json_highlights};
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
@@ -1257,19 +1257,12 @@ impl BenCodeApp {
         };
         let (additions, deletions) = doc.totals();
         let button = |id: &str, icon: Icon, tip: &'static str, enabled: bool| {
-            div()
-                .id(SharedString::from(format!("{id}-{key}")))
-                .size(px(26.0))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(6.0))
-                .when(enabled, |el| {
-                    el.cursor_pointer().hover(|s| s.bg(fg.fill(Fill::Hover)))
-                })
-                .when(!enabled, |el| el.opacity(0.35))
-                .tooltip(Tooltip::text(tip))
-                .child(icon.size(IconSize::Sm).color(fg.ink(Ink::Muted)))
+            IconButton::new(SharedString::from(format!("{id}-{key}")), icon)
+                .side(px(26.0))
+                .icon_size(IconSize::Sm)
+                .muted()
+                .disabled(!enabled)
+                .tooltip(tip)
         };
         let split = doc.split;
         let expand_key = key.to_string();
@@ -1519,20 +1512,12 @@ impl BenCodeApp {
             colors.surface
         };
         let action_btn = |id: SharedString, icon: IconName, tip: &'static str, enabled: bool| {
-            div()
-                .id(id)
-                .size(px(24.0))
-                .flex()
-                .flex_none()
-                .items_center()
-                .justify_center()
-                .rounded(px(6.0))
-                .tooltip(Tooltip::text(tip))
-                .when(!enabled, |el| el.opacity(0.35))
-                .when(enabled, |el| {
-                    el.cursor_pointer().hover(|s| s.bg(fg.fill(Fill::Selected)))
-                })
-                .child(Icon::new(icon).size(IconSize::Xs).color(fg.ink(Ink::Muted)))
+            IconButton::new(id, icon)
+                .size(ControlSize::Sm)
+                .icon_size(IconSize::Xs)
+                .muted()
+                .disabled(!enabled)
+                .tooltip(tip)
         };
         div()
             .px_2()
@@ -1693,7 +1678,7 @@ impl BenCodeApp {
                 .justify_center()
                 .rounded_sm()
                 .cursor_pointer()
-                .hover(|s| s.bg(fg.fill(Fill::Strong)))
+                .hover(|s| s.bg(fg.fill(Fill::Hover)))
                 .tooltip(Tooltip::text(tip))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.reveal_diff_fold(&key, file, fold, how, cx)

@@ -327,9 +327,8 @@ impl Render for Terminal {
             .size_full()
             .rounded(gpui::px(6.0))
             .p_2()
-            .bg(ink.bg)
             .when_some(flash, |root, left| {
-                root.bg(ink.bg.blend(colors.warning.opacity(0.12 * left)))
+                root.bg(colors.warning.opacity(0.12 * left))
             })
             .when(self.hovered.is_some(), |root| root.cursor_pointer())
             .child(paint::grid(

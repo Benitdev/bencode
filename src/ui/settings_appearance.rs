@@ -79,7 +79,7 @@ impl BenCodeApp {
             .text_size(Text::Base.px())
             .text_color(fg.ink(Ink::Secondary))
             .cursor_pointer()
-            .hover(|el| el.bg(fg.fill(Fill::Strong)).text_color(fg))
+            .hover(|el| el.bg(fg.fill(Fill::Hover)).text_color(fg))
             .child(Icon::new(IconName::RotateCcw).size(IconSize::Sm))
             .child("Restore defaults")
             .on_click(cx.listener(|this, _, _, cx| this.restore_appearance_defaults(cx)))
