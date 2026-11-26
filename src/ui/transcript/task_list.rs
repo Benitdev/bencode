@@ -11,8 +11,10 @@ use crate::ui::scale::px;
 use crate::ui::spinner::terminal_spinner;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
-/// The row's leading mark (MonoCode `TaskState`).
-fn state(status: TaskStatus, cx: &App) -> AnyElement {
+/// The row's leading mark (MonoCode `TaskState`). A task left in progress
+/// by a turn that ended keeps a still ring: a spinner there would step the
+/// clock (`start_clock`) with no agent running.
+fn state(status: TaskStatus, live: bool, cx: &App) -> AnyElement {
     let colors = &cx.theme().colors;
     let slot = div()
         .mt(px(1.0))
@@ -31,8 +33,13 @@ fn state(status: TaskStatus, cx: &App) -> AnyElement {
                     .color(colors.success),
             )
             .into_any_element(),
-        TaskStatus::InProgress => slot
+        TaskStatus::InProgress if live => slot
             .child(terminal_spinner(colors.accent, cx))
+            .into_any_element(),
+        TaskStatus::InProgress => slot
+            .rounded_full()
+            .border_1()
+            .border_color(colors.accent)
             .into_any_element(),
         TaskStatus::Cancelled => slot
             .rounded_full()
@@ -52,8 +59,14 @@ fn state(status: TaskStatus, cx: &App) -> AnyElement {
     }
 }
 
-/// The card for `items`, under the line the agent explained them with.
-pub(super) fn card(items: &[TaskItem], explanation: Option<&str>, cx: &App) -> AnyElement {
+/// The card for `items`, under the line the agent explained them with;
+/// `live` while its turn runs.
+pub(super) fn card(
+    items: &[TaskItem],
+    explanation: Option<&str>,
+    live: bool,
+    cx: &App,
+) -> AnyElement {
     let theme = cx.theme();
     let colors = &theme.colors;
     let header = div()
@@ -132,7 +145,7 @@ pub(super) fn card(items: &[TaskItem], explanation: Option<&str>, cx: &App) -> A
             .min_w_0()
             .px(px(10.0))
             .py(px(6.0))
-            .child(state(item.status, cx))
+            .child(state(item.status, live, cx))
             .child(text)
     });
     div()

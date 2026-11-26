@@ -206,13 +206,15 @@ fn dot(cx: &App) -> impl IntoElement {
 }
 
 impl BenCodeApp {
-    /// Block `ix` on its own row. `under_work` puts prose right under the
-    /// work it follows (MonoCode `underLine`).
+    /// Block `ix` on its own row. `live` is the turn's last block while it
+    /// streams, `turn_live` any block of a running turn. `under_work` puts
+    /// prose right under the work it follows (MonoCode `underLine`).
     pub(super) fn render_block(
         &self,
         session: &SessionRow,
         ix: usize,
         live: bool,
+        turn_live: bool,
         under_work: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
@@ -227,7 +229,7 @@ impl BenCodeApp {
                 .and_then(|line| line.as_str())
                 .map(str::trim)
                 .filter(|line| !line.is_empty());
-            return super::task_list::card(&tasks, explanation, cx);
+            return super::task_list::card(&tasks, explanation, turn_live, cx);
         }
         match block.role.as_str() {
             "user" => self.render_user_message(session, ix, cx),

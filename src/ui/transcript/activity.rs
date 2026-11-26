@@ -352,7 +352,7 @@ impl BenCodeApp {
                         Some(Item::Activity(_) | Item::Subagents(_))
                     );
                 let live = turn.live && *ix + 1 == session.blocks.len();
-                self.render_block(session, *ix, live, under_work, cx)
+                self.render_block(session, *ix, live, turn.live, under_work, cx)
             }
         }
     }
