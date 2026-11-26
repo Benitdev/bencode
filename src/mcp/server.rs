@@ -17,7 +17,7 @@ pub struct Reply {
     /// An image, base64.
     pub image: Option<String>,
     /// MIME type of `image`; defaults to `image/png`.
-    pub image_mime: Option<&'static str>,
+    pub image_mime: Option<String>,
 }
 
 impl Reply {
@@ -33,13 +33,13 @@ impl Reply {
     pub fn text_with_image(
         text: impl Into<String>,
         image: String,
-        mime: &'static str,
+        mime: impl Into<String>,
     ) -> Self {
         Self {
             ok: true,
             text: text.into(),
             image: Some(image),
-            image_mime: Some(mime),
+            image_mime: Some(mime.into()),
         }
     }
 
@@ -136,7 +136,7 @@ fn call_tool(server: &impl Server, params: &Value) -> Value {
     let reply = server.call(tool, &args);
     let mut content = vec![json!({ "type": "text", "text": reply.text })];
     if let Some(image) = reply.image {
-        let mime = reply.image_mime.unwrap_or("image/png");
+        let mime = reply.image_mime.as_deref().unwrap_or("image/png");
         content.push(json!({ "type": "image", "data": image, "mimeType": mime }));
     }
     json!({ "content": content, "isError": !reply.ok })

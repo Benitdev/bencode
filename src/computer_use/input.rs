@@ -329,6 +329,41 @@ impl Mouse {
     }
 }
 
+pub fn click_point(position: CGPoint, count: i64, held: &mut Held, grant: &Grant) -> Result<()> {
+    if !(1..=3).contains(&count) {
+        bail!("Click count must be between 1 and 3.");
+    }
+    check_button_free(&held.buttons, MouseButton::Left)?;
+    let source = event_source()?;
+    let flags = held.flags(None);
+    grant.check()?;
+    if held.buttons.is_empty() {
+        post(&mouse_event(
+            &source,
+            MouseButton::Left,
+            EventType::MouseMoved,
+            position,
+            0,
+            flags,
+        )?);
+        std::thread::sleep(Duration::from_millis(30));
+        grant.check()?;
+    }
+    let (_, down, up, _) = MouseButton::Left.events();
+    for click in 1..=count {
+        grant.check()?;
+        let press = mouse_event(&source, MouseButton::Left, down, position, click, flags)?;
+        let release = mouse_event(&source, MouseButton::Left, up, position, click, flags)?;
+        post(&press);
+        post(&release);
+        if click < count {
+            std::thread::sleep(Duration::from_millis(55));
+        }
+    }
+    held.last_pointer = Some(position);
+    Ok(())
+}
+
 fn check_button_free(buttons: &[MouseButton], button: MouseButton) -> Result<()> {
     if buttons.contains(&button) {
         bail!("That mouse button is already held. Use move and up to finish the gesture.");

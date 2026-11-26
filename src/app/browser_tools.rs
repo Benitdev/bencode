@@ -894,11 +894,7 @@ async fn screenshot(
         })
         .await;
     match encoded {
-        Ok(image) => ToolReply {
-            ok: true,
-            text: label,
-            image: Some(image),
-        },
+        Ok(image) => ToolReply::image(label, image, "image/png"),
         Err(err) => ToolReply::error(format!("The screenshot could not be read: {err:#}")),
     }
 }

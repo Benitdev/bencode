@@ -51,7 +51,7 @@ impl Server for Browser<'_> {
             ok: reply.ok,
             text: reply.text,
             image: reply.image,
-            image_mime: None,
+            image_mime: reply.image_mime,
         }
     }
 }

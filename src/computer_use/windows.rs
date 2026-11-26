@@ -60,6 +60,30 @@ pub fn find(id: u32) -> Result<Window> {
         .context("The window is unavailable. Call computer_windows for current window IDs.")
 }
 
+/// Frontmost on-screen window. When `skip_self` is true, skips BenCode's own
+/// windows so read-only inspection reaches the active target app right away.
+pub fn frontmost(skip_self: bool) -> Result<Window> {
+    let self_pid = std::process::id() as i32;
+    let windows = read(false)?;
+    if skip_self {
+        windows
+            .into_iter()
+            .find(|w| w.pid != self_pid)
+            .context("No external on-screen window was found. Open an app or call computer_windows.")
+    } else {
+        let front = windows
+            .into_iter()
+            .next()
+            .context("No on-screen window was found. Open an app or call computer_windows.")?;
+        if front.pid == self_pid {
+            bail!(
+                "BenCode is currently in front. Focus the target window or pass its windowId explicitly."
+            );
+        }
+        Ok(front)
+    }
+}
+
 fn read(include_hidden: bool) -> Result<Vec<Window>> {
     let visibility = if include_hidden {
         quartz::kCGWindowListOptionAll
@@ -157,7 +181,7 @@ fn resolve_window(matches: &[(bool, bool)], sole_app_window: impl FnOnce() -> bo
         .or_else(|| (matches.len() == 1 && sole_app_window()).then_some(0))
 }
 
-fn close_bounds(a: CGRect, b: CGRect) -> bool {
+pub(super) fn close_bounds(a: CGRect, b: CGRect) -> bool {
     // The visible Window Server frame may be rounded to integral points.
     [
         a.origin.x - b.origin.x,
@@ -263,7 +287,7 @@ impl WindowAction {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UiAction {
-    window_id: u32,
+    window_id: Option<u32>,
     #[serde(flatten)]
     action: UiCommand,
 }
@@ -275,7 +299,12 @@ pub struct UiAction {
     rename_all_fields = "camelCase"
 )]
 enum UiCommand {
-    Outline,
+    Outline {
+        query: Option<String>,
+        #[serde(default)]
+        interactive_only: bool,
+        limit: Option<usize>,
+    },
     Control {
         element: String,
         verb: ax::Control,
@@ -284,6 +313,17 @@ enum UiCommand {
 }
 
 impl UiAction {
+    pub fn follows_focus(&self) -> bool {
+        self.window_id.is_none()
+            || matches!(
+                self.action,
+                UiCommand::Control {
+                    verb: ax::Control::Click | ax::Control::DoubleClick,
+                    ..
+                }
+            )
+    }
+
     pub fn parse(args: Value) -> Result<Self> {
         let action: Self = serde_json::from_value(args)?;
         if let UiCommand::Control {
@@ -298,19 +338,70 @@ impl UiAction {
         {
             bail!("Use a current element ref and at most 4000 text characters.");
         }
+        if let UiCommand::Outline {
+            ref query, limit, ..
+        } = action.action
+        {
+            if query.as_ref().is_some_and(|q| q.len() > 200) {
+                bail!("Query must be at most 200 bytes.");
+            }
+            if let Some(limit) = limit
+                && !(1..=250).contains(&limit)
+            {
+                bail!("Limit must be between 1 and 250.");
+            }
+        }
         Ok(action)
     }
 
     pub fn perform(self, grant: &Grant) -> Result<ToolReply> {
-        let (_, window) = find(self.window_id)?.accessibility(grant)?;
+        let is_outline = matches!(self.action, UiCommand::Outline { .. });
+        let target = match self.window_id {
+            Some(id) => find(id)?,
+            None => frontmost(is_outline)?,
+        };
+        let (_, window) = target.accessibility(grant)?;
         match self.action {
-            UiCommand::Outline => Ok(ToolReply::text(window.outline(grant)?.to_string())),
+            UiCommand::Outline {
+                query,
+                interactive_only,
+                limit,
+            } => {
+                let options = ax::OutlineOptions {
+                    query,
+                    interactive_only,
+                    limit,
+                };
+                let mut result = window.outline(&options, grant)?;
+                if let Some(obj) = result.as_object_mut() {
+                    obj.insert("windowId".into(), json!(target.id));
+                    obj.insert("app".into(), json!(target.app));
+                    obj.insert("title".into(), json!(target.title));
+                    obj.insert(
+                        "bounds".into(),
+                        json!([
+                            target.bounds.origin.x.round() as i64,
+                            target.bounds.origin.y.round() as i64,
+                            target.bounds.size.width.round() as i64,
+                            target.bounds.size.height.round() as i64,
+                        ]),
+                    );
+                }
+                Ok(ToolReply::text(result.to_string()))
+            }
             UiCommand::Control {
                 element,
                 verb,
                 text,
             } => {
-                window.control(&element, verb, text.as_deref(), grant)?;
+                if matches!(verb, ax::Control::Click | ax::Control::DoubleClick)
+                    && !target.on_screen
+                {
+                    bail!(
+                        "The window is not on screen. Focus it with computer_window before clicking."
+                    );
+                }
+                window.control(&element, verb, text.as_deref(), target.bounds, grant)?;
                 Ok(ToolReply::text("Accessibility action completed."))
             }
         }
@@ -384,6 +475,25 @@ mod tests {
                 "verb": "setText", "text": "Tiếng Việt"
             }))
             .is_ok()
+        );
+        assert!(
+            UiAction::parse(json!({
+                "action": "outline", "query": "Save", "interactiveOnly": true, "limit": 50
+            }))
+            .is_ok()
+        );
+        assert!(
+            UiAction::parse(json!({
+                "windowId": 2, "action": "control", "element": "3:deadbeef",
+                "verb": "doubleClick"
+            }))
+            .is_ok()
+        );
+        assert!(
+            UiAction::parse(json!({
+                "action": "outline", "limit": 300
+            }))
+            .is_err()
         );
     }
 }

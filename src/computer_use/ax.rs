@@ -1,5 +1,6 @@
 //! Apple's Accessibility API for window management and native controls.
 
+use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::time::{Duration, Instant};
 
@@ -13,7 +14,7 @@ use core_foundation::string::{CFString, CFStringRef};
 use core_graphics::geometry::{CGPoint, CGRect, CGSize};
 use serde_json::{Value, json};
 
-use super::Grant;
+use super::{Grant, input};
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
@@ -39,9 +40,18 @@ unsafe extern "C" {
 const POINT: u32 = 1; // kAXValueTypeCGPoint
 const SIZE: u32 = 2; // kAXValueTypeCGSize
 const ELEMENT_TIMEOUT: f32 = 0.4;
-const MAX_DEPTH: usize = 10;
-const MAX_NODES: usize = 100;
-const MAX_WALK: Duration = Duration::from_secs(5);
+const MAX_DEPTH: usize = 18;
+const DEFAULT_MAX_NODES: usize = 150;
+const MAX_NODES_CAP: usize = 250;
+const MAX_VISITED: usize = 1200;
+const MAX_WALK: Duration = Duration::from_secs(4);
+
+#[derive(Clone, Debug, Default)]
+pub struct OutlineOptions {
+    pub query: Option<String>,
+    pub interactive_only: bool,
+    pub limit: Option<usize>,
+}
 
 /// Asks for the Accessibility grant the window and control tools need
 /// (`AXIsProcessTrusted`); true when BenCode already has it.
@@ -190,15 +200,33 @@ impl Element {
         ax_result(error, action)
     }
 
-    pub fn outline(&self, grant: &Grant) -> Result<Value> {
+    pub fn outline(&self, options: &OutlineOptions, grant: &Grant) -> Result<Value> {
+        let limit = options
+            .limit
+            .unwrap_or(DEFAULT_MAX_NODES)
+            .clamp(1, MAX_NODES_CAP);
+        let query = options
+            .query
+            .as_deref()
+            .map(str::trim)
+            .filter(|q| !q.is_empty())
+            .map(str::to_lowercase);
         let mut outline = Outline {
             grant,
             deadline: Instant::now() + MAX_WALK,
+            limit,
+            query,
+            interactive_only: options.interactive_only,
+            visited: 0,
             nodes: Vec::new(),
             truncated: false,
         };
-        outline.visit(self, &mut Vec::new())?;
-        Ok(json!({ "elements": outline.nodes, "truncated": outline.truncated }))
+        outline.walk(self)?;
+        Ok(json!({
+            "elements": outline.nodes,
+            "count": outline.nodes.len(),
+            "truncated": outline.truncated,
+        }))
     }
 
     pub fn control(
@@ -206,6 +234,7 @@ impl Element {
         reference: &str,
         verb: Control,
         text: Option<&str>,
+        window_bounds: CGRect,
         grant: &Grant,
     ) -> Result<()> {
         let (path, fingerprint) = reference
@@ -248,6 +277,18 @@ impl Element {
                     "AXValue",
                     &CFString::new(text.context("setText requires text.")?),
                 )
+            }
+            Control::Click | Control::DoubleClick => {
+                let bounds = current
+                    .bounds()
+                    .context("This element has no on-screen bounds to click.")?;
+                let center = element_center(bounds, window_bounds)?;
+                let count = if matches!(verb, Control::DoubleClick) {
+                    2
+                } else {
+                    1
+                };
+                grant.input(|held| input::click_point(center, count, held, grant))
             }
         }
     }
@@ -295,7 +336,7 @@ impl Element {
     }
 }
 
-#[derive(Clone, Copy, serde::Deserialize)]
+#[derive(Clone, Copy, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Control {
     Press,
@@ -303,6 +344,99 @@ pub enum Control {
     Increment,
     Decrement,
     SetText,
+    Click,
+    DoubleClick,
+}
+
+fn element_center(bounds: CGRect, window_bounds: CGRect) -> Result<CGPoint> {
+    if bounds.size.width <= 0.0 || bounds.size.height <= 0.0 {
+        bail!("This element is hidden or has zero size.");
+    }
+    let center = CGPoint::new(
+        bounds.origin.x + bounds.size.width / 2.0,
+        bounds.origin.y + bounds.size.height / 2.0,
+    );
+    let outside = center.x < window_bounds.origin.x - 2.0
+        || center.y < window_bounds.origin.y - 2.0
+        || center.x > window_bounds.origin.x + window_bounds.size.width + 2.0
+        || center.y > window_bounds.origin.y + window_bounds.size.height + 2.0;
+    if outside {
+        bail!("This element is scrolled outside the visible window.");
+    }
+    Ok(center)
+}
+
+fn is_ignored_subtree(role: &str) -> bool {
+    matches!(role, "AXScrollBar" | "AXValueIndicator" | "AXSplitter")
+}
+
+fn is_pure_chrome_container(role: &str) -> bool {
+    matches!(
+        role,
+        "AXWindow" | "AXSplitGroup" | "AXScrollArea" | "AXLayoutArea" | "AXToolbar"
+    )
+}
+
+fn is_container_role(role: &str) -> bool {
+    is_pure_chrome_container(role)
+        || matches!(
+            role,
+            "AXGroup"
+                | "AXSection"
+                | "AXTabGroup"
+                | "AXList"
+                | "AXOutline"
+                | "AXTable"
+                | "AXColumn"
+                | "AXBrowser"
+                | "AXSheet"
+                | "AXDrawer"
+                | "AXPopover"
+                | "AXWebArea"
+                | "AXGenericElement"
+                | "AXPane"
+                | "AXBox"
+        )
+}
+
+fn is_interactive_role(role: &str) -> bool {
+    matches!(
+        role,
+        "AXButton"
+            | "AXTextField"
+            | "AXTextArea"
+            | "AXSearchField"
+            | "AXCheckBox"
+            | "AXRadioButton"
+            | "AXPopUpButton"
+            | "AXComboBox"
+            | "AXSlider"
+            | "AXMenuButton"
+            | "AXMenuItem"
+            | "AXMenuBarItem"
+            | "AXTab"
+            | "AXLink"
+            | "AXDisclosureTriangle"
+            | "AXIncrementor"
+            | "AXColorWell"
+            | "AXDateField"
+            | "AXSwitch"
+            | "AXSegmentedControl"
+            | "AXRow"
+            | "AXOutlineRow"
+            | "AXCell"
+    )
+}
+
+fn matches_query(query: &str, desc: &Description, value: Option<&Value>) -> bool {
+    let contains = |haystack: &str| haystack.to_lowercase().contains(query);
+    contains(&desc.label)
+        || contains(&desc.role)
+        || contains(&desc.identifier)
+        || value.is_some_and(|v| match v {
+            Value::String(s) => contains(s),
+            other => contains(&other.to_string()),
+        })
 }
 
 fn element_ref(value: CFTypeRef) -> Option<Element> {
@@ -338,59 +472,168 @@ impl Description {
 struct Outline<'a> {
     grant: &'a Grant,
     deadline: Instant,
+    limit: usize,
+    query: Option<String>,
+    interactive_only: bool,
+    visited: usize,
     nodes: Vec<Value>,
     truncated: bool,
 }
 
 impl Outline<'_> {
-    /// Whether the walk must stop: the node budget or the time is spent.
-    /// A branch cut at `MAX_DEPTH` only marks the outline truncated; its
-    /// siblings are still visited.
     fn spent(&mut self) -> bool {
-        let spent = self.nodes.len() >= MAX_NODES || Instant::now() >= self.deadline;
+        let spent = self.nodes.len() >= self.limit
+            || self.visited >= MAX_VISITED
+            || Instant::now() >= self.deadline;
         self.truncated |= spent;
         spent
     }
 
-    fn visit(&mut self, element: &Element, path: &mut Vec<usize>) -> Result<()> {
-        self.grant.check()?;
-        if self.spent() {
-            return Ok(());
-        }
-        let desc = element.description();
-        let path_text = path
-            .iter()
-            .map(usize::to_string)
-            .collect::<Vec<_>>()
-            .join(".");
-        let label: String = desc.label.chars().take(250).collect();
-        let mut node = json!({
-            "ref": format!("{path_text}:{}", desc.fingerprint()),
-            "role": desc.role,
-            "label": label,
-            "enabled": element.boolean("AXEnabled"),
-        });
-        if let Some(value) = element.value(&desc.role) {
-            node["value"] = value;
-        }
-        self.nodes.push(node);
-        if let Some(children) = element.array("AXChildren") {
-            if path.len() == MAX_DEPTH {
-                self.truncated |= !children.is_empty();
-                return Ok(());
+    /// Breadth-first walk that skips layout containers when they have children,
+    /// so toolbars, sidebars and main content are all reached within budget.
+    fn walk(&mut self, root: &Element) -> Result<()> {
+        let mut queue = VecDeque::new();
+        queue.push_back((Element(root.0.clone()), Vec::<usize>::new()));
+
+        while let Some((element, path)) = queue.pop_front() {
+            self.grant.check()?;
+            if self.spent() {
+                break;
             }
-            for (index, value) in children.iter().enumerate() {
-                if self.spent() {
-                    break;
-                }
-                if let Some(child) = element_ref(*value) {
-                    path.push(index);
-                    let result = self.visit(&child, path);
-                    path.pop();
-                    result?;
+            self.visited += 1;
+
+            let role = element.text("AXRole").unwrap_or_default();
+            if is_ignored_subtree(&role) {
+                continue;
+            }
+
+            let children = element.array("AXChildren");
+            let has_children = children.as_ref().is_some_and(|c| !c.is_empty());
+
+            // Enqueue children before deciding whether to emit this node so
+            // skipping a container never hides its descendants.
+            if let Some(children) = children {
+                if path.len() >= MAX_DEPTH {
+                    self.truncated |= !children.is_empty();
+                } else {
+                    for (index, value) in children.iter().enumerate() {
+                        if let Some(child) = element_ref(*value) {
+                            let mut child_path = Vec::with_capacity(path.len() + 1);
+                            child_path.extend_from_slice(&path);
+                            child_path.push(index);
+                            queue.push_back((child, child_path));
+                        }
+                    }
                 }
             }
+
+            // Pure layout wrappers with children consume neither IPC nor node budget.
+            if is_pure_chrome_container(&role) || (is_container_role(&role) && has_children) {
+                continue;
+            }
+
+            let interactive = is_interactive_role(&role);
+            if self.interactive_only && !interactive {
+                continue;
+            }
+
+            let desc = Description {
+                role,
+                label: element
+                    .text("AXTitle")
+                    .filter(|text| !text.is_empty())
+                    .or_else(|| element.text("AXDescription"))
+                    .unwrap_or_default(),
+                identifier: element.text("AXIdentifier").unwrap_or_default(),
+            };
+            let value = element.value(&desc.role);
+
+            // Drop unlabeled, valueless non-interactive leaves (spacers, decorative images).
+            if !interactive && desc.label.is_empty() && value.is_none() {
+                continue;
+            }
+            // Drop unlabeled structural rows/cells unless they hold a value.
+            if matches!(desc.role.as_str(), "AXRow" | "AXOutlineRow" | "AXCell")
+                && desc.label.is_empty()
+                && value.is_none()
+            {
+                continue;
+            }
+
+            if let Some(query) = self.query.as_deref()
+                && !matches_query(query, &desc, value.as_ref())
+            {
+                continue;
+            }
+
+            let path_text = path
+                .iter()
+                .map(usize::to_string)
+                .collect::<Vec<_>>()
+                .join(".");
+            let label: String = desc.label.chars().take(200).collect();
+            let mut node = json!({
+                "ref": format!("{path_text}:{}", desc.fingerprint()),
+                "role": desc.role,
+                "label": label,
+            });
+            if let Some(enabled) = element.boolean("AXEnabled")
+                && !enabled
+            {
+                node["enabled"] = json!(false);
+            }
+            if let Some(value) = value {
+                node["value"] = value;
+            }
+            if let Some(bounds) = element.bounds()
+                && bounds.size.width > 0.0
+                && bounds.size.height > 0.0
+            {
+                node["bounds"] = json!([
+                    bounds.origin.x.round() as i64,
+                    bounds.origin.y.round() as i64,
+                    bounds.size.width.round() as i64,
+                    bounds.size.height.round() as i64,
+                ]);
+            }
+            self.nodes.push(node);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn element_center_rejects_hidden_or_offscreen_controls() {
+        let win = CGRect::new(&CGPoint::new(100.0, 50.0), &CGSize::new(800.0, 600.0));
+        let inside = CGRect::new(&CGPoint::new(200.0, 150.0), &CGSize::new(100.0, 40.0));
+        let center = element_center(inside, win).unwrap();
+        assert_eq!((center.x, center.y), (250.0, 170.0));
+
+        let zero = CGRect::new(&CGPoint::new(200.0, 150.0), &CGSize::new(0.0, 40.0));
+        assert!(element_center(zero, win).is_err());
+
+        let scrolled_out = CGRect::new(&CGPoint::new(200.0, 800.0), &CGSize::new(100.0, 40.0));
+        assert!(element_center(scrolled_out, win).is_err());
+    }
+
+    #[test]
+    fn query_matching_checks_label_role_identifier_and_value_case_insensitively() {
+        let desc = Description {
+            role: "AXButton".into(),
+            label: "Save Changes".into(),
+            identifier: "btn-save".into(),
+        };
+        assert!(matches_query("save", &desc, None));
+        assert!(matches_query("btn-save", &desc, None));
+        assert!(matches_query("axbutton", &desc, None));
+        assert!(matches_query("42", &desc, Some(&json!(42))));
+        assert!(!matches_query("cancel", &desc, Some(&json!("ok"))));
+        assert!(is_interactive_role("AXButton"));
+        assert!(is_container_role("AXScrollArea"));
+        assert!(is_ignored_subtree("AXScrollBar"));
     }
 }

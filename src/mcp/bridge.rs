@@ -37,9 +37,12 @@ pub struct ToolRequest {
 pub struct ToolReply {
     pub ok: bool,
     pub text: String,
-    /// A PNG, base64.
+    /// An encoded image (PNG or JPEG), base64.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image: Option<String>,
+    /// MIME type of `image`; defaults to `image/png`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_mime: Option<String>,
 }
 
 impl ToolReply {
@@ -48,6 +51,16 @@ impl ToolReply {
             ok: true,
             text: text.into(),
             image: None,
+            image_mime: None,
+        }
+    }
+
+    pub fn image(text: impl Into<String>, image: String, mime: impl Into<String>) -> Self {
+        Self {
+            ok: true,
+            text: text.into(),
+            image: Some(image),
+            image_mime: Some(mime.into()),
         }
     }
 
@@ -56,6 +69,7 @@ impl ToolReply {
             ok: false,
             text: text.into(),
             image: None,
+            image_mime: None,
         }
     }
 }

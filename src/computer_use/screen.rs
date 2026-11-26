@@ -13,13 +13,35 @@ use core_graphics::display::CGDisplay;
 use core_graphics::geometry::{CGPoint, CGRect};
 use core_graphics::sys::CGImageRef;
 use core_graphics::window as quartz;
-use objc::runtime::{Class, NO, Object};
+use objc::runtime::{Class, NO, Object, YES};
 use objc::{class, msg_send, sel, sel_impl};
+use serde::Deserialize;
 use serde_json::json;
 
 use crate::mcp::bridge::ToolReply;
 
 type Id = *mut Object;
+
+/// Keep up to this many window screenshots clickable in one turn.
+const MAX_WINDOW_FRAMES: usize = 8;
+const JPEG_QUALITY: f64 = 0.80;
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ImageFormat {
+    #[default]
+    Jpeg,
+    Png,
+}
+
+impl ImageFormat {
+    pub fn mime(self) -> &'static str {
+        match self {
+            Self::Jpeg => "image/jpeg",
+            Self::Png => "image/png",
+        }
+    }
+}
 
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
@@ -34,10 +56,16 @@ pub fn request_permission() {
     unsafe { CGRequestScreenCaptureAccess() };
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FrameTarget {
+    Display(u32),
+    Window(u32),
+}
+
 #[derive(Debug)]
 pub struct Frame {
     pub id: u64,
-    display: u32,
+    target: FrameTarget,
     bounds: CGRect,
     width: usize,
     height: usize,
@@ -45,9 +73,27 @@ pub struct Frame {
 
 impl Frame {
     fn point(&self, x: f64, y: f64) -> Result<CGPoint> {
-        let display = CGDisplay::new(self.display);
-        if !display.is_active() || !same_bounds(display.bounds(), self.bounds) {
-            bail!("The screenshot is stale. Take a new screenshot of the intended display.");
+        match self.target {
+            FrameTarget::Display(id) => {
+                let display = CGDisplay::new(id);
+                if !display.is_active() || !same_bounds(display.bounds(), self.bounds) {
+                    bail!(
+                        "The screenshot is stale. Take a new screenshot of the intended display."
+                    );
+                }
+            }
+            FrameTarget::Window(id) => {
+                let window = super::windows::find(id).map_err(|_| {
+                    anyhow::anyhow!(
+                        "The window is no longer available. Take a new screenshot."
+                    )
+                })?;
+                if !window.on_screen || !super::windows::close_bounds(window.bounds, self.bounds) {
+                    bail!(
+                        "The window moved, resized, or is no longer on screen. Take a new screenshot."
+                    );
+                }
+            }
         }
         self.map_pixels(x, y)
     }
@@ -84,42 +130,100 @@ pub fn displays() -> Result<ToolReply> {
     Ok(ToolReply::text(json!({ "displays": displays }).to_string()))
 }
 
-/// Keep the most recent screenshot for each display in the current turn.
+/// Keep the most recent screenshot for each display and recent windows in the current turn.
 #[derive(Default)]
 pub struct Frames {
     owner: Option<u64>,
     next: u64,
-    displays: Vec<Frame>,
+    entries: Vec<Frame>,
 }
 
 impl Frames {
-    pub fn capture(&mut self, turn: u64, display: Option<u32>, max_size: u32) -> Result<ToolReply> {
-        self.next += 1;
-        let (frame, reply) = capture(self.next, display, max_size)?;
+    fn reset_if_new_turn(&mut self, turn: u64) {
         if self.owner != Some(turn) {
-            self.displays.clear();
+            self.entries.clear();
             self.owner = Some(turn);
         }
-        self.displays
-            .retain(|old| old.display != frame.display && CGDisplay::new(old.display).is_active());
-        self.displays.push(frame);
+    }
+
+    fn store(&mut self, turn: u64, frame: Frame) {
+        self.reset_if_new_turn(turn);
+        self.entries.retain(|old| {
+            if old.target == frame.target {
+                return false;
+            }
+            match old.target {
+                FrameTarget::Display(id) => CGDisplay::new(id).is_active(),
+                FrameTarget::Window(_) => true,
+            }
+        });
+        self.entries.push(frame);
+        let window_count = self
+            .entries
+            .iter()
+            .filter(|f| matches!(f.target, FrameTarget::Window(_)))
+            .count();
+        if window_count > MAX_WINDOW_FRAMES {
+            let mut drop_count = window_count - MAX_WINDOW_FRAMES;
+            self.entries.retain(|f| {
+                if drop_count > 0 && matches!(f.target, FrameTarget::Window(_)) {
+                    drop_count -= 1;
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+    }
+
+    pub fn capture(
+        &mut self,
+        turn: u64,
+        display: Option<u32>,
+        max_size: u32,
+        format: ImageFormat,
+    ) -> Result<ToolReply> {
+        self.next += 1;
+        let (frame, reply) = capture_display(self.next, display, max_size, format)?;
+        self.store(turn, frame);
+        Ok(reply)
+    }
+
+    pub fn capture_window(
+        &mut self,
+        turn: u64,
+        id: u32,
+        max_size: u32,
+        format: ImageFormat,
+    ) -> Result<ToolReply> {
+        self.next += 1;
+        let (frame, reply) = capture_window_frame(self.next, id, max_size, format)?;
+        if let Some(frame) = frame {
+            self.store(turn, frame);
+        }
         Ok(reply)
     }
 
     pub fn point(&self, turn: u64, id: u64, x: f64, y: f64) -> Result<CGPoint> {
-        let frame = self.find(turn, id)
-            .context("That screenshot is stale or belongs to a previous turn. Capture the intended display again.")?;
+        let frame = self.find(turn, id).context(
+            "That screenshot is stale or belongs to a previous turn. Capture the intended display or window again.",
+        )?;
         frame.point(x, y)
     }
 
     fn find(&self, turn: u64, id: u64) -> Option<&Frame> {
         (self.owner == Some(turn))
-            .then(|| self.displays.iter().find(|frame| frame.id == id))
+            .then(|| self.entries.iter().find(|frame| frame.id == id))
             .flatten()
     }
 }
 
-fn capture(id: u64, display: Option<u32>, max_size: u32) -> Result<(Frame, ToolReply)> {
+fn capture_display(
+    id: u64,
+    display: Option<u32>,
+    max_size: u32,
+    format: ImageFormat,
+) -> Result<(Frame, ToolReply)> {
     check_permission()?;
     let display = display.map_or_else(CGDisplay::main, CGDisplay::new);
     if !display.is_active() {
@@ -134,33 +238,42 @@ fn capture(id: u64, display: Option<u32>, max_size: u32) -> Result<(Frame, ToolR
         display.pixels_high() as usize,
         max_size,
     );
-    let (png, width, height) = match screenshot_manager() {
-        Some(manager) => modern_capture(manager, Source::Display(display.id), size)?,
-        None => legacy_capture(Source::Display(display.id), max_size)?,
+    let (bytes, width, height) = match screenshot_manager() {
+        Some(manager) => modern_capture(manager, Source::Display(display.id), size, format)?,
+        None => legacy_capture(Source::Display(display.id), max_size, format)?,
     };
     if !display.is_active() || !same_bounds(display.bounds(), bounds) {
         bail!("The display changed during capture. Take another screenshot.");
     }
     let frame = Frame {
         id,
-        display: display.id,
+        target: FrameTarget::Display(display.id),
         bounds,
         width,
         height,
     };
-    let reply = ToolReply {
-        ok: true,
-        text:
-            json!({ "screenshotId": id, "displayId": display.id, "width": width, "height": height })
-                .to_string(),
-        image: Some(base64::engine::general_purpose::STANDARD.encode(png)),
-    };
+    let reply = ToolReply::image(
+        json!({
+            "screenshotId": id,
+            "displayId": display.id,
+            "width": width,
+            "height": height
+        })
+        .to_string(),
+        base64::engine::general_purpose::STANDARD.encode(bytes),
+        format.mime(),
+    );
     Ok((frame, reply))
 }
 
-pub fn capture_window(id: u32, max_size: u32) -> Result<ToolReply> {
+fn capture_window_frame(
+    id: u64,
+    window_id: u32,
+    max_size: u32,
+    format: ImageFormat,
+) -> Result<(Option<Frame>, ToolReply)> {
     check_permission()?;
-    let window = super::windows::find(id)?;
+    let window = super::windows::find(window_id)?;
     let source = Source::Window {
         id: window.id,
         owner: window.pid,
@@ -173,19 +286,49 @@ pub fn capture_window(id: u32, max_size: u32) -> Result<ToolReply> {
         (bounds.size.height * 2.0).ceil() as usize,
         max_size,
     );
-    let (png, width, height) = match screenshot_manager() {
-        Some(manager) => modern_capture(manager, source, size)?,
-        None => legacy_capture(source, max_size)?,
+    let (bytes, width, height) = match screenshot_manager() {
+        Some(manager) => modern_capture(manager, source, size, format)?,
+        None => legacy_capture(source, max_size, format)?,
     };
-    Ok(ToolReply {
-        ok: true,
-        text: json!({
-            "windowId": id, "app": window.app, "title": window.title,
-            "width": width, "height": height,
-            "coordinates": "Use a display screenshot for pointer coordinates or computer_ui for native controls."
-        }).to_string(),
-        image: Some(base64::engine::general_purpose::STANDARD.encode(png)),
-    })
+    let clickable = super::windows::find(window_id)
+        .is_ok_and(|after| after.on_screen && super::windows::close_bounds(after.bounds, bounds));
+    let (frame, meta) = if clickable {
+        (
+            Some(Frame {
+                id,
+                target: FrameTarget::Window(window_id),
+                bounds,
+                width,
+                height,
+            }),
+            json!({
+                "screenshotId": id,
+                "windowId": window_id,
+                "app": window.app,
+                "title": window.title,
+                "width": width,
+                "height": height
+            }),
+        )
+    } else {
+        (
+            None,
+            json!({
+                "windowId": window_id,
+                "app": window.app,
+                "title": window.title,
+                "width": width,
+                "height": height,
+                "note": "Window is not on screen or moved during capture; focus it before clicking."
+            }),
+        )
+    };
+    let reply = ToolReply::image(
+        meta.to_string(),
+        base64::engine::general_purpose::STANDARD.encode(bytes),
+        format.mime(),
+    );
+    Ok((frame, reply))
 }
 
 fn check_permission() -> Result<()> {
@@ -234,13 +377,14 @@ fn screenshot_manager() -> Option<&'static Class> {
     })
 }
 
-type Png = (Vec<u8>, usize, usize);
+type EncodedImage = (Vec<u8>, usize, usize);
 
 fn modern_capture(
     manager: &'static Class,
     source: Source,
     (width, height): (usize, usize),
-) -> Result<Png> {
+    format: ImageFormat,
+) -> Result<EncodedImage> {
     let (tx, rx) = mpsc::channel();
     let tx_errors = tx.clone();
     let encode = ConcreteBlock::new(move |image: CGImageRef, error: Id| {
@@ -248,7 +392,7 @@ fn modern_capture(
             if image.is_null() {
                 Err(capture_error(error))
             } else {
-                encode_png(image)
+                encode_image(image, format)
             }
         });
         let _ = tx.send(result);
@@ -303,9 +447,9 @@ fn modern_capture(
                     let config: Id = msg_send![config_class, new];
                     let _: () = msg_send![config, setWidth: width];
                     let _: () = msg_send![config, setHeight: height];
-                    let _: () = msg_send![config, setShowsCursor: NO];
+                    let _: () = msg_send![config, setShowsCursor: YES];
                     if matches!(source, Source::Window { .. }) {
-                        let _: () = msg_send![config, setIgnoreShadowsSingleWindow: objc::runtime::YES];
+                        let _: () = msg_send![config, setIgnoreShadowsSingleWindow: YES];
                     }
                     let _: () = msg_send![manager, captureImageWithFilter:filter configuration:config completionHandler:&*encode];
                     let _: () = msg_send![filter, release];
@@ -317,9 +461,13 @@ fn modern_capture(
                 }
             });
         }).copy();
+        let on_screen_only = match source {
+            Source::Display(_) => YES,
+            Source::Window { .. } => NO,
+        };
         objc::rc::autoreleasepool(|| {
             let _: () = msg_send![content_class,
-                getShareableContentExcludingDesktopWindows:NO onScreenWindowsOnly:NO completionHandler:&*completion];
+                getShareableContentExcludingDesktopWindows:NO onScreenWindowsOnly:on_screen_only completionHandler:&*completion];
         });
     }
 
@@ -343,7 +491,7 @@ fn capture_error(error: Id) -> anyhow::Error {
     }
 }
 
-fn encode_png(image: CGImageRef) -> Result<Png> {
+fn encode_image(image: CGImageRef, format: ImageFormat) -> Result<EncodedImage> {
     // SAFETY: a live CGImage is provided by the callback (or owned by the
     // caller). Copy encoded bytes before the autorelease pool drains.
     unsafe {
@@ -354,9 +502,27 @@ fn encode_png(image: CGImageRef) -> Result<Png> {
         }
         let width: usize = msg_send![bitmap, pixelsWide];
         let height: usize = msg_send![bitmap, pixelsHigh];
-        let properties: Id = msg_send![class!(NSDictionary), dictionary];
-        let data: Id = msg_send![bitmap, representationUsingType:4usize properties:properties];
+        let (file_type, properties): (usize, Id) = match format {
+            ImageFormat::Jpeg => {
+                let key: Id = msg_send![
+                    class!(NSString),
+                    stringWithUTF8String: c"NSImageCompressionFactor".as_ptr()
+                ];
+                let factor: Id = msg_send![class!(NSNumber), numberWithDouble: JPEG_QUALITY];
+                let dict: Id = msg_send![
+                    class!(NSDictionary),
+                    dictionaryWithObject: factor
+                    forKey: key
+                ];
+                (3usize, dict)
+            }
+            ImageFormat::Png => (4usize, msg_send![class!(NSDictionary), dictionary]),
+        };
+        let data: Id = msg_send![bitmap, representationUsingType:file_type properties:properties];
         let _: () = msg_send![bitmap, release];
+        if data.is_null() {
+            bail!("Could not encode the desktop image.");
+        }
         let length: usize = msg_send![data, length];
         let bytes: *const u8 = msg_send![data, bytes];
         if bytes.is_null() || length == 0 {
@@ -370,7 +536,7 @@ fn encode_png(image: CGImageRef) -> Result<Png> {
     }
 }
 
-fn legacy_capture(source: Source, max_size: u32) -> Result<Png> {
+fn legacy_capture(source: Source, max_size: u32, format: ImageFormat) -> Result<EncodedImage> {
     // SAFETY: Quartz's display capture is used only when SCScreenshotManager
     // isn't available. CGDisplayCreateImage transfers ownership of a non-null image.
     let (png, width, height) = objc::rc::autoreleasepool(|| unsafe {
@@ -386,21 +552,31 @@ fn legacy_capture(source: Source, max_size: u32) -> Result<Png> {
         if image.is_null() {
             bail!("macOS returned no image for this capture target.");
         }
-        let png = encode_png(image);
+        let encoded = encode_image(image, ImageFormat::Png);
         CGImageRelease(image);
-        png
+        encoded
     })?;
     let (w, h) = output_size(width, height, max_size);
-    if (w, h) == (width, height) {
+    if (w, h) == (width, height) && format == ImageFormat::Png {
         return Ok((png, width, height));
     }
-    let image = image::load_from_memory_with_format(&png, image::ImageFormat::Png)?.resize_exact(
-        w as u32,
-        h as u32,
-        image::imageops::FilterType::Triangle,
-    );
+    let decoded = image::load_from_memory_with_format(&png, image::ImageFormat::Png)?;
+    let resized = if (w, h) == (width, height) {
+        decoded
+    } else {
+        decoded.resize_exact(w as u32, h as u32, image::imageops::FilterType::Triangle)
+    };
     let mut out = std::io::Cursor::new(Vec::new());
-    image.write_to(&mut out, image::ImageFormat::Png)?;
+    match format {
+        ImageFormat::Png => resized.write_to(&mut out, image::ImageFormat::Png)?,
+        ImageFormat::Jpeg => {
+            let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+                &mut out,
+                (JPEG_QUALITY * 100.0) as u8,
+            );
+            encoder.encode_image(&resized.to_rgb8())?;
+        }
+    }
     Ok((out.into_inner(), w, h))
 }
 
@@ -413,7 +589,7 @@ mod tests {
     fn retina_thumbnail_coordinates_follow_display_origin_and_scale() {
         let frame = Frame {
             id: 2,
-            display: 3,
+            target: FrameTarget::Display(3),
             bounds: CGRect::new(&CGPoint::new(-1440.0, -100.0), &CGSize::new(1440.0, 900.0)),
             width: 1600,
             height: 1000,
@@ -430,7 +606,7 @@ mod tests {
     fn source_and_destination_screenshots_share_a_turn() {
         let frame = |id, x| Frame {
             id,
-            display: id as u32,
+            target: FrameTarget::Display(id as u32),
             bounds: CGRect::new(&CGPoint::new(x, 0.0), &CGSize::new(1000.0, 700.0)),
             width: 2000,
             height: 1400,
@@ -438,7 +614,7 @@ mod tests {
         let frames = Frames {
             owner: Some(12),
             next: 9,
-            displays: vec![frame(8, -1000.0), frame(9, 0.0)],
+            entries: vec![frame(8, -1000.0), frame(9, 0.0)],
         };
         let source = frames
             .find(12, 8)
@@ -455,19 +631,49 @@ mod tests {
     }
 
     #[test]
-    fn encodes_a_quartz_image_as_png_without_recording_the_desktop() {
+    fn window_screenshots_map_into_window_bounds_and_evict_oldest() {
+        let mut frames = Frames::default();
+        for i in 1..=10u64 {
+            frames.store(
+                5,
+                Frame {
+                    id: i,
+                    target: FrameTarget::Window(i as u32),
+                    bounds: CGRect::new(&CGPoint::new(100.0, 50.0), &CGSize::new(800.0, 600.0)),
+                    width: 1200,
+                    height: 900,
+                },
+            );
+        }
+        assert!(frames.find(5, 1).is_none());
+        assert!(frames.find(5, 2).is_none());
+        let recent = frames.find(5, 10).unwrap();
+        let center = recent.map_pixels(600.0, 450.0).unwrap();
+        assert_eq!((center.x, center.y), (500.0, 350.0));
+    }
+
+    #[test]
+    fn encodes_a_quartz_image_as_png_and_smaller_jpeg_without_recording_the_desktop() {
         let source = include_bytes!("../../packaging/macos/icon-1024.png");
-        let (png, width, height) = objc::rc::autoreleasepool(|| unsafe {
+        let (png, jpeg) = objc::rc::autoreleasepool(|| unsafe {
             let data: Id =
                 msg_send![class!(NSData), dataWithBytes:source.as_ptr() length:source.len()];
             let bitmap: Id = msg_send![class!(NSBitmapImageRep), imageRepWithData:data];
             let image: CGImageRef = msg_send![bitmap, CGImage];
             assert!(!image.is_null());
-            encode_png(image)
-        })
-        .unwrap();
-        assert_eq!((width, height), (1024, 1024));
-        let decoded = image::load_from_memory_with_format(&png, image::ImageFormat::Png).unwrap();
-        assert_eq!((decoded.width(), decoded.height()), (1024, 1024));
+            (
+                encode_image(image, ImageFormat::Png).unwrap(),
+                encode_image(image, ImageFormat::Jpeg).unwrap(),
+            )
+        });
+        assert_eq!((png.1, png.2), (1024, 1024));
+        assert_eq!((jpeg.1, jpeg.2), (1024, 1024));
+        assert!(jpeg.0.len() < png.0.len());
+        let decoded_png =
+            image::load_from_memory_with_format(&png.0, image::ImageFormat::Png).unwrap();
+        let decoded_jpeg =
+            image::load_from_memory_with_format(&jpeg.0, image::ImageFormat::Jpeg).unwrap();
+        assert_eq!((decoded_png.width(), decoded_png.height()), (1024, 1024));
+        assert_eq!((decoded_jpeg.width(), decoded_jpeg.height()), (1024, 1024));
     }
 }

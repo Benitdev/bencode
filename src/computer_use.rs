@@ -58,7 +58,14 @@ impl Server for DesktopServer<'_> {
     }
 
     fn instructions(&self) -> &'static str {
-        "Use these tools for native macOS apps. The user approves desktop access for this turn. Open an app by bundle ID or use Spotlight with Cmd+Space. Capture the display before interacting and after any change you need to verify. Mouse coordinates are pixels in the returned screenshot (origin at the top left), and the call needs its screenshotId. Key presses and text go to the foreground window. Use the in-app browser tools for web pages."
+        "Use these tools for native macOS apps (use the in-app browser tools for web pages). \
+         The user approves desktop access for this turn.\n\
+         Work fast and accurately:\n\
+         1. Prefer computer_ui (Accessibility outline + control) and keyboard shortcuts over pixel clicking. \
+            Call computer_ui with action='outline' (optionally with query or interactiveOnly=true; windowId defaults to the active external window) to inspect controls and their bounds, then use verb='press'/'setText'/'focus'/'click'/'doubleClick'.\n\
+         2. Batch predictable steps with computer_batch (e.g. click/ui -> type -> key Return -> wait -> outline or screenshot) so you finish multi-step interactions in one turn instead of taking a screenshot after every action.\n\
+         3. When you need visual inspection or pixel clicking, prefer computer_screenshot with windowId (it returns a clickable screenshotId with sharper detail and smaller payload than the whole display). Mouse coordinates are pixels in the referenced screenshot (origin at top left).\n\
+         4. Open apps by bundle ID with computer_open_app or via Spotlight (Cmd+Space). Key presses and text go to the foreground window."
     }
 
     fn tools(&self) -> Value {
@@ -70,20 +77,22 @@ impl Server for DesktopServer<'_> {
             },
             {
                 "name": "computer_screenshot",
-                "description": "Capture a display or a single window as PNG. Display capture returns a screenshotId for mouse actions. Window images are for inspection. Defaults to the main display.",
+                "description": "Capture a display or a single window (default JPEG, maxSize 1280, cursor visible). Both display and on-screen window captures return a screenshotId usable with computer_mouse; prefer windowId when working in one app for sharper, smaller images. Defaults to the main display.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "displayId": { "type": "integer", "minimum": 1 },
-                        "windowId": { "type": "integer", "minimum": 1, "description": "Capture this window instead of a display." },
-                        "maxSize": { "type": "integer", "minimum": 640, "maximum": 2560, "default": 1600,
-                            "description": "Max pixel length of the longest side." }
+                        "windowId": { "type": "integer", "minimum": 1, "description": "Capture this window instead of a display (preferred when acting on one window)." },
+                        "maxSize": { "type": "integer", "minimum": 640, "maximum": 2560, "default": 1280,
+                            "description": "Max pixel length of the longest side (default 1280)." },
+                        "format": { "type": "string", "enum": ["jpeg", "png"], "default": "jpeg",
+                            "description": "Image format. JPEG is much faster and smaller; use PNG only when exact lossless pixels are needed." }
                     }
                 }
             },
             {
                 "name": "computer_mouse",
-                "description": "Move, click, hold (down), release (up), drag, or scroll using screenshot pixel coordinates. Move while a button is held to drag across calls. For a single-call drag, toScreenshotId can target another display. Up can omit coordinates and release at the current pointer.",
+                "description": "Move, click, hold (down), release (up), drag, or scroll using pixel coordinates from a display or window screenshotId. Move while a button is held to drag across calls. For a single-call drag, toScreenshotId can target another display or window. Up can omit coordinates and release at the current pointer.",
                 "inputSchema": {
                     "type": "object",
                     "required": ["action"],
@@ -94,12 +103,12 @@ impl Server for DesktopServer<'_> {
                         "y": { "type": "number", "minimum": 0 },
                         "button": { "type": "string", "enum": ["left", "right", "middle"], "default": "left" },
                         "count": { "type": "integer", "minimum": 1, "maximum": 3, "default": 1 },
-                        "toScreenshotId": { "type": "integer", "description": "Defaults to screenshotId; capture both displays before dragging between them." },
+                        "toScreenshotId": { "type": "integer", "description": "Defaults to screenshotId; capture both displays/windows before dragging between them." },
                         "toX": { "type": "number", "minimum": 0 },
                         "toY": { "type": "number", "minimum": 0 },
                         "deltaX": { "type": "integer", "minimum": -2000, "maximum": 2000, "description": "Positive scrolls right." },
                         "deltaY": { "type": "integer", "minimum": -2000, "maximum": 2000, "description": "Positive scrolls down." },
-                        "modifiers": { "type": "array", "uniqueItems": true,
+                        "modifiers": { "type": "array",
                             "items": { "type": "string", "enum": ["Cmd", "Ctrl", "Alt", "Shift"] } }
                     }
                 }
@@ -147,14 +156,17 @@ impl Server for DesktopServer<'_> {
             },
             {
                 "name": "computer_ui",
-                "description": "Read a window’s native Accessibility outline or use a ref from the outline to press, focus, increment, decrement or set text on a control.",
+                "description": "Preferred way to inspect and drive native macOS controls via Accessibility. 'outline' returns meaningful elements with refs and [x,y,w,h] bounds (skipping empty layout wrappers); 'control' invokes press, focus, increment, decrement, setText, click, or doubleClick on an element ref without needing a screenshot. Omit windowId to target the frontmost external window.",
                 "inputSchema": {
-                    "type": "object", "required": ["windowId", "action"],
+                    "type": "object", "required": ["action"],
                     "properties": {
-                        "windowId": { "type": "integer", "minimum": 1 },
+                        "windowId": { "type": "integer", "minimum": 1, "description": "Target window ID. Defaults to the frontmost external window for outline (or frontmost window for control)." },
                         "action": { "type": "string", "enum": ["outline", "control"] },
+                        "query": { "type": "string", "maxLength": 200, "description": "Optional case-insensitive filter on label, role, identifier or value (outline only)." },
+                        "interactiveOnly": { "type": "boolean", "default": false, "description": "Only return actionable controls (outline only)." },
+                        "limit": { "type": "integer", "minimum": 1, "maximum": 250, "default": 150, "description": "Max elements to return (outline only)." },
                         "element": { "type": "string", "description": "Element ref from the current outline. Required for control." },
-                        "verb": { "type": "string", "enum": ["press", "focus", "increment", "decrement", "setText"], "description": "Required for control." },
+                        "verb": { "type": "string", "enum": ["press", "focus", "increment", "decrement", "setText", "click", "doubleClick"], "description": "Required for control. Use click/doubleClick when AXPress is unsupported." },
                         "text": { "type": "string", "maxLength": 4000, "description": "Required for setText." }
                     }
                 }
@@ -165,6 +177,35 @@ impl Server for DesktopServer<'_> {
                 "inputSchema": {
                     "type": "object", "required": ["bundleId"],
                     "properties": { "bundleId": { "type": "string", "maxLength": 255 } }
+                }
+            },
+            {
+                "name": "computer_batch",
+                "description": "Execute a sequence of 1-20 desktop steps in a single turn (stops on first error). Use this to combine actions like click/ui -> type -> key -> wait -> outline/screenshot without extra round-trips.",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["steps"],
+                    "properties": {
+                        "steps": {
+                            "type": "array",
+                            "description": "1 to 20 steps to execute in sequence.",
+                            "items": {
+                                "type": "object",
+                                "required": ["tool"],
+                                "properties": {
+                                    "tool": {
+                                        "type": "string",
+                                        "enum": ["mouse", "key", "type", "ui", "window", "open_app", "wait", "screenshot", "windows"],
+                                        "description": "Step tool name (short name or full computer_* name). 'wait' pauses for args.ms (50-5000)."
+                                    },
+                                    "args": {
+                                        "type": "object",
+                                        "description": "Arguments matching the corresponding computer_* tool, or { \"ms\": 300 } for wait."
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         ])
@@ -187,7 +228,12 @@ impl Server for DesktopServer<'_> {
                 ok: true,
                 text,
                 image: Some(image),
-            }) => Reply::text_with_image(text, image, "image/png"),
+                image_mime,
+            }) => Reply::text_with_image(
+                text,
+                image,
+                image_mime.unwrap_or_else(|| "image/png".into()),
+            ),
             Ok(ToolReply { ok: true, text, .. }) => Reply::text(text),
             Ok(ToolReply {
                 ok: false, text, ..
@@ -197,12 +243,20 @@ impl Server for DesktopServer<'_> {
     }
 }
 
+const DEFAULT_SCREENSHOT_MAX_SIZE: u32 = 1280;
+const MAX_BATCH_STEPS: usize = 20;
+const MIN_WAIT_MS: u64 = 50;
+const MAX_WAIT_MS: u64 = 5_000;
+const MAX_BATCH_WAIT_MS: u64 = 15_000;
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Screenshot {
     display_id: Option<u32>,
     window_id: Option<u32>,
     max_size: Option<u32>,
+    #[serde(default)]
+    format: screen::ImageFormat,
 }
 
 #[derive(Deserialize)]
@@ -223,12 +277,35 @@ struct Text {
     text: String,
 }
 
+#[derive(Deserialize)]
+struct Wait {
+    ms: u64,
+}
+
+#[derive(Deserialize)]
+struct BatchArgs {
+    steps: Vec<RawBatchStep>,
+}
+
+#[derive(Deserialize)]
+struct RawBatchStep {
+    tool: String,
+    #[serde(default)]
+    args: Value,
+}
+
+pub struct BatchStep {
+    tool: String,
+    action: Action,
+}
+
 pub enum Action {
     Displays,
     Screenshot {
         display: Option<u32>,
         window: Option<u32>,
         max_size: u32,
+        format: screen::ImageFormat,
     },
     Windows(windows::WindowList),
     Window(windows::WindowAction),
@@ -237,13 +314,20 @@ pub enum Action {
     Key(input::Chord),
     Type(String),
     OpenApp(String),
+    Wait(std::time::Duration),
+    Batch(Vec<BatchStep>),
 }
 
 impl Action {
     /// Whether the action goes to whatever is in front (or under the
     /// pointer) rather than to a display, window or element it names.
     pub fn follows_focus(&self) -> bool {
-        matches!(self, Self::Mouse(_) | Self::Key(_) | Self::Type(_))
+        match self {
+            Self::Mouse(_) | Self::Key(_) | Self::Type(_) => true,
+            Self::Ui(ui) => ui.follows_focus(),
+            Self::Batch(steps) => steps.iter().any(|step| step.action.follows_focus()),
+            _ => false,
+        }
     }
 
     pub fn parse(tool: &str, args: Value) -> Result<Self> {
@@ -254,8 +338,9 @@ impl Action {
                     display_id,
                     window_id,
                     max_size,
+                    format,
                 } = serde_json::from_value(args)?;
-                let max_size = max_size.unwrap_or(1600);
+                let max_size = max_size.unwrap_or(DEFAULT_SCREENSHOT_MAX_SIZE);
                 if !(640..=2560).contains(&max_size) {
                     bail!("maxSize must be between 640 and 2560.");
                 }
@@ -266,6 +351,7 @@ impl Action {
                     display: display_id,
                     window: window_id,
                     max_size,
+                    format,
                 }
             }
             "computer_windows" => Self::Windows(serde_json::from_value(args)?),
@@ -304,8 +390,67 @@ impl Action {
                 }
                 Self::OpenApp(bundle_id)
             }
+            "computer_batch" => Self::parse_batch(args)?,
             _ => bail!("Unknown Computer Use tool {tool}."),
         })
+    }
+
+    fn parse_batch(args: Value) -> Result<Self> {
+        let BatchArgs { steps: raw_steps } = serde_json::from_value(args)?;
+        if raw_steps.is_empty() || raw_steps.len() > MAX_BATCH_STEPS {
+            bail!("computer_batch requires between 1 and {MAX_BATCH_STEPS} steps.");
+        }
+        let mut steps = Vec::with_capacity(raw_steps.len());
+        let mut total_wait_ms: u64 = 0;
+        for (idx, raw) in raw_steps.into_iter().enumerate() {
+            let step_args = if raw.args.is_null() {
+                json!({})
+            } else {
+                raw.args
+            };
+            let normalized = raw.tool.strip_prefix("computer_").unwrap_or(&raw.tool);
+            let action = match normalized {
+                "wait" => {
+                    let Wait { ms } = serde_json::from_value(step_args)
+                        .with_context(|| format!("Step {} (wait) requires ms.", idx + 1))?;
+                    if !(MIN_WAIT_MS..=MAX_WAIT_MS).contains(&ms) {
+                        bail!(
+                            "Step {} (wait): ms must be between {MIN_WAIT_MS} and {MAX_WAIT_MS}.",
+                            idx + 1
+                        );
+                    }
+                    total_wait_ms = total_wait_ms.saturating_add(ms);
+                    if total_wait_ms > MAX_BATCH_WAIT_MS {
+                        bail!(
+                            "Total wait time in computer_batch cannot exceed {MAX_BATCH_WAIT_MS}ms."
+                        );
+                    }
+                    Self::Wait(std::time::Duration::from_millis(ms))
+                }
+                "batch" => bail!("Step {}: nested computer_batch is not allowed.", idx + 1),
+                other => {
+                    let canonical = match other {
+                        "openApp" | "open_app" => "computer_open_app",
+                        "mouse" => "computer_mouse",
+                        "key" => "computer_key",
+                        "type" => "computer_type",
+                        "ui" => "computer_ui",
+                        "window" => "computer_window",
+                        "windows" => "computer_windows",
+                        "screenshot" => "computer_screenshot",
+                        "displays" => "computer_displays",
+                        _ => bail!("Step {}: unknown batch step tool {:?}.", idx + 1, raw.tool),
+                    };
+                    Self::parse(canonical, step_args)
+                        .with_context(|| format!("Step {} ({}): invalid args", idx + 1, raw.tool))?
+                }
+            };
+            steps.push(BatchStep {
+                tool: normalized.to_string(),
+                action,
+            });
+        }
+        Ok(Self::Batch(steps))
     }
 }
 
@@ -373,50 +518,115 @@ impl Desktop {
     }
 
     fn execute(&self, turn: u64, grant: &Grant, action: Action) -> Result<ToolReply> {
-        // Opening an app touches no frame and sends no input: it waits on
-        // LaunchServices outside the lock.
-        if let Action::OpenApp(bundle_id) = action {
-            grant.check()?;
-            open_app(&bundle_id, grant)?;
-            grant.check()?;
-            return Ok(ToolReply::text(format!(
-                "Opened {bundle_id}. Take a screenshot to check its window."
-            )));
+        match action {
+            // Opening an app and waiting touch no frame and send no input: run outside the lock.
+            Action::OpenApp(bundle_id) => {
+                grant.check()?;
+                open_app(&bundle_id, grant)?;
+                grant.check()?;
+                Ok(ToolReply::text(format!(
+                    "Opened {bundle_id}. Use computer_ui (outline) for native controls, or computer_screenshot (with windowId) if you need to see it."
+                )))
+            }
+            Action::Wait(duration) => {
+                sleep_checked(duration, grant)?;
+                Ok(ToolReply::text(format!("Waited {}ms.", duration.as_millis())))
+            }
+            Action::Batch(steps) => self.execute_batch(turn, grant, steps),
+            other => {
+                let mut frames = self
+                    .frames
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("Computer Use worker failed."))?;
+                grant.check()?;
+                let reply = match other {
+                    Action::Displays => screen::displays()?,
+                    Action::Screenshot {
+                        window: Some(window),
+                        max_size,
+                        format,
+                        ..
+                    } => frames.capture_window(turn, window, max_size, format)?,
+                    Action::Screenshot {
+                        display,
+                        max_size,
+                        format,
+                        ..
+                    } => frames.capture(turn, display, max_size, format)?,
+                    Action::Windows(request) => {
+                        windows::list(request.include_hidden, request.pid)?
+                    }
+                    Action::Window(request) => request.perform(grant)?,
+                    Action::Ui(request) => request.perform(grant)?,
+                    Action::Mouse(mouse) => {
+                        grant.input(|held| mouse.perform(turn, &frames, held, grant))?;
+                        ToolReply::text("Mouse action completed.")
+                    }
+                    Action::Key(chord) => {
+                        grant.input(|held| chord.perform(held, grant))?;
+                        ToolReply::text("Keyboard action completed.")
+                    }
+                    Action::Type(text) => {
+                        grant.input(|held| input::type_text(&text, held, grant))?;
+                        ToolReply::text("Text typed.")
+                    }
+                    Action::OpenApp(_) | Action::Wait(_) | Action::Batch(_) => {
+                        unreachable!("handled before locking frames")
+                    }
+                };
+                grant.check()?;
+                Ok(reply)
+            }
         }
-        let mut frames = self
-            .frames
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Computer Use worker failed."))?;
+    }
+
+    fn execute_batch(
+        &self,
+        turn: u64,
+        grant: &Grant,
+        steps: Vec<BatchStep>,
+    ) -> Result<ToolReply> {
+        let total = steps.len();
+        let mut results = Vec::with_capacity(total);
+        let mut last_image: Option<(String, Option<String>)> = None;
+        for (idx, step) in steps.into_iter().enumerate() {
+            let reply = self
+                .execute(turn, grant, step.action)
+                .with_context(|| format!("Step {}/{total} ({}) failed", idx + 1, step.tool))?;
+            if let Some(image) = reply.image {
+                last_image = Some((image, reply.image_mime));
+            }
+            let value = serde_json::from_str::<Value>(&reply.text)
+                .unwrap_or_else(|_| Value::String(reply.text));
+            results.push(json!({
+                "step": idx + 1,
+                "tool": step.tool,
+                "result": value,
+            }));
+        }
+        let summary = json!({
+            "completed": total,
+            "results": results,
+        })
+        .to_string();
+        Ok(match last_image {
+            Some((image, mime)) => {
+                ToolReply::image(summary, image, mime.unwrap_or_else(|| "image/jpeg".into()))
+            }
+            None => ToolReply::text(summary),
+        })
+    }
+}
+
+fn sleep_checked(duration: std::time::Duration, grant: &Grant) -> Result<()> {
+    let deadline = std::time::Instant::now() + duration;
+    loop {
         grant.check()?;
-        let reply = match action {
-            Action::Displays => screen::displays()?,
-            Action::Screenshot {
-                window: Some(window),
-                max_size,
-                ..
-            } => screen::capture_window(window, max_size)?,
-            Action::Screenshot {
-                display, max_size, ..
-            } => frames.capture(turn, display, max_size)?,
-            Action::Windows(request) => windows::list(request.include_hidden, request.pid)?,
-            Action::Window(request) => request.perform(grant)?,
-            Action::Ui(request) => request.perform(grant)?,
-            Action::Mouse(mouse) => {
-                grant.input(|held| mouse.perform(turn, &frames, held, grant))?;
-                ToolReply::text("Mouse action completed.")
-            }
-            Action::Key(chord) => {
-                grant.input(|held| chord.perform(held, grant))?;
-                ToolReply::text("Keyboard action completed.")
-            }
-            Action::Type(text) => {
-                grant.input(|held| input::type_text(&text, held, grant))?;
-                ToolReply::text("Text typed.")
-            }
-            Action::OpenApp(_) => unreachable!("opened before taking the frames"),
-        };
-        grant.check()?;
-        Ok(reply)
+        let now = std::time::Instant::now();
+        if now >= deadline {
+            return Ok(());
+        }
+        std::thread::sleep((deadline - now).min(std::time::Duration::from_millis(50)));
     }
 }
 
@@ -517,11 +727,112 @@ mod tests {
         );
         assert!(parse("computer_type", json!({"text": "hi"})).follows_focus());
         assert!(parse("computer_key", json!({"key": "Return"})).follows_focus());
+        assert!(parse("computer_ui", json!({"action": "outline"})).follows_focus());
+        assert!(!parse("computer_ui", json!({"windowId": 5, "action": "outline"})).follows_focus());
+        assert!(
+            parse(
+                "computer_ui",
+                json!({"windowId": 5, "action": "control", "element": "0:abc", "verb": "click"})
+            )
+            .follows_focus()
+        );
+        assert!(
+            !parse(
+                "computer_ui",
+                json!({"windowId": 5, "action": "control", "element": "0:abc", "verb": "press"})
+            )
+            .follows_focus()
+        );
 
         let grant = Grant::default();
         grant.revoke();
         let reply = Desktop::default().perform(1, &grant, Action::Displays);
         assert!(!reply.ok);
         assert!(reply.text.contains("access has ended"));
+    }
+
+    #[test]
+    fn batch_validates_steps_wait_limits_and_focus_tracking() {
+        let ok = Action::parse(
+            "computer_batch",
+            json!({
+                "steps": [
+                    {"tool": "open_app", "args": {"bundleId": "com.apple.calculator"}},
+                    {"tool": "wait", "args": {"ms": 200}},
+                    {"tool": "computer_screenshot", "args": {"format": "png", "maxSize": 1000}}
+                ]
+            }),
+        )
+        .unwrap();
+        assert!(!ok.follows_focus());
+
+        let focused = Action::parse(
+            "computer_batch",
+            json!({
+                "steps": [
+                    {"tool": "wait", "args": {"ms": 100}},
+                    {"tool": "type", "args": {"text": "hello"}},
+                    {"tool": "key", "args": {"key": "Return"}}
+                ]
+            }),
+        )
+        .unwrap();
+        assert!(focused.follows_focus());
+
+        // Reject empty, nested, invalid wait, and excessive total wait.
+        assert!(Action::parse("computer_batch", json!({"steps": []})).is_err());
+        assert!(
+            Action::parse(
+                "computer_batch",
+                json!({"steps": [{"tool": "batch", "args": {"steps": []}}]})
+            )
+            .is_err()
+        );
+        assert!(
+            Action::parse(
+                "computer_batch",
+                json!({"steps": [{"tool": "wait", "args": {"ms": 10}}]})
+            )
+            .is_err()
+        );
+        assert!(
+            Action::parse(
+                "computer_batch",
+                json!({
+                    "steps": [
+                        {"tool": "wait", "args": {"ms": 5000}},
+                        {"tool": "wait", "args": {"ms": 5000}},
+                        {"tool": "wait", "args": {"ms": 5000}},
+                        {"tool": "wait", "args": {"ms": 1000}}
+                    ]
+                })
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn batch_runs_waits_and_stops_immediately_when_revoked() {
+        let grant = Grant::default();
+        let action = Action::parse(
+            "computer_batch",
+            json!({"steps": [{"tool": "wait", "args": {"ms": 60}}]}),
+        )
+        .unwrap();
+        let reply = Desktop::default().perform(1, &grant, action);
+        assert!(reply.ok, "{}", reply.text);
+        let parsed: Value = serde_json::from_str(&reply.text).unwrap();
+        assert_eq!(parsed["completed"], 1);
+
+        grant.revoke();
+        let action = Action::parse(
+            "computer_batch",
+            json!({"steps": [{"tool": "wait", "args": {"ms": 5000}}]}),
+        )
+        .unwrap();
+        let start = std::time::Instant::now();
+        let reply = Desktop::default().perform(1, &grant, action);
+        assert!(!reply.ok);
+        assert!(start.elapsed() < std::time::Duration::from_millis(200));
     }
 }
