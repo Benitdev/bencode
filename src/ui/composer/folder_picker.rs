@@ -149,7 +149,8 @@ impl BenCodeApp {
             .rounded(px(6.0))
             .text_size(Text::Md.px())
             .cursor_pointer()
-            .when(active, |el| el.bg(skill.opacity(0.15)))
+            .when(active, |el| el.bg(fg.fill(Fill::Selected)))
+            .when(!active, |el| el.hover(move |s| s.bg(fg.fill(Fill::Hover))))
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 if *hovered && this.folder_picker != Some(ix) {
                     this.folder_picker = Some(ix);
@@ -162,28 +163,27 @@ impl BenCodeApp {
                 let Some(folder) = self.project_folders().iter().find(|f| f.id == id) else {
                     return row.into_any_element();
                 };
-                row.when(!active, |el| el.hover(move |s| s.bg(fg.fill(Fill::Hover))))
-                    .child(
-                        Icon::new(IconName::Folder)
-                            .size(IconSize::Xs)
-                            .color(fg.ink(if active { Ink::Body } else { Ink::Muted })),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_color(if active { fg } else { fg.ink(Ink::Strong) })
-                            .child(SharedString::from(folder.name.clone())),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
-                            .text_size(Text::Sm.px())
-                            .text_color(fg.ink(Ink::Muted))
-                            .child(folder.session_ids.len().to_string()),
-                    )
-                    .into_any_element()
+                row.child(
+                    Icon::new(IconName::Folder)
+                        .size(IconSize::Xs)
+                        .color(fg.ink(if active { Ink::Body } else { Ink::Muted })),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_color(if active { fg } else { fg.ink(Ink::Strong) })
+                        .child(SharedString::from(folder.name.clone())),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(Text::Sm.px())
+                        .text_color(fg.ink(Ink::Muted))
+                        .child(folder.session_ids.len().to_string()),
+                )
+                .into_any_element()
             }
             FolderTarget::New(name) => row
                 .child(Icon::new(IconName::Plus).size(IconSize::Xs).color(skill))

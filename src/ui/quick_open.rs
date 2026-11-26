@@ -569,7 +569,7 @@ impl BenCodeApp {
             .text_size(Text::Lg.px())
             .text_color(colors.fg)
             .cursor_pointer()
-            .when(highlighted, |el| el.bg(colors.active))
+            .when(highlighted, |el| el.bg(colors.fg.fill(Fill::Selected)))
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 if *hovered && this.quick_open.active != index {
                     this.quick_open.active = index;

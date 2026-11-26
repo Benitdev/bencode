@@ -131,9 +131,13 @@ pub(crate) fn marked_row(
         .py_1()
         .rounded(theme.radius(Radius::Md))
         .text_color(fg)
-        .when(highlighted && !choice.disabled, |row| row.bg(colors.hover))
+        .when(highlighted && !choice.disabled, |row| {
+            row.bg(colors.fg.opacity(0.09))
+        })
         .when(!choice.disabled, |row| {
-            row.cursor_pointer().hover(|style| style.bg(colors.hover))
+            let hover = colors.fg.opacity(0.05);
+            row.cursor_pointer()
+                .when(!highlighted, |row| row.hover(move |style| style.bg(hover)))
         })
         .when_some(checked, |row, on| {
             row.child(

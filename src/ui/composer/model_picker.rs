@@ -568,7 +568,7 @@ impl BenCodeApp {
                 .cursor_pointer()
                 .text_size(Text::Md.px())
                 .text_color(colors.fg)
-                .when(ix == active, |el| el.bg(colors.active))
+                .when(ix == active, |el| el.bg(colors.fg.fill(Fill::Selected)))
                 .when(ix != active, |el| el.hover(move |s| s.bg(hover)))
                 .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                     if *hovered {
@@ -696,7 +696,7 @@ impl BenCodeApp {
                     .cursor_pointer()
                     .text_size(Text::Md.px())
                     .text_color(colors.fg)
-                    .when(ix == active, |el| el.bg(colors.active))
+                    .when(ix == active, |el| el.bg(colors.fg.fill(Fill::Selected)))
                     .when(ix != active, |el| el.hover(move |s| s.bg(hover)))
                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                         if *hovered && this.composer_menus.setting_index != ix {
@@ -869,7 +869,7 @@ impl BenCodeApp {
                           this_tab: ModelTab,
                           icon: AnyElement| {
             let selected = tab == this_tab;
-            let hover = colors.fg.fill(Fill::Selected);
+            let hover = colors.fg.fill(Fill::Hover);
             div()
                 .id(id)
                 .size(px(PROVIDER_TAB_SIZE))
@@ -879,7 +879,7 @@ impl BenCodeApp {
                 .justify_center()
                 .rounded(px(6.0))
                 .cursor_pointer()
-                .when(selected, |el| el.bg(colors.fg.opacity(0.14)))
+                .when(selected, |el| el.bg(colors.fg.fill(Fill::Selected)))
                 .when(!selected, |el| el.hover(move |s| s.bg(hover)))
                 .tooltip(Tooltip::text(title))
                 .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
@@ -1011,7 +1011,7 @@ impl BenCodeApp {
                     .rounded(px(8.0))
                     .cursor_pointer()
                     .text_color(colors.fg)
-                    .when(highlighted, |el| el.bg(colors.active))
+                    .when(highlighted, |el| el.bg(colors.fg.fill(Fill::Selected)))
                     .when(!highlighted, |el| el.hover(move |s| s.bg(hover)))
                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                         if *hovered && this.model_picker_index != ix {
@@ -1157,7 +1157,7 @@ impl BenCodeApp {
                     .rounded(px(8.0))
                     .cursor_pointer()
                     .text_color(colors.fg)
-                    .when(ix == active, |el| el.bg(colors.active))
+                    .when(ix == active, |el| el.bg(colors.fg.fill(Fill::Selected)))
                     .when(ix != active, |el| el.hover(move |s| s.bg(hover)))
                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                         if *hovered && this.composer_menus.recent_index != ix {

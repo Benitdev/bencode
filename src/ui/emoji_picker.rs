@@ -273,7 +273,7 @@ impl EmojiPicker {
                 .justify_center()
                 .rounded(px(6.0))
                 .text_size(px(15.0))
-                .when(active, |el| el.bg(fg.fill(Fill::Strong)))
+                .when(active, |el| el.bg(fg.fill(Fill::Selected)))
                 .when(!active, |el| el.opacity(0.6).hover(|s| s.opacity(1.0)))
                 .on_click(cx.listener(move |view, _, _, cx| {
                     state(view).open = Some(target);
@@ -305,7 +305,7 @@ impl EmojiPicker {
                 .justify_center()
                 .rounded(px(6.0))
                 .text_size(px(20.0))
-                .hover(move |s| s.bg(fg.fill(Fill::Strong)))
+                .hover(move |s| s.bg(fg.fill(Fill::Hover)))
                 .on_click(cx.listener(move |view, _, window, cx| {
                     state(view).picked(&picked);
                     on_pick(view, &picked, window, cx);

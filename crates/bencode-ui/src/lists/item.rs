@@ -132,13 +132,14 @@ impl RenderOnce for ListItem {
             })
             .when(self.selected, |row| {
                 row.debug_selector(|| format!("item-selected-{}", self.title))
-                    .bg(colors.active)
+                    .bg(colors.fg.opacity(0.09))
             })
             .when(self.disabled, |row| row.opacity(0.5))
             .when_some(self.on_click.filter(|_| pressable), |row, on_click| {
+                let hover = colors.fg.opacity(0.05);
                 row.cursor_pointer()
                     .when(!self.selected, |row| {
-                        row.hover(|style| style.bg(colors.hover))
+                        row.hover(move |style| style.bg(hover))
                     })
                     .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
                     .on_click(move |event, window, cx| on_click(event, window, cx))

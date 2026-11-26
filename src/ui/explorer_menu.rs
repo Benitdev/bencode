@@ -330,7 +330,7 @@ pub fn render_menu_layered(
                     let el = el.text_color(colors.fg);
                     match (highlighted, style) {
                         // `bg-selection text-content`
-                        (true, MenuStyle::Explorer) => el.bg(colors.active),
+                        (true, MenuStyle::Explorer) => el.bg(colors.fg.fill(Fill::Selected)),
                         // No keyboard highlight there; the hovered row's fill.
                         (true, MenuStyle::Changes) => el.bg(hover_bg),
                         (false, _) => el.hover(move |s| s.bg(hover_bg)),

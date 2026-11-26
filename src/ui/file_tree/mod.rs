@@ -562,7 +562,7 @@ impl BenCodeApp {
             .items_center()
             .gap_1()
             .pl(px(INSET))
-            .when(drop, |el| el.bg(cx.theme().colors.active))
+            .when(drop, |el| el.bg(fg.fill(Fill::Selected)))
             .tooltip(Tooltip::text(cwd.to_string()))
             .on_click(cx.listener(|this, _, window, cx| {
                 window.focus(&this.file_tree_focus, cx);

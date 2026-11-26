@@ -1033,8 +1033,10 @@ impl BenCodeApp {
                     .size(px(24.0))
                     .rounded(px(6.0))
                     .cursor_pointer()
-                    .when(menu_open, |el| el.bg(colors.hover))
-                    .hover(|s| s.bg(colors.hover))
+                    .when(menu_open, |el| el.bg(fg.fill(Fill::Selected)))
+                    .when(!menu_open, |el| {
+                        el.hover(move |s| s.bg(fg.fill(Fill::Hover)))
+                    })
                     .on_mouse_down(gpui::MouseButton::Left, |_, window, _| {
                         window.prevent_default()
                     })

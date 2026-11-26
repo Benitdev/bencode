@@ -183,8 +183,12 @@ impl BenCodeApp {
                 .px_2()
                 .py_1p5()
                 .rounded(px(6.0))
-                .bg(fg.opacity(if selected { 0.20 } else { 0.10 }))
-                .text_color(fg.opacity(if selected { 1.0 } else { 0.7 }))
+                .bg(fg.fill(if selected {
+                    Fill::Selected
+                } else {
+                    Fill::Hover
+                }))
+                .text_color(if selected { fg } else { fg.ink(Ink::Body) })
                 .when(!enabled, |el| el.opacity(0.4))
                 .when(enabled, |el| {
                     el.cursor_pointer().on_click(

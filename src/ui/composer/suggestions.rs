@@ -429,7 +429,7 @@ impl BenCodeApp {
             .gap_2()
             .px_2()
             .py_1p5()
-            .when(highlighted, |el| el.bg(colors.fg.fill(Fill::Strong)))
+            .when(highlighted, |el| el.bg(colors.fg.fill(Fill::Selected)))
             .child(
                 div()
                     .flex_none()
@@ -516,7 +516,7 @@ impl BenCodeApp {
             .h(px(ROW_HEIGHT))
             .px_2()
             .text_size(Text::Md.px())
-            .when(highlighted, |el| el.bg(colors.active))
+            .when(highlighted, |el| el.bg(colors.fg.fill(Fill::Selected)))
             .child(icon)
             .child(
                 div()

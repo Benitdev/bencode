@@ -304,7 +304,7 @@ impl BenCodeApp {
             .px_2()
             .rounded(px(6.0))
             .text_color(if available { fg } else { fg.ink(Ink::Muted) })
-            .when(available && active, |el| el.bg(super::selection(cx)))
+            .when(available && active, |el| el.bg(fg.fill(Fill::Selected)))
             .when(available && !active, |el| {
                 el.cursor_pointer()
                     .hover(move |s| s.bg(fg.fill(Fill::Hover)))

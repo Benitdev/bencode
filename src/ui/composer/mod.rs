@@ -149,16 +149,6 @@ fn composer_chip(
         )
 }
 
-/// Soft tonal fill for the highlighted MCP result.
-fn selection(cx: &gpui::App) -> gpui::Hsla {
-    let theme = cx.theme();
-    theme.colors.fg.fill(if theme.is_dark() {
-        Fill::Line
-    } else {
-        Fill::Hover
-    })
-}
-
 /// MonoCode `GitPickerTrigger`: the top bar's 12px workspace and branch
 /// buttons, dim until hovered.
 fn git_trigger(
@@ -1609,6 +1599,8 @@ impl BenCodeApp {
                     colors.fg.ink(Ink::Body)
                 };
                 // MonoCode `flex items-start gap-2.5 rounded-lg px-2 py-2`.
+                let selected = mode == current_mode || ix == active;
+                let hover = colors.fg.fill(Fill::Hover);
                 div()
                     .id(SharedString::from(format!("perm-opt-{}", mode.id())))
                     .flex()
@@ -1618,8 +1610,8 @@ impl BenCodeApp {
                     .py_2()
                     .rounded(px(8.0))
                     .cursor_pointer()
-                    .when(mode == current_mode || ix == active, |el| el.bg(colors.active))
-                    .hover(|s| s.bg(colors.hover))
+                    .when(selected, |el| el.bg(colors.fg.fill(Fill::Selected)))
+                    .when(!selected, |el| el.hover(move |s| s.bg(hover)))
                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                         if *hovered && this.composer_menus.access_index != ix {
                             this.composer_menus.access_index = ix;
