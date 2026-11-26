@@ -5,7 +5,7 @@ use gpui::{
     RenderOnce, Role, SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*,
 };
 
-use super::button::label_size;
+use super::{button::label_size, segmented::segment_colors};
 use crate::{
     primitives::{FocusRing, tab_stop},
     theme::{ActiveTheme, ControlSize, Elevation, Radius},
@@ -73,6 +73,8 @@ impl RenderOnce for Toggles {
             .collect();
         let theme = cx.theme();
         let colors = &theme.colors;
+        let dark = theme.is_dark();
+        let (track_bg, thumb_bg, thumb_border) = segment_colors(theme);
         let (text, _) = label_size(self.size);
         let options = self.options.into_iter().zip(focuses).enumerate().map(
             |(ix, ((value, label, on), focus))| {
@@ -98,9 +100,9 @@ impl RenderOnce for Toggles {
                     .focus_ring(cx)
                     .map(|chip| {
                         if on {
-                            chip.bg(colors.surface)
-                                .border_color(colors.border)
-                                .shadow(theme.elevation(Elevation::Raised))
+                            chip.bg(thumb_bg)
+                                .border_color(thumb_border)
+                                .when(!dark, |el| el.shadow(theme.elevation(Elevation::Raised)))
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(colors.fg)
                         } else {
@@ -138,7 +140,7 @@ impl RenderOnce for Toggles {
             .gap_0p5()
             .p_0p5()
             .rounded(theme.radius(Radius::Lg))
-            .bg(colors.sunken)
+            .bg(track_bg)
             .border_1()
             .border_color(colors.border)
             .children(options)

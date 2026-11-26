@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use gpui::{
-    Animation, AnimationExt, AnyElement, App, ElementId, FocusHandle, FontWeight,
+    Animation, AnimationExt, AnyElement, App, ElementId, FocusHandle, FontWeight, Hsla,
     InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, RenderOnce, Role,
     ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*, rems,
 };
@@ -11,9 +11,25 @@ use crate::{
     layout::{measure_width, on_axis, reveal_when_focused, text_width},
     motion::{self, Axis, Marker, glide, measure_item, measure_origin, slide},
     primitives::{FocusRing, Icon, IconName, Tooltip, tab_stop},
-    theme::{ActiveTheme, ControlSize, Elevation, Radius},
+    theme::{ActiveTheme, ControlSize, Elevation, Fill, Radius, Theme, Tone as _},
     typography::Ellipsis,
 };
+
+/// Shared track and active-pill fills for `SegmentedControl` and `Toggles`:
+/// translucent washes on dark glass so the control inherits the window theme
+/// and backdrop blur, and a lifted white pill on a subtle trough in light mode.
+pub(super) fn segment_colors(theme: &Theme) -> (Hsla, Hsla, Hsla) {
+    let colors = &theme.colors;
+    if theme.is_dark() {
+        (
+            colors.fg.fill(Fill::Faint),
+            colors.fg.fill(Fill::Selected),
+            colors.fg.fill(Fill::Line),
+        )
+    } else {
+        (colors.fg.fill(Fill::Hover), colors.surface, colors.border)
+    }
+}
 
 type OnChange = Rc<dyn Fn(&SharedString, &mut Window, &mut App)>;
 
@@ -103,6 +119,8 @@ impl RenderOnce for SegmentedControl {
             && shown < natural(&self.segments, self.size, window, cx);
         let theme = cx.theme();
         let colors = &theme.colors;
+        let dark = theme.is_dark();
+        let (track_bg, thumb_bg, thumb_border) = segment_colors(theme);
         let (text, icon_size) = label_size(self.size);
         let each = if compact { 1.0 } else { 2.0 };
         let (least, count) = (theme.control_height(self.size) * each, values.len());
@@ -119,10 +137,10 @@ impl RenderOnce for SegmentedControl {
                     .bottom_0()
                     .debug_selector(|| "segment-thumb".into())
                     .rounded(theme.radius(Radius::Md))
-                    .bg(colors.surface)
+                    .bg(thumb_bg)
                     .border_1()
-                    .border_color(colors.border)
-                    .shadow(theme.elevation(Elevation::Raised))
+                    .border_color(thumb_border)
+                    .when(!dark, |el| el.shadow(theme.elevation(Elevation::Raised)))
                     .with_animation(
                         ("segment-thumb", generation),
                         Animation::new(duration),
@@ -172,6 +190,7 @@ impl RenderOnce for SegmentedControl {
                         FontWeight::MEDIUM
                     })
                     .text_color(fg)
+                    .when(!on, |el| el.hover(|style| style.text_color(colors.fg)))
                     .debug_selector(move || format!("segment {named}"))
                     .cursor_pointer()
                     .track_focus(&focus)
@@ -231,7 +250,7 @@ impl RenderOnce for SegmentedControl {
                 .track_scroll(&scroll)
                 .p_0p5()
                 .rounded(theme.radius(Radius::Lg))
-                .bg(colors.sunken)
+                .bg(track_bg)
                 .border_1()
                 .border_color(colors.border),
         )
