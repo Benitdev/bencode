@@ -993,7 +993,7 @@ impl BenCodeApp {
             .flex()
             .items_center()
             .px(px(10.0))
-            .pb(px(8.0))
+            .pb(px(6.0))
             .gap_2()
             .child(
                 // Shrinks before Send: the chips' labels truncate.
@@ -1155,7 +1155,7 @@ impl BenCodeApp {
         };
         div()
             .id("composer-send-btn")
-            .size(px(32.0))
+            .size(px(28.0))
             .flex_none()
             .rounded_full()
             .flex()
@@ -1442,7 +1442,7 @@ impl BenCodeApp {
         div()
             .id("composer-plus-popover")
             .absolute()
-            .bottom(px(40.0))
+            .bottom(px(36.0))
             .left(px(8.0))
             .w(px(250.0))
             .p_1p5()
