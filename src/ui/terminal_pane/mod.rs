@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use bencode_ui::buttons::{ButtonVariant, IconButton};
-use bencode_ui::layout::SplitPane;
+use bencode_ui::layout::{SplitPane, resize_grip};
 use bencode_ui::primitives::{DragGhost, Icon, IconName};
 use bencode_ui::terminal::{Launch, Terminal, TerminalEvent};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
@@ -46,9 +46,7 @@ use crate::ui::layout::{
     LayoutNode, PaneEdge, SplitDir, pane_edge_from_point, set_split_sizes, split_shares,
 };
 use crate::ui::region::Region;
-use crate::ui::tokens::{
-    Fill, Ink, InteractiveSurface as _, PANEL_GAP, Text, Tone as _, resize_pill,
-};
+use crate::ui::tokens::{Fill, Ink, InteractiveSurface as _, PANEL_GAP, Text, Tone as _};
 
 const TAB_HEIGHT: f32 = 28.0;
 /// The least a split's sash leaves a terminal.
@@ -939,9 +937,14 @@ impl BenCodeApp {
                     .w(px(PANEL_GAP))
                     .cursor_col_resize(),
             })
-            .child(resize_pill(
+            .child(resize_grip(
                 "terminal-resize",
-                side.is_vertical(),
+                // A dock above or below is resized across a wide sash.
+                if side.is_vertical() {
+                    Axis::Vertical
+                } else {
+                    Axis::Horizontal
+                },
                 dragging,
                 cx,
             ))

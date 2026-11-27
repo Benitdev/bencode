@@ -33,6 +33,7 @@ mod translate;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
 
+use bencode_ui::layout::resize_grip;
 use bencode_ui::primitives::{IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -51,7 +52,7 @@ use crate::ui::composer::inbox_card::{CardTask, InboxCard};
 use crate::ui::scale::px;
 use crate::work_items::Provider;
 
-use crate::ui::tokens::{Ink, Tone as _, resize_pill};
+use crate::ui::tokens::{Ink, Tone as _};
 use crate::work_items::attention::{self, Attention};
 use crate::work_items::tickets::TicketLinks;
 use blocks::Described;
@@ -1451,7 +1452,12 @@ impl BenCodeApp {
                             .items_center()
                             .justify_center()
                             .cursor_col_resize()
-                            .child(resize_pill("inbox-resize", false, resizing, cx))
+                            .child(resize_grip(
+                                "inbox-resize",
+                                gpui::Axis::Horizontal,
+                                resizing,
+                                cx,
+                            ))
                             .tooltip(Tooltip::text("Resize inbox list"))
                             .on_mouse_down(
                                 MouseButton::Left,

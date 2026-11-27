@@ -17,6 +17,7 @@ mod changes;
 mod habits;
 
 use bencode_ui::buttons::{ButtonVariant, IconButton};
+use bencode_ui::layout::resize_grip;
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
 use bencode_ui::theme::{ActiveTheme, ControlSize, IconSize};
 use gpui::{
@@ -29,7 +30,7 @@ use crate::app::bot_overview::OverviewTab;
 use crate::bots::{Bot, BotState};
 use crate::ui::icons::ExtraIcon;
 use crate::ui::scale::px;
-use crate::ui::tokens::{Fill, Ink, PANEL_GAP, Text, Tone as _, resize_pill};
+use crate::ui::tokens::{Fill, Ink, PANEL_GAP, Text, Tone as _};
 
 /// `border-stroke`.
 const STROKE: f32 = 0.07;
@@ -104,7 +105,12 @@ impl BenCodeApp {
             .items_center()
             .justify_center()
             .cursor_col_resize()
-            .child(resize_pill("bot-overview-resize", false, resizing, cx))
+            .child(resize_grip(
+                "bot-overview-resize",
+                gpui::Axis::Horizontal,
+                resizing,
+                cx,
+            ))
             .tooltip(Tooltip::text("Resize overview"))
             .on_mouse_down(
                 MouseButton::Left,

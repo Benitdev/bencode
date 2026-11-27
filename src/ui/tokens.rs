@@ -11,8 +11,8 @@ use bencode_ui::forms::TextInput;
 use bencode_ui::primitives::{Icon, IconName};
 use bencode_ui::theme::{ActiveTheme, IconSize};
 use gpui::{
-    App, BoxShadow, Div, Entity, Focusable as _, Hsla, IntoElement, MouseButton, ParentElement,
-    Pixels, RenderOnce, SharedString, Styled, Window, div, point, prelude::*, rgb,
+    App, BoxShadow, Entity, Focusable as _, Hsla, IntoElement, MouseButton, ParentElement, Pixels,
+    RenderOnce, SharedString, Styled, Window, div, point, prelude::*, rgb,
 };
 
 pub use bencode_ui::theme::{Fill, Ink, InteractiveSurface, Tone};
@@ -93,26 +93,6 @@ pub fn panel_card_shadow(dark: bool) -> Vec<BoxShadow> {
             inset: false,
         }]
     }
-}
-
-/// Centered resize-sash grip: clear at rest, subtle pill on group hover, accent while dragging.
-pub fn resize_pill(group: &'static str, horizontal: bool, active: bool, cx: &App) -> Div {
-    let colors = &cx.theme().colors;
-    let fill = if active {
-        colors.accent
-    } else {
-        gpui::transparent_black()
-    };
-    let hover_fill = colors.fg.opacity(0.22);
-    let (w, h) = if horizontal { (40.0, 2.0) } else { (2.0, 40.0) };
-    div()
-        .w(crate::ui::scale::px(w))
-        .h(crate::ui::scale::px(h))
-        .rounded_full()
-        .bg(fill)
-        .when(!active, |el| {
-            el.group_hover(group, move |s| s.bg(hover_fill))
-        })
 }
 
 /// Borderless tonal search/filter pill with clear hover and focus feedback

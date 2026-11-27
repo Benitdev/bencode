@@ -1,25 +1,20 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    AnyElement, App, Axis, CursorStyle, DragMoveEvent, ElementId, EmptyView, EntityId, Hsla,
-    InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce, Stateful,
+    AnyElement, App, Axis, CursorStyle, Div, DragMoveEvent, ElementId, EmptyView, EntityId, Hsla,
+    InteractiveElement, IntoElement, ParentElement, Pixels, RenderOnce, SharedString, Stateful,
     StatefulInteractiveElement, Styled, Window, div, prelude::*,
 };
 
 use super::seeded::use_seeded;
-use crate::theme::ActiveTheme;
+use crate::theme::{ActiveTheme, px_to_rems};
 
 /// How close, in pixels, a dragged divider must come to a snap spot to take
 /// it (MonoCode `SASH_SNAP_PX`).
 const SNAP_PX: f32 = 12.0;
 
-/// Thin divider with a wide grab area. `axis` is the split's direction.
-pub fn resize_handle(id: impl Into<ElementId>, axis: Axis, cx: &App) -> Stateful<gpui::Div> {
-    handle(id, axis, cx.theme().colors.border, false, cx)
-}
-
-/// `snapped`: the divider rests on a snap spot mid-drag, and says so in the
-/// accent, a pixel wider.
+/// Thin divider with a wide grab area. `snapped`: the divider rests on a
+/// snap spot mid-drag, and says so in the accent, a pixel wider.
 fn handle(
     id: impl Into<ElementId>,
     axis: Axis,
@@ -68,50 +63,47 @@ fn handle(
     }
 }
 
-/// Floating-card resize channel: completely clear at rest, showing a sleek
-/// centered pill indicator on hover or drag (or full-span accent when snapped).
+/// A sash's grip, centered on it: clear at rest, a pill on hover of
+/// `group`, the pill in the accent while `held` (dragged). `axis` is the
+/// split's direction: side-by-side panes take an upright pill. Every sash
+/// draws this one, the app's own and `SplitPane`'s.
+pub fn resize_grip(group: impl Into<SharedString>, axis: Axis, held: bool, cx: &App) -> Div {
+    let colors = &cx.theme().colors;
+    let (thin, long) = (px_to_rems(2.0), px_to_rems(40.0));
+    let hover = colors.fg.opacity(0.22);
+    let pill = match axis {
+        Axis::Horizontal => div().w(thin).h(long),
+        Axis::Vertical => div().h(thin).w(long),
+    }
+    .flex_none()
+    .rounded_full();
+    if held {
+        pill.bg(colors.accent)
+    } else {
+        pill.group_hover(group, move |s| s.bg(hover))
+    }
+}
+
+/// The channel between floating cards, its grip in the middle.
 fn gap_handle(
     id: impl Into<ElementId>,
     axis: Axis,
     gap: Pixels,
-    snapped: bool,
+    held: bool,
     cx: &App,
 ) -> Stateful<gpui::Div> {
-    let theme = cx.theme();
-    let lit = theme.colors.focus;
-    let hover_pill = theme.colors.fg.opacity(0.22);
-    let horizontal = matches!(axis, Axis::Horizontal);
-    let grip = div()
-        .rounded_full()
-        .map(|el| match (horizontal, snapped) {
-            (true, true) => el.w(gpui::px(2.0)).h_full(),
-            (true, false) => el.w(gpui::px(2.0)).h(gpui::px(40.0)),
-            (false, true) => el.h(gpui::px(2.0)).w_full(),
-            (false, false) => el.h(gpui::px(2.0)).w(gpui::px(40.0)),
-        })
-        .map(|el| {
-            if snapped {
-                el.bg(lit)
-            } else {
-                el.bg(gpui::transparent_black())
-                    .group_hover("resize", move |s| s.bg(hover_pill))
-            }
-        });
-    div()
+    let base = div()
         .id(id)
         .group("resize")
         .flex_none()
         .flex()
         .justify_center()
-        .items_center()
-        .map(|el| {
-            if horizontal {
-                el.w(gap).h_full().cursor(CursorStyle::ResizeLeftRight)
-            } else {
-                el.h(gap).w_full().cursor(CursorStyle::ResizeUpDown)
-            }
-        })
-        .child(grip)
+        .items_center();
+    match axis {
+        Axis::Horizontal => base.w(gap).h_full().cursor(CursorStyle::ResizeLeftRight),
+        Axis::Vertical => base.h(gap).w_full().cursor(CursorStyle::ResizeUpDown),
+    }
+    .child(resize_grip("resize", axis, held, cx))
 }
 
 struct DividerDrag {
@@ -272,9 +264,10 @@ impl RenderOnce for SplitPane {
         let seed = (self.sizes, normalized);
         let fractions = use_seeded(self.id.clone(), seed, window, cx);
         let owner = fractions.entity_id();
-        // The divider resting on a snap spot, while a drag lasts.
-        let snapped = window.use_keyed_state((self.id.clone(), "snapped"), cx, |_, _| None);
-        let lit = (*snapped.read(cx)).filter(|_| cx.has_active_drag());
+        // The dragged divider and whether it rests on a snap spot, while a
+        // drag lasts.
+        let held = window.use_keyed_state((self.id.clone(), "held"), cx, |_, _| None);
+        let held_now: Option<(usize, bool)> = (*held.read(cx)).filter(|_| cx.has_active_drag());
         let on_resize = self.on_resize;
         let shares = fractions.read(cx).value.1.clone();
         let (axis, min) = (self.axis, self.min);
@@ -317,10 +310,10 @@ impl RenderOnce for SplitPane {
                     min / extent,
                     gpui::px(SNAP_PX) / extent,
                 );
-                let at = on_spot.then_some(drag.ix);
-                if *snapped.read(cx) != at {
-                    snapped.update(cx, |snapped, cx| {
-                        *snapped = at;
+                let now = Some((drag.ix, on_spot));
+                if *held.read(cx) != now {
+                    held.update(cx, |held, cx| {
+                        *held = now;
                         cx.notify();
                     });
                 }
@@ -353,8 +346,20 @@ impl RenderOnce for SplitPane {
                     fractions.clone(),
                 );
                 let divider = match self.gap {
-                    Some(gap) => gap_handle(("divider", ix), axis, gap, lit == Some(ix - 1), cx),
-                    None => handle(("divider", ix), axis, line, lit == Some(ix - 1), cx),
+                    Some(gap) => gap_handle(
+                        ("divider", ix),
+                        axis,
+                        gap,
+                        held_now.is_some_and(|(at, _)| at == ix - 1),
+                        cx,
+                    ),
+                    None => handle(
+                        ("divider", ix),
+                        axis,
+                        line,
+                        held_now == Some((ix - 1, true)),
+                        cx,
+                    ),
                 };
                 children.push(
                     divider

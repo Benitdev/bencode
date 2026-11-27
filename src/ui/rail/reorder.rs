@@ -4,6 +4,7 @@
 
 use std::time::{Duration, Instant};
 
+use bencode_ui::layout::resize_grip;
 use bencode_ui::theme::ActiveTheme;
 use gpui::{
     Animation, AnimationExt, AnyElement, Context, DragMoveEvent, FontWeight, Hsla,
@@ -17,7 +18,7 @@ use super::model::{self, RailMove, move_item, reorder_subset, resized_rail_width
 use super::state::RailReorder;
 use crate::app::BenCodeApp;
 use crate::ui::motion::cubic_bezier;
-use crate::ui::tokens::{Fill, Text, Tone as _, resize_pill};
+use crate::ui::tokens::{Fill, Text, Tone as _};
 
 /// MonoCode `--motion-reorder-duration`.
 pub(super) const REORDER_MOTION: Duration = Duration::from_millis(160);
@@ -163,7 +164,12 @@ impl BenCodeApp {
             .items_center()
             .justify_center()
             .cursor_col_resize()
-            .child(resize_pill("rail-resize", false, dragging, cx))
+            .child(resize_grip(
+                "rail-resize",
+                gpui::Axis::Horizontal,
+                dragging,
+                cx,
+            ))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseDownEvent, _, cx| {

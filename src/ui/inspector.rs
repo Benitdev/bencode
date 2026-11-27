@@ -5,12 +5,12 @@
 //! left edge drags to resize. Whether it shows, what and how wide are kept
 //! in `settings.json`.
 
+use bencode_ui::layout::resize_grip;
 use gpui::{Context, InteractiveElement, IntoElement, ParentElement, Styled, div, prelude::*};
 
 use crate::app::{BenCodeApp, InspectorMode};
 use crate::ui::region::Region;
 use crate::ui::scale::px;
-use crate::ui::tokens::resize_pill;
 
 pub const INSPECTOR_DEFAULT_WIDTH: f32 = 320.0;
 const INSPECTOR_MIN_WIDTH: f32 = 260.0;
@@ -133,7 +133,12 @@ impl BenCodeApp {
             .items_center()
             .justify_center()
             .cursor_col_resize()
-            .child(resize_pill("inspector-resize", false, dragging, cx))
+            .child(resize_grip(
+                "inspector-resize",
+                gpui::Axis::Horizontal,
+                dragging,
+                cx,
+            ))
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {

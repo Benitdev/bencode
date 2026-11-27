@@ -28,6 +28,7 @@ pub use tokens::{
     AvatarSize, ControlSize, Density, Elevation, Fill, IconSize, Ink, InteractiveSurface, Radius,
     TextSize, Tone,
 };
+pub(crate) use tokens::px_to_rems;
 
 const FRAME: Duration = Duration::from_millis(8);
 
