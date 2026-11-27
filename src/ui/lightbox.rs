@@ -14,7 +14,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
-use crate::ui::explorer_menu::{self, MenuAction, MenuEntry, MenuPlace, MenuStyle, MenuView};
+use crate::ui::explorer_menu::{self, MenuAction, MenuEntry, MenuPlace, MenuView};
 use crate::ui::scale::px;
 
 /// The preview's layer, over menus and dialogs; its own menu goes above.
@@ -174,7 +174,6 @@ impl BenCodeApp {
                 focus: &self.composer_menus.focus,
                 header: None,
             },
-            MenuStyle::Explorer,
             LIGHTBOX_LAYER + 1,
             move |ix, _, cx| {
                 let updated = hover_app.update(cx, |this, cx| {

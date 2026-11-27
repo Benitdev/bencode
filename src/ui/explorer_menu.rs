@@ -160,18 +160,6 @@ pub enum MenuPlace {
     UnderRight(Point<Pixels>),
 }
 
-/// Which MonoCode menu look to draw.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum MenuStyle {
-    /// MonoCode `ExplorerMenu` in a glass `Popover`.
-    #[default]
-    Explorer,
-    /// MonoCode `GitChangesPanel`'s own `role="menu"` lists: `rounded-md
-    /// border-content/10 bg-background-base py-1 shadow-lg`, `h-7 px-3
-    /// text-[12px]` rows, no open animation.
-    Changes,
-}
-
 pub struct MenuView<'a> {
     pub id: &'static str,
     pub entries: &'a [MenuEntry],
@@ -187,47 +175,17 @@ pub struct MenuView<'a> {
 const RED_300: u32 = 0xfca5a5;
 const RED_500: u32 = 0xef4444;
 
-/// Row metrics for one [`MenuStyle`].
-struct RowLook {
-    radius: f32,
-    pad_x: f32,
-    gap: f32,
-    text: f32,
-    /// Line height as a multiple of the text size.
-    leading: f32,
-    hover: Hsla,
-    disabled: Hsla,
-}
+/// MonoCode `ExplorerMenu` rows: `gap-3 rounded-lg px-2 text-[13px]
+/// leading-none`, `h-7`.
+const ROW_RADIUS: f32 = 8.0;
+const ROW_PAD_X: f32 = 8.0;
+const ROW_GAP: f32 = 12.0;
+const ROW_TEXT: f32 = 13.0;
+const ROW_HEIGHT: f32 = 28.0;
 
-fn row_look(style: MenuStyle, fg: Hsla) -> RowLook {
-    match style {
-        // `gap-3 rounded-lg px-2 text-[13px] leading-none`, `hover:bg-content/5`,
-        // disabled `text-content/30`.
-        MenuStyle::Explorer => RowLook {
-            radius: 8.0,
-            pad_x: 8.0,
-            gap: 12.0,
-            text: 13.0,
-            leading: 1.0,
-            hover: fg.fill(Fill::Hover),
-            disabled: fg.ink(Ink::Faint),
-        },
-        // `gap-2 px-3 text-[12px]` (preflight leading 1.5), `hover:bg-content/10`,
-        // `disabled:opacity-40`.
-        MenuStyle::Changes => RowLook {
-            radius: 0.0,
-            pad_x: 12.0,
-            gap: 8.0,
-            text: 12.0,
-            leading: 1.5,
-            hover: fg.fill(Fill::Strong),
-            disabled: fg.ink(Ink::Muted),
-        },
-    }
-}
-
-/// Draws the menu in MonoCode's `ExplorerMenu` look; rows report hovers and
-/// clicks by index.
+/// Draws the menu in MonoCode's `ExplorerMenu` look, in a glass popover;
+/// rows report hovers and clicks by index. Every menu of the app's own is
+/// drawn here, so they all look alike.
 pub fn render_menu(
     view: MenuView<'_>,
     on_hover: impl Fn(usize, &mut gpui::Window, &mut App) + 'static,
@@ -235,29 +193,16 @@ pub fn render_menu(
     on_dismiss: impl Fn(&mut gpui::Window, &mut App) + 'static,
     cx: &App,
 ) -> AnyElement {
-    render_menu_styled(view, MenuStyle::Explorer, on_hover, on_pick, on_dismiss, cx)
-}
-
-/// [`render_menu`] in a chosen [`MenuStyle`].
-pub fn render_menu_styled(
-    view: MenuView<'_>,
-    style: MenuStyle,
-    on_hover: impl Fn(usize, &mut gpui::Window, &mut App) + 'static,
-    on_pick: impl Fn(usize, &mut gpui::Window, &mut App) + 'static,
-    on_dismiss: impl Fn(&mut gpui::Window, &mut App) + 'static,
-    cx: &App,
-) -> AnyElement {
-    render_menu_layered(view, style, MENU_LAYER, on_hover, on_pick, on_dismiss, cx)
+    render_menu_layered(view, MENU_LAYER, on_hover, on_pick, on_dismiss, cx)
 }
 
 /// The layer menus draw on, over the window's content.
 const MENU_LAYER: usize = 3;
 
-/// [`render_menu_styled`] on its own layer: a menu over something that is
+/// [`render_menu`] on its own layer: a menu over something that is
 /// itself drawn above menus (the image preview) takes a higher one.
 pub fn render_menu_layered(
     view: MenuView<'_>,
-    style: MenuStyle,
     layer: usize,
     on_hover: impl Fn(usize, &mut gpui::Window, &mut App) + 'static,
     on_pick: impl Fn(usize, &mut gpui::Window, &mut App) + 'static,
@@ -275,7 +220,6 @@ pub fn render_menu_layered(
     } = view;
     let theme = cx.theme();
     let colors = &theme.colors;
-    let look = row_look(style, colors.fg);
     let on_hover = std::rc::Rc::new(on_hover);
     let on_pick = std::rc::Rc::new(on_pick);
     let separator = || {
@@ -292,7 +236,8 @@ pub fn render_menu_layered(
         let hover_bg = if item.danger {
             red_500.opacity(0.15)
         } else {
-            look.hover
+            // `hover:bg-content/5`
+            colors.fg.fill(Fill::Hover)
         };
         let (hover, pick) = (on_hover.clone(), on_pick.clone());
         div()
@@ -301,22 +246,23 @@ pub fn render_menu_layered(
             .flex_none()
             .w_full()
             .items_center()
-            .gap(px(look.gap))
-            .px(px(look.pad_x))
-            .rounded(px(look.radius))
-            .text_size(px(look.text))
-            .line_height(relative(look.leading))
+            .gap(px(ROW_GAP))
+            .px(px(ROW_PAD_X))
+            .rounded(px(ROW_RADIUS))
+            .text_size(px(ROW_TEXT))
+            .line_height(relative(1.0))
             .map(|el| {
                 // `py-1.5` when the row carries a description, else `h-7`.
                 if item.description.is_some() {
                     el.py(px(6.0))
                 } else {
-                    el.h(px(28.0))
+                    el.h(px(ROW_HEIGHT))
                 }
             })
             .map(|el| {
                 if item.disabled {
-                    el.text_color(look.disabled)
+                    // `text-content/30`
+                    el.text_color(colors.fg.ink(Ink::Faint))
                 } else if item.danger {
                     // `text-red-300/90 hover:bg-red-500/15`, highlighted
                     // `bg-red-500/20 text-red-300`.
@@ -328,12 +274,11 @@ pub fn render_menu_layered(
                     }
                 } else {
                     let el = el.text_color(colors.fg);
-                    match (highlighted, style) {
+                    if highlighted {
                         // `bg-selection text-content`
-                        (true, MenuStyle::Explorer) => el.bg(colors.fg.fill(Fill::Selected)),
-                        // No keyboard highlight there; the hovered row's fill.
-                        (true, MenuStyle::Changes) => el.bg(hover_bg),
-                        (false, _) => el.hover(move |s| s.bg(hover_bg)),
+                        el.bg(colors.fg.fill(Fill::Selected))
+                    } else {
+                        el.hover(move |s| s.bg(hover_bg))
                     }
                 }
             })
@@ -351,7 +296,7 @@ pub fn render_menu_layered(
             })
             .children(item.icon.map(|icon| {
                 let color = if item.disabled {
-                    look.disabled
+                    colors.fg.ink(Ink::Faint)
                 } else {
                     colors.fg
                 };
@@ -427,48 +372,34 @@ pub fn render_menu_layered(
         .border_color(colors.fg.fill(Fill::Strong))
         .on_mouse_down_out(move |_, window, cx| on_dismiss(window, cx))
         // MonoCode `Popover` glass, under everything the menu holds.
-        .when(matches!(style, MenuStyle::Explorer), |el| {
-            el.child(crate::ui::frost::frost(
-                crate::ui::frost::POPOVER_RADIUS,
-                cx,
-            ))
-        })
+        .child(crate::ui::frost::frost(
+            crate::ui::frost::POPOVER_RADIUS,
+            cx,
+        ))
         // The header brings its own `my-1 h-px` separator.
         .children(header)
         .children(rows);
-    let menu = match style {
-        // MonoCode `Popover` FRAME: `rounded-xl border border-content/10
-        // shadow-xl` over a `backdrop-blur-xl` glass tinted
-        // `content/2%` (dark) or `background-base` (light), added above;
-        // `p-1` content.
-        MenuStyle::Explorer => {
-            menu.p_1()
-                .rounded(px(12.0))
-                .shadow_xl()
-                // `popover-open`: 170ms `cubic-bezier(0.16, 1, 0.3, 1)` from
-                // opacity 0, `scale(0.94)` and 8px towards the anchor
-                // (`--popover-lift: -8px` below a point, `8px` above a
-                // trigger). GPUI divs cannot scale, so only the fade and
-                // the slide are kept.
-                .with_animation(
-                    SharedString::from(format!("{id}-open")),
-                    gpui::Animation::new(std::time::Duration::from_millis(170))
-                        .with_easing(gpui::ease_out_quint()),
-                    move |el, delta| {
-                        let lift = 8.0 * (1.0 - delta);
-                        let el = el.opacity(delta);
-                        el.mt(px(if above { lift } else { -lift }))
-                    },
-                )
-                .into_any_element()
-        }
-        MenuStyle::Changes => menu
-            .py_1()
-            .rounded(px(6.0))
-            .bg(colors.bg)
-            .shadow_lg()
-            .into_any_element(),
-    };
+    // MonoCode `Popover` FRAME: `rounded-xl border border-content/10
+    // shadow-xl` over a `backdrop-blur-xl` glass tinted `content/2%`
+    // (dark) or `background-base` (light), added above; `p-1` content.
+    let menu = menu
+        .p_1()
+        .rounded(px(12.0))
+        .shadow_xl()
+        // `popover-open`: 170ms `cubic-bezier(0.16, 1, 0.3, 1)` from
+        // opacity 0, `scale(0.94)` and 8px towards the anchor
+        // (`--popover-lift: -8px` below a point, `8px` above a trigger).
+        // GPUI divs cannot scale, so only the fade and the slide are kept.
+        .with_animation(
+            SharedString::from(format!("{id}-open")),
+            gpui::Animation::new(std::time::Duration::from_millis(170))
+                .with_easing(gpui::ease_out_quint()),
+            move |el, delta| {
+                let lift = 8.0 * (1.0 - delta);
+                let el = el.opacity(delta);
+                el.mt(px(if above { lift } else { -lift }))
+            },
+        );
     let anchored = match place {
         MenuPlace::At(position) => anchored().position(position),
         MenuPlace::UnderRight(position) => {

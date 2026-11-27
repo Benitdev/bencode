@@ -1,7 +1,6 @@
-//! The Changes panel's two dropdowns, drawn the way MonoCode draws them
-//! (its own `role="menu"` lists, not a library dropdown): "Commit
-//! options" under the Commit button's arrow, and "Branch actions" under
-//! the header's `…`. BenCode's own: a commit's menu in the graph (Undo
+//! The Changes panel's two dropdowns, in the app's one menu look
+//! (`explorer_menu`, MonoCode's lists in glass): "Commit options" under
+//! the Commit button's arrow, and "Branch actions" under the header's `…`. BenCode's own: a commit's menu in the graph (Undo
 //! Last Commit, Revert Commit, Copy), which MonoCode's graph does not have.
 
 use bencode_ui::primitives::{Icon, IconName, Tooltip};
@@ -12,7 +11,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
-use crate::ui::explorer_menu::{self, MenuAction, MenuEntry, MenuPlace, MenuStyle, MenuView};
+use crate::ui::explorer_menu::{self, MenuAction, MenuEntry, MenuPlace, MenuView};
 use crate::ui::git_changes_panel::{Busy, PendingCommit};
 use crate::ui::scale::px;
 
@@ -270,7 +269,7 @@ impl BenCodeApp {
         let entries = self.git_menu_entries(menu.kind, cx);
         let entity = cx.entity().downgrade();
         let (hover_app, pick_app, close_app) = (entity.clone(), entity.clone(), entity);
-        Some(explorer_menu::render_menu_styled(
+        Some(explorer_menu::render_menu(
             MenuView {
                 id: "git-menu",
                 entries: &entries,
@@ -283,7 +282,6 @@ impl BenCodeApp {
                 focus: &self.composer_menus.focus,
                 header: None,
             },
-            MenuStyle::Changes,
             move |ix, _, cx| {
                 let updated = hover_app.update(cx, |this, cx| {
                     if let Some(menu) = this.changes_ui.menu.as_mut()

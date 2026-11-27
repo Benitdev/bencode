@@ -722,7 +722,7 @@ impl BenCodeApp {
                 }))
         });
         let count = form.checks.len();
-        let panel = div()
+        let panel = crate::ui::sidebar_popovers::popover_frame(cx)
             .id("inbox-repair-form")
             .occlude()
             .w(px(300.0))
@@ -730,11 +730,6 @@ impl BenCodeApp {
             .flex()
             .flex_col()
             .gap_1()
-            .rounded(px(10.0))
-            .border_1()
-            .border_color(colors.border)
-            .bg(colors.surface)
-            .shadow_xl()
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
                 if this.inbox(cx).repair.as_ref().is_some_and(|f| !f.busy) {
                     this.inbox_state.as_mut(cx).repair = None;
