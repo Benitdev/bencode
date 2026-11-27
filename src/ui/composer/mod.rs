@@ -67,6 +67,8 @@ pub const PROMPT_PLACEHOLDER: &str = "Describe a task…  / commands · @ refere
 const COMPOSER_RADIUS: f32 = 14.0;
 /// The model and access chips.
 const CHIP_HEIGHT: f32 = 28.0;
+/// How far Send sits above the chips row's line, off the composer's edge.
+const SEND_LIFT: f32 = 2.0;
 /// MonoCode `CwdPicker` `PREVIEW`.
 const RECENT_PROJECTS_SHOWN: usize = 5;
 const HARNESS_ORDER: [HarnessKind; 5] = [
@@ -1157,6 +1159,10 @@ impl BenCodeApp {
             .id("composer-send-btn")
             .size(px(28.0))
             .flex_none()
+            // Lifted off the composer's bottom edge, which the chips row
+            // hugs (`pb(6)`), without moving the chips.
+            .relative()
+            .top(px(-SEND_LIFT))
             .rounded_full()
             .flex()
             .items_center()
