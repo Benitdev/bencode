@@ -20,6 +20,12 @@ use super::{
     clamp_used_percent, http, number_field, ok_limits, parse_reset_timestamp,
 };
 
+/// Off for now: reading usage takes `agy`'s own OAuth token from the
+/// Keychain and calls Google's internal API with it, which Antigravity's
+/// terms may count as a third-party tool using its sign-in. While off, an
+/// Antigravity thread shows no usage and nothing here reads the token.
+pub const USAGE_ENABLED: bool = false;
+
 /// Where `agy` sends its turns, and so where they are counted.
 const API: &str = "https://daily-cloudcode-pa.googleapis.com/v1internal";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -52,6 +58,9 @@ pub fn group_title(group: &str) -> &'static str {
 }
 
 pub fn fetch(group: &str, now: i64) -> Fetched {
+    if !USAGE_ENABLED {
+        return Fetched::Unavailable("Antigravity usage is turned off".into());
+    }
     let token = match crate::harness::agy_accounts::live_access_token() {
         Ok(Some(token)) => token,
         Ok(None) => return Fetched::Unavailable("Antigravity is signed out".into()),

@@ -42,7 +42,7 @@ impl RateLimitProvider {
             "claude" => Some(Self::Claude),
             "codex" => Some(Self::Codex),
             "opencode" => Some(Self::OpenCode),
-            "antigravity" => Some(Self::Antigravity),
+            "antigravity" => antigravity::USAGE_ENABLED.then_some(Self::Antigravity),
             _ => None,
         }
     }
