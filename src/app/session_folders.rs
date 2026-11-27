@@ -238,6 +238,15 @@ impl BenCodeApp {
         cx: &mut Context<Self>,
     ) {
         let project = self.current_cwd.clone();
+        self.set_folders_of(project, folders, cx);
+    }
+
+    fn set_folders_of(
+        &mut self,
+        project: String,
+        folders: Vec<SessionFolder>,
+        cx: &mut Context<Self>,
+    ) {
         if folders.is_empty() {
             self.session_folders.remove(&project);
         } else {
@@ -293,6 +302,25 @@ impl BenCodeApp {
                 remove_session(&folders, id)
             });
         self.set_project_folders(next, cx);
+    }
+
+    /// Drops threads from `project`'s folders, which a background read may
+    /// name after the user has moved to another project.
+    pub(crate) fn remove_sessions_from_folders_of(
+        &mut self,
+        project: &str,
+        session_ids: &[String],
+        cx: &mut Context<Self>,
+    ) {
+        let Some(folders) = self.session_folders.get(project) else {
+            return;
+        };
+        let next = session_ids
+            .iter()
+            .fold(folders.clone(), |folders, id| remove_session(&folders, id));
+        if &next != folders {
+            self.set_folders_of(project.to_string(), next, cx);
+        }
     }
 
     pub fn toggle_folder(&mut self, folder_id: &str, cx: &mut Context<Self>) {

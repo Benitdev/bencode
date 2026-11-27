@@ -236,9 +236,12 @@ impl BenCodeApp {
             known,
             members,
         };
+        // Whose folders `members` came from: the current project may change
+        // before the read lands.
+        let folders_of = self.current_cwd.clone();
         let Some(path) = self.db.file_path() else {
             let loaded = read_sessions(&self.db, &request);
-            self.apply_loaded_sessions(loaded, cx);
+            self.apply_loaded_sessions(loaded, &folders_of, cx);
             return;
         };
         let task = cx.background_executor().spawn(async move {
@@ -249,9 +252,9 @@ impl BenCodeApp {
             let loaded: anyhow::Result<LoadedSessions> = task.await;
             match loaded {
                 Ok(loaded) => {
-                    if let Err(err) =
-                        this.update(cx, |app, cx| app.apply_loaded_sessions(loaded, cx))
-                    {
+                    if let Err(err) = this.update(cx, |app, cx| {
+                        app.apply_loaded_sessions(loaded, &folders_of, cx)
+                    }) {
                         log::debug!("sessions loaded after app drop: {err:#}");
                     }
                 }
@@ -262,8 +265,14 @@ impl BenCodeApp {
     }
 
     /// Rows already in memory win over the read: they may have changed
-    /// since. Folder members the database no longer has leave their folders.
-    fn apply_loaded_sessions(&mut self, loaded: LoadedSessions, cx: &mut Context<Self>) {
+    /// since. Folder members the database no longer has leave the folders
+    /// of `folders_of`, the project they were read from.
+    fn apply_loaded_sessions(
+        &mut self,
+        loaded: LoadedSessions,
+        folders_of: &str,
+        cx: &mut Context<Self>,
+    ) {
         let mut known: HashSet<String> = self.sessions.iter().map(|s| s.id.clone()).collect();
         let mut fresh: Vec<SessionRow> = loaded
             .rows
@@ -287,7 +296,7 @@ impl BenCodeApp {
             self.persist_session(id);
         }
         if !gone.is_empty() {
-            self.remove_sessions_from_folders(&gone, cx);
+            self.remove_sessions_from_folders_of(folders_of, &gone, cx);
         }
         if changed {
             self.backfill_backlog_links(cx);
