@@ -15,7 +15,7 @@ use crate::{
     data_display::Avatar,
     i18n,
     primitives::{Icon, IconName, tab_stop},
-    theme::{ActiveTheme, AvatarSize, ControlSize, IconSize, Radius},
+    theme::{ActiveTheme, AvatarSize, ControlSize, Fill, IconSize, Radius, Tone as _},
     typography::Ellipsis,
 };
 
@@ -119,8 +119,9 @@ pub(crate) fn field_button(
         .when(!disabled, |field| field.cursor_pointer())
 }
 
-/// A field's border and fill; a quiet field's frame shows on hover and
-/// focus only, so a column of them reads as values rather than boxes.
+/// A field's border and fill; a quiet field's frame shows on focus only,
+/// so a column of them reads as values rather than boxes. Hovered, it takes
+/// the tonal fill rows and ghost controls take, not a frame.
 pub(crate) fn field_frame(
     field: Stateful<Div>,
     focused: bool,
@@ -139,11 +140,10 @@ pub(crate) fn field_frame(
     if focused {
         return field.border_color(colors.focus).bg(surface);
     }
+    let hover = colors.fg.fill(Fill::Hover);
     field
         .border_color(transparent_black())
-        .when(!disabled, |field| {
-            field.hover(move |s| s.border_color(strong).bg(surface))
-        })
+        .when(!disabled, |field| field.hover(move |s| s.bg(hover)))
 }
 
 /// A field's chevron; a quiet field's shows only while it is hovered.
