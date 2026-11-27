@@ -4,6 +4,25 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.2.5] - 2026-11-27
+
+- A project's threads show as soon as BenCode starts, and when a tab of
+  another project takes focus; before, only the most recent threads across
+  every project were read, so a project could look empty until picked again.
+  A thread deleted while you switch projects leaves the right project's
+  folders.
+- Every resize sash draws one grip: a pill on hover, the same pill in the
+  accent while dragged, snapped or not, instead of a full-length line on a
+  snap spot.
+- The Changes panel's menus (Pull, Commit options, a commit's menu) and the
+  Inbox's repair form are frosted popovers like every other menu.
+- Quiet fields (assignee, priority, dates, hours…) take the soft hover fill
+  rows and buttons use, instead of a dark framed box; the Composer's chips sit
+  closer to its bottom edge.
+- Antigravity's usage is no longer read: it used `agy`'s own sign-in token
+  against Google's API, which Antigravity's terms may not allow. Antigravity
+  threads show no usage for now.
+
 ## [0.2.4] - 2026-11-26
 
 - Codex is found again in the ChatGPT app's new `codex-cli` package, so its
