@@ -20,13 +20,27 @@ use crate::theme::ActiveTheme;
 #[cfg(target_os = "macos")]
 const BLUR: f32 = 24.0;
 
-/// A popup's frost: the content colour at 2% over the blur (MonoCode
-/// `.popover-backdrop`), `opaque` where there is no blur.
+/// How much of the base background a popup's frost lays over its blur.
+/// MonoCode's 2% of the content colour reads only over BenCode's own dark
+/// panels: over a bright picture or page the blur turns light and the
+/// light text vanishes. At this, a menu over white stays dark enough to
+/// read, and over the dark panels it looks as before.
+const POPOVER_BASE: f32 = 0.72;
+
+/// A popup's frost: the base background, lifted by the content colour at
+/// 2% (MonoCode `.popover-backdrop`), over the blur; `opaque` where there
+/// is no blur.
 pub fn popover(radius: Pixels, opaque: Hsla, cx: &App) -> impl IntoElement {
     let theme = cx.theme();
+    let colors = &theme.colors;
     surface(
         radius,
-        theme.is_dark().then(|| theme.colors.fg.opacity(0.02)),
+        theme.is_dark().then(|| {
+            colors
+                .bg
+                .blend(colors.fg.opacity(0.02))
+                .opacity(POPOVER_BASE)
+        }),
         opaque,
     )
 }
