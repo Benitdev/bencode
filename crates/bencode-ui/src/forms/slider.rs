@@ -249,7 +249,7 @@ impl Track {
                 Some(motion) => inner.cursor_pointer().child(spectrum::rail(
                     motion,
                     ((max - min) / step).round() as usize,
-                    colors.chart[4],
+                    colors.accent,
                     colors.on_media,
                     colors.ink,
                 )),

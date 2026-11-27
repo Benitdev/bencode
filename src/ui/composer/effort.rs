@@ -35,7 +35,7 @@ impl BenCodeApp {
         cx: &Context<Self>,
     ) -> gpui::Div {
         let colors = &cx.theme().colors;
-        let violet = colors.chart[4];
+        let accent = colors.accent;
         let weak = cx.entity().downgrade();
         let setting = setting.clone();
         let label = setting.options[index].1.clone();
@@ -81,7 +81,7 @@ impl BenCodeApp {
                             .min_w_0()
                             .truncate()
                             .font_weight(gpui::FontWeight::MEDIUM)
-                            .text_color(violet.mix(&colors.fg, 0.22 + ratio * 0.22))
+                            .text_color(accent.mix(&colors.fg, 0.22 + ratio * 0.22))
                             .child(label),
                     ),
             )
