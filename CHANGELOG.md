@@ -11,6 +11,10 @@ tagging (`docs/releasing.md`).
   them along their edges: since GPUI 0.3.14 the glass was blurred in five
   pieces, each rounded on its own. It is blurred whole again, and in fewer
   passes.
+- Go to File (⌘P) and Search (⌘K) find a file written with its line, as
+  compilers, stack traces and agents write it (`src/app.rs:197`,
+  `src/app.rs:197:5`), and open it at that line; before, the `:197` matched
+  nothing.
 
 ## [0.2.5] - 2026-11-27
 

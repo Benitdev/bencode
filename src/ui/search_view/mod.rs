@@ -40,6 +40,7 @@ use crate::ui::app_callback::app_callback;
 use crate::ui::composer::focus_later;
 use crate::ui::file_tree::resolve_entry_icon;
 use crate::ui::provider_icon::HarnessIcon;
+use crate::ui::quick_open::split_line_suffix;
 use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Status, Text, Tone as _};
 
@@ -300,8 +301,15 @@ impl BenCodeApp {
         let Some(hit) = self.search.found.hits.get(ix).cloned() else {
             return;
         };
+        // `file:line` opens the file there, changed or not.
+        let query = self.search_modal_input.read(cx).text().to_string();
+        let at = split_line_suffix(&query).1;
         self.close_search_modal(cx);
         self.leave_surfaces(cx);
+        if let (HitKind::File { .. }, Some((line, column))) = (&hit.kind, at) {
+            self.open_file_at(&hit.target_id, line, column, 0, window, cx);
+            return;
+        }
         match hit.kind {
             HitKind::Thread { .. } => self.open_session(hit.target_id, cx),
             HitKind::File { changed: true } => {

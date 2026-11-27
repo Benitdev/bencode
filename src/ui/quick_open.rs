@@ -4,7 +4,9 @@
 //! recently opened files first. Starting the query with `>` makes it the
 //! command palette (⇧⌘P opens it so): every command of
 //! `app/command_catalog.rs` by name, with its keys, run as if its keys
-//! had been pressed where the keyboard was.
+//! had been pressed where the keyboard was. A file query may end in
+//! `:line` or `:line:column` (as compilers, stack traces and agents write
+//! them): the path is ranked, and the file opens there.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -134,6 +136,38 @@ impl FuzzyQuery {
         }
         self.matches(relative)
     }
+}
+
+/// Where in a file to open it: line and column, from one.
+pub type LineColumn = (u32, u32);
+
+/// A file query and the `:line` or `:line:column` it ends in, if any
+/// (`app.rs:42`, `app.rs:42:7`, `app.rs:42:7:` from a compiler). A colon
+/// typed before the number is dropped, so the list stays while it is.
+pub fn split_line_suffix(query: &str) -> (&str, Option<LineColumn>) {
+    let query = query.trim();
+    let mut rest = query.strip_suffix(':').unwrap_or(query);
+    let mut numbers: Vec<u32> = Vec::new();
+    while numbers.len() < 2 {
+        let Some((head, tail)) = rest.rsplit_once(':') else {
+            break;
+        };
+        if tail.is_empty() || !tail.bytes().all(|b| b.is_ascii_digit()) {
+            break;
+        }
+        let Ok(n) = tail.parse() else { break };
+        numbers.push(n);
+        rest = head;
+    }
+    if rest.trim().is_empty() {
+        return (query, None);
+    }
+    let at = match numbers[..] {
+        [line] => Some((line, 1)),
+        [column, line] => Some((line, column.max(1))),
+        _ => None,
+    };
+    (rest, at.filter(|&(line, _)| line > 0))
 }
 
 /// MonoCode `fuzzyMatch`, for one text; many texts share a `FuzzyQuery`.
@@ -331,7 +365,7 @@ pub struct QuickOpen {
     recents: Vec<String>,
     /// A file picked from the keyboard, opened on the next frame (opening
     /// needs the window).
-    pending: Option<String>,
+    pending: Option<(String, Option<LineColumn>)>,
     ranked: RankCache<Results>,
     /// The palette's commands, listed once: the keymap does not change
     /// while BenCode runs.
@@ -393,8 +427,9 @@ impl BenCodeApp {
         }
         let recents = self.quick_open_recents();
         let files = &self.project_files.files;
-        self.quick_open.ranked.get(&query, &[files], &recents, || {
-            Results::Files(rank_files(&[files], &query, &recents))
+        let (path, _) = split_line_suffix(&query);
+        self.quick_open.ranked.get(path, &[files], &recents, || {
+            Results::Files(rank_files(&[files], path, &recents))
         })
     }
 
@@ -489,7 +524,8 @@ impl BenCodeApp {
                 self.quick_open.recents.retain(|p| *p != path);
                 self.quick_open.recents.insert(0, path.clone());
                 self.quick_open.recents.truncate(MAX_RECENTS);
-                self.quick_open.pending = Some(path);
+                let (_, at) = split_line_suffix(&self.quick_open_query(cx));
+                self.quick_open.pending = Some((path, at));
             }
             Results::Commands(commands) => {
                 let Some((command, _)) = commands.get(index) else {
@@ -512,8 +548,12 @@ impl BenCodeApp {
 
     /// Opens a file picked from the keyboard, now that a window is at hand.
     pub fn open_pending_quick_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(path) = self.quick_open.pending.take() {
-            self.open_file_in_editor(&path, window, cx);
+        match self.quick_open.pending.take() {
+            Some((path, Some((line, column)))) => {
+                self.open_file_at(&path, line, column, 0, window, cx)
+            }
+            Some((path, None)) => self.open_file_in_editor(&path, window, cx),
+            None => {}
         }
         if let Some(command) = self.quick_open.pending_command.take() {
             // As if its keys had been pressed where the keyboard was: a
@@ -807,6 +847,27 @@ mod tests {
         assert!(rank_commands(&commands, "translate", &[], |_| false).is_empty());
         let split = rank_commands(&commands, "split r", &[], |_| false);
         assert_eq!(labels(&split)[0], "Split Pane Right");
+    }
+
+    #[test]
+    fn a_line_suffix_is_split_off_the_path() {
+        let path = "src/features/receiving/Page.tsx";
+        assert_eq!(split_line_suffix(path), (path, None));
+        assert_eq!(
+            split_line_suffix(" src/features/receiving/Page.tsx:197 "),
+            (path, Some((197, 1)))
+        );
+        assert_eq!(split_line_suffix("app.rs:42:7"), ("app.rs", Some((42, 7))));
+        assert_eq!(split_line_suffix("app.rs:42:7:"), ("app.rs", Some((42, 7))));
+        // Still typing: the colon goes, the list stays.
+        assert_eq!(split_line_suffix("app.rs:"), ("app.rs", None));
+        assert_eq!(split_line_suffix("app.rs:0"), ("app.rs", None));
+        // Not a location: left as typed.
+        assert_eq!(split_line_suffix("a:b"), ("a:b", None));
+        assert_eq!(split_line_suffix(":12"), (":12", None));
+        let files: Vec<SharedString> = [path, "src/app.rs"].map(SharedString::from).to_vec();
+        let (query, _) = split_line_suffix("Page.tsx:197");
+        assert_eq!(rank_files(&[&files], query, &[])[0].0, path);
     }
 
     #[test]

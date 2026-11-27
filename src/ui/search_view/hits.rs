@@ -13,7 +13,7 @@ use gpui::SharedString;
 
 use crate::app::session_list::linked_title;
 use crate::db::SessionRow;
-use crate::ui::quick_open::{fuzzy_match, rank_files};
+use crate::ui::quick_open::{fuzzy_match, rank_files, split_line_suffix};
 
 /// How many of each kind All shows; Tab moves to the kind to see them all.
 const ALL_THREADS: usize = 6;
@@ -150,7 +150,7 @@ pub fn find(query: &str, scope: SearchScope, src: &Sources) -> Found {
                 if all { ALL_THREADS } else { THREAD_LIMIT },
             ),
             SearchScope::Files => (
-                file_hits(query.trim(), src),
+                file_hits(split_line_suffix(query).0, src),
                 if all { ALL_FILES } else { FILE_LIMIT },
             ),
             _ => (
