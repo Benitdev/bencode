@@ -17,6 +17,7 @@ use crate::app::BenCodeApp;
 use crate::bots::{Bot, projects_phrase};
 use crate::ui::app_callback::app_callback;
 use crate::ui::figure::figure_view;
+use crate::ui::pane_tree::PaneFrame;
 use crate::ui::scale::px;
 use crate::ui::tokens::{Fill, Ink, Text, Tone as _};
 
@@ -36,7 +37,7 @@ impl BenCodeApp {
         let bot = self.bot_in_view()?.clone();
         let state = self.bot_state(&bot);
         let chat = match self.bot_view_session().map(str::to_string) {
-            Some(session_id) => self.render_session_pane(&session_id, false, cx),
+            Some(session_id) => self.render_session_pane(&session_id, PaneFrame::Alone, cx),
             None => EmptyState::new(
                 "bot-loading",
                 IconName::MessageSquare,
@@ -45,11 +46,11 @@ impl BenCodeApp {
             .into_any_element(),
         };
         // MonoCode `monoShownSessionView`: the session it started, as a
-        // pane of its own over the Overview.
+        // pane of its own over the Overview, whose card is its frame.
         let shown = self
             .bot_shown_session()
             .map(str::to_string)
-            .map(|id| (id.clone(), self.render_session_pane(&id, false, cx)));
+            .map(|id| (id.clone(), self.render_session_pane(&id, PaneFrame::Embedded, cx)));
         let resizing = self.bots.overview.resizing.is_some();
         Some(
             div()

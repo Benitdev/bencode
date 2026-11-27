@@ -23,6 +23,7 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
+use crate::ui::pane_tree::PaneFrame;
 use crate::ui::status::UsageChipVariant;
 
 /// One part of the window.
@@ -333,7 +334,12 @@ impl BenCodeApp {
         let in_split = self
             .active_layout()
             .is_some_and(|layout| crate::ui::layout::leaf_count(layout) > 1);
-        self.render_session_pane(session_id, in_split, cx)
+        let frame = if in_split {
+            PaneFrame::InSplit
+        } else {
+            PaneFrame::Alone
+        };
+        self.render_session_pane(session_id, frame, cx)
     }
 
     /// Draws one region. What a region measures or places as it is drawn

@@ -17,6 +17,18 @@ use gpui::{
 };
 
 use crate::app::BenCodeApp;
+
+/// What a chat pane sits in, which decides its frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PaneFrame {
+    /// Alone in the main area, or as a Bot's chat: a glass card.
+    Alone,
+    /// One of a split's panes: a glass card under its own header.
+    InSplit,
+    /// Inside a card that is already the frame (a Bot's Overview): no card
+    /// of its own, so no card in a card.
+    Embedded,
+}
 use crate::db::SessionRow;
 use crate::harness::catalog;
 use crate::ui::drag_drop::{DraggedFile, DraggedPane, DraggedSession, render_pane_drop_hint};
@@ -127,7 +139,7 @@ impl BenCodeApp {
     pub(crate) fn render_session_pane(
         &mut self,
         session_id: &str,
-        in_split: bool,
+        place: PaneFrame,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if !self.sessions.iter().any(|s| s.id == session_id) {
@@ -181,22 +193,23 @@ impl BenCodeApp {
                 .into_any_element()
         };
 
-        let frame = self.glass(cx).card(
-            div()
-                .id(SharedString::from(format!("pane-session-{session_id}")))
-                .relative()
-                .flex()
-                .flex_col()
-                .size_full()
-                .min_w_0(),
-            cx,
-        );
+        let pane = div()
+            .id(SharedString::from(format!("pane-session-{session_id}")))
+            .relative()
+            .flex()
+            .flex_col()
+            .size_full()
+            .min_w_0();
+        let pane = match place {
+            PaneFrame::Embedded => pane,
+            PaneFrame::Alone | PaneFrame::InSplit => self.glass(cx).card(pane, cx),
+        };
         // A thread with no message yet shows the centred composer.
         let empty = !session.blocks.iter().any(|b| b.role == "user");
         let frame = self
-            .with_pane_listeners(frame, session_id, cx)
+            .with_pane_listeners(pane, session_id, cx)
             .children(self.render_chat_background(session_id, empty, cx))
-            .when(in_split, |el| {
+            .when(place == PaneFrame::InSplit, |el| {
                 el.child(self.render_pane_header(session, is_focused, cx))
             });
         let frame = if let Some(bot) = bot.as_ref().filter(|_| empty) {
