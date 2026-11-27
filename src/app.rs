@@ -1658,7 +1658,7 @@ impl BenCodeApp {
             // on a copy and starts no agent, fetch or sign-in.
             app.start_git_poll(cx);
             app.start_project_stats_poll(cx);
-            app.load_folder_members(cx);
+            app.load_launch_sessions(cx);
             #[cfg(feature = "snapshot")]
             if snapshot::enabled() {
                 app.start_snapshots(window, cx);
@@ -1684,7 +1684,7 @@ impl BenCodeApp {
         if app.db_writer.is_some() {
             app.db_write("sweep thread files", crate::thread_files::sweep);
         }
-        app.load_folder_members(cx);
+        app.load_launch_sessions(cx);
         app.start_clock(cx);
         app.start_usage_clock(cx);
         app.load_account_profiles(cx);

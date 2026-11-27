@@ -240,11 +240,15 @@ impl BenCodeApp {
         visible
     }
 
-    /// Loads folder members older than the project's loaded threads, and
-    /// drops members the database no longer has (MonoCode
-    /// `pruneSessionFolders`).
-    pub fn load_folder_members(&mut self, cx: &mut Context<Self>) {
-        self.load_sessions_in_background(None, cx);
+    /// At launch: the current project's threads (launch reads only the
+    /// most recent ones across every project, which may leave this one's
+    /// list empty), folder members older than them, and drops members the
+    /// database no longer has (MonoCode `pruneSessionFolders`).
+    pub fn load_launch_sessions(&mut self, cx: &mut Context<Self>) {
+        let cwd = self.current_cwd.trim();
+        let project = (!matches!(cwd, "" | "~" | ".") && !crate::app::is_home_path(cwd))
+            .then(|| self.current_cwd.clone());
+        self.load_sessions_in_background(project, cx);
     }
 
     pub fn render_session_list(&mut self, cx: &mut Context<Self>) -> AnyElement {

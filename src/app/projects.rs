@@ -184,8 +184,9 @@ impl BenCodeApp {
     }
 
     /// Follows the focused thread into its project when it lives outside the
-    /// current one (MonoCode sets the project from the opened session).
-    pub(super) fn follow_focused_session_project(&mut self) {
+    /// current one (MonoCode sets the project from the opened session), and
+    /// reads that project's threads: memory may hold only a few of them.
+    pub(super) fn follow_focused_session_project(&mut self, cx: &mut Context<Self>) {
         let Some(cwd) = self
             .selected_session()
             .map(|s| normalize_project_path(&s.cwd))
@@ -194,7 +195,8 @@ impl BenCodeApp {
             return;
         };
         if !same_project_path(&cwd, &self.current_cwd) {
-            self.set_current_project(cwd);
+            self.set_current_project(cwd.clone());
+            self.load_sessions_in_background(Some(cwd), cx);
         }
     }
 
