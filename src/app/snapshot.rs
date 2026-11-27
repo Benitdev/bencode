@@ -554,6 +554,8 @@ const SCENES: &[(&str, SetUp)] = &[
             .update(cx, |input, cx| input.set_text("/", cx));
         cx.notify();
     }),
+    // The composer's model menu, its glass over the transcript.
+    ("model-menu", |app, _, cx| app.toggle_model_picker(cx)),
     // Two tabs pinned: their cards ahead of the strip.
     ("pinned-tabs", |app, _, cx| {
         app.prompt_input

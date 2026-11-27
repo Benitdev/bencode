@@ -924,24 +924,38 @@ impl MetalRenderer {
                     // native view behind GPUI (`hole_punch_marker`) or frosts
                     // what is already drawn behind it (`backdrop_blur_marker`).
                     let mut start = range.start;
-                    for ix in range.clone() {
+                    let mut ix = range.start;
+                    while ix < range.end {
                         let quad = &scene.quads[ix];
                         if is_hole_punch(quad) {
                             self.draw_quads(start..ix, instance_bindings, &command_encoder);
                             self.draw_clear_quad(ix, instance_bindings, &command_encoder);
-                            start = ix + 1;
+                            ix += 1;
+                            start = ix;
                             continue;
                         }
                         let Some(sigma) = backdrop_sigma(quad) else {
+                            ix += 1;
                             continue;
                         };
+                        // GPUI draws a rounded quad as pieces (its interior
+                        // and four strips, each the whole quad under its own
+                        // mask). Pieces drawn one after another see the same
+                        // backdrop, so they share one blur.
+                        let pieces = ix
+                            ..(ix + 1..range.end)
+                                .find(|&next| !same_frost(&scene.quads[next], quad))
+                                .unwrap_or(range.end);
                         self.draw_quads(start..ix, instance_bindings, &command_encoder);
                         command_encoder.endEncoding();
-                        let clipped = quad.bounds.intersect(&quad.content_mask.bounds);
-                        let overlaps_hole = hole_bounds.iter().any(|h| h.intersects(&clipped));
+                        let pieces = &scene.quads[pieces];
+                        let overlaps_hole = pieces.iter().any(|piece| {
+                            let clipped = piece.bounds.intersect(&piece.content_mask.bounds);
+                            hole_bounds.iter().any(|h| h.intersects(&clipped))
+                        });
                         let fallback_alpha = if overlaps_hole { 0.88 } else { 0. };
                         self.blur_backdrop(
-                            quad,
+                            pieces,
                             sigma,
                             fallback_alpha,
                             texture,
@@ -964,7 +978,9 @@ impl MetalRenderer {
                             opaque_quads,
                         );
                         command_encoder.setDepthStencilState(Some(&self.depth_test_state));
+                        // The pieces themselves are drawn next, as the tint.
                         start = ix;
+                        ix += pieces.len();
                     }
                     self.draw_quads(start..range.end, instance_bindings, &command_encoder)
                 }
@@ -1046,16 +1062,21 @@ impl MetalRenderer {
         }
     }
 
-    /// Replaces the pixels inside `quad`'s rounded bounds with a Gaussian blur
-    /// (`sigma` device pixels) of what is already drawn there and around it,
-    /// like CSS `backdrop-filter: blur()`. The quad itself is drawn afterwards.
+    /// Replaces the pixels inside the frosted quad's rounded bounds with a
+    /// Gaussian blur (`sigma` device pixels) of what is already drawn there
+    /// and around it, like CSS `backdrop-filter: blur()`. The quad itself is
+    /// drawn afterwards.
+    ///
+    /// `pieces` are the parts GPUI split one quad into (`same_frost`): each
+    /// writes only inside its own mask, but its edge is the whole quad's, so
+    /// the pieces meet without a seam.
     ///
     /// The blur uses Apple's `MPSImageGaussianBlur` at
     /// full resolution with clamped edges: downsampled or sparse-tap blurs
     /// ghost text that sits under the glass.
     fn blur_backdrop(
         &mut self,
-        quad: &Quad,
+        pieces: &[Quad],
         sigma: f32,
         fallback_alpha: f32,
         target: &ProtocolObject<dyn MTLTexture>,
@@ -1066,12 +1087,24 @@ impl MetalRenderer {
             i32::from(viewport_size.width) as f32,
             i32::from(viewport_size.height) as f32,
         ];
+        let Some(quad) = pieces.first() else {
+            return Ok(());
+        };
         // Frosting stops where the quad is clipped, like the quad itself: a
         // pinned header pushed under a toolbar must not blur the toolbar.
-        let bounds = quad.bounds.intersect(&quad.content_mask.bounds);
-        if bounds.size.width.0 <= 0. || bounds.size.height.0 <= 0. {
+        let clipped: Vec<Bounds<ScaledPixels>> = pieces
+            .iter()
+            .map(|piece| piece.bounds.intersect(&piece.content_mask.bounds))
+            .filter(|bounds| bounds.size.width.0 > 0. && bounds.size.height.0 > 0.)
+            .collect();
+        let Some(bounds) = clipped.iter().copied().reduce(|a, b| a.union(&b)) else {
             return Ok(());
-        }
+        };
+        // The interior piece has its corners squared off; a strip keeps them.
+        let corner_radius = pieces
+            .iter()
+            .map(|piece| piece.corner_radii.top_left.0)
+            .fold(0., f32::max);
         // The gaussian reaches about 3 sigma, so snapshot that much around
         // the glass: the blur near its edges then averages the backdrop
         // beyond them, as the stylesheet's bleed does, instead of fading.
@@ -1157,15 +1190,6 @@ impl MetalRenderer {
             ];
         }
 
-        let params = BackdropCompositeParams {
-            origin: [bounds.origin.x.0, bounds.origin.y.0],
-            size: [bounds.size.width.0, bounds.size.height.0],
-            region_origin: [left, top],
-            region_size: [region.0 as f32, region.1 as f32],
-            viewport_size: viewport,
-            corner_radius: quad.corner_radii.top_left.0,
-            fallback_alpha,
-        };
         let render_pass_descriptor = MTLRenderPassDescriptor::new();
         // SAFETY: Index zero is within the render pass's color attachment array.
         let color_attachment = unsafe {
@@ -1180,16 +1204,32 @@ impl MetalRenderer {
             .renderCommandEncoderWithDescriptor(&render_pass_descriptor)
             .context("creating backdrop composite encoder")?;
         encoder.setRenderPipelineState(&self.backdrop_composite_pipeline_state);
-        // SAFETY: Metal copies the parameters, which match the composite
-        // shaders' `BackdropCompositeParams`; the textures live for the frame.
+        // SAFETY: the textures live for the frame.
         unsafe {
-            let params_ptr = ptr::NonNull::from(&params).cast();
-            let params_len = mem::size_of_val(&params);
-            encoder.setVertexBytes_length_atIndex(params_ptr, params_len, 0);
-            encoder.setFragmentBytes_length_atIndex(params_ptr, params_len, 0);
             encoder.setFragmentTexture_atIndex(Some(blurred), 0);
             encoder.setFragmentTexture_atIndex(Some(original), 1);
-            encoder.drawPrimitives_vertexStart_vertexCount(MTLPrimitiveType::Triangle, 0, 6);
+        }
+        for piece in &clipped {
+            let params = BackdropCompositeParams {
+                origin: [piece.origin.x.0, piece.origin.y.0],
+                size: [piece.size.width.0, piece.size.height.0],
+                shape_origin: [quad.bounds.origin.x.0, quad.bounds.origin.y.0],
+                shape_size: [quad.bounds.size.width.0, quad.bounds.size.height.0],
+                region_origin: [left, top],
+                region_size: [region.0 as f32, region.1 as f32],
+                viewport_size: viewport,
+                corner_radius,
+                fallback_alpha,
+            };
+            // SAFETY: Metal copies the parameters, which match the composite
+            // shaders' `BackdropCompositeParams`.
+            unsafe {
+                let params_ptr = ptr::NonNull::from(&params).cast();
+                let params_len = mem::size_of_val(&params);
+                encoder.setVertexBytes_length_atIndex(params_ptr, params_len, 0);
+                encoder.setFragmentBytes_length_atIndex(params_ptr, params_len, 0);
+                encoder.drawPrimitives_vertexStart_vertexCount(MTLPrimitiveType::Triangle, 0, 6);
+            }
         }
         encoder.endEncoding();
         Ok(())
@@ -2012,6 +2052,17 @@ fn backdrop_sigma(quad: &Quad) -> Option<f32> {
     Some(color.l * BACKDROP_MAX_SIGMA * fade).filter(|sigma| *sigma >= BACKDROP_MIN_SIGMA)
 }
 
+/// Whether `piece` is part of the same frosted quad as `quad`. GPUI draws a
+/// quad with rounded corners as its interior (corners squared off) and four
+/// strips around it, each a copy of the whole quad under its own content
+/// mask (`Window::insert_quad`), so the frosts' pieces share bounds and
+/// marker.
+fn same_frost(piece: &Quad, quad: &Quad) -> bool {
+    piece.bounds == quad.bounds
+        && piece.border_color == quad.border_color
+        && piece.background == quad.background
+}
+
 /// The scene's shadows with each frosted card's own drop shadow told the
 /// card's bounds, or `None` when nothing is frosted.
 ///
@@ -2050,7 +2101,14 @@ fn frosted_shadows(scene: &Scene) -> Option<Vec<Shadow>> {
                         bottom_right: card.bounds.size.width,
                         bottom_left: card.bounds.size.height,
                     };
-                    shadow.pad = card.corner_radii.top_left.0.to_bits();
+                    // The card's interior piece has square corners
+                    // (`same_frost`); its strips keep the card's radius.
+                    let radius = frosts
+                        .iter()
+                        .filter(|quad| same_frost(quad, card))
+                        .map(|quad| quad.corner_radii.top_left.0)
+                        .fold(0., f32::max);
+                    shadow.pad = radius.to_bits();
                 }
                 shadow
             })
@@ -2060,8 +2118,12 @@ fn frosted_shadows(scene: &Scene) -> Option<Vec<Shadow>> {
 
 #[repr(C)]
 struct BackdropCompositeParams {
+    /// The piece written to.
     origin: [f32; 2],
     size: [f32; 2],
+    /// The whole quad, whose rounded edge the piece follows.
+    shape_origin: [f32; 2],
+    shape_size: [f32; 2],
     region_origin: [f32; 2],
     region_size: [f32; 2],
     viewport_size: [f32; 2],

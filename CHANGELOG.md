@@ -4,6 +4,14 @@ What changed in each BenCode release. The release workflow publishes a
 version's section below as its GitHub Release notes, so add one before
 tagging (`docs/releasing.md`).
 
+## [0.2.6] - Unreleased
+
+- Frosted popovers and dialogs no longer show a faint second frame inside
+  their border, square notches at the corners, or bits of the text behind
+  them along their edges: since GPUI 0.3.14 the glass was blurred in five
+  pieces, each rounded on its own. It is blurred whole again, and in fewer
+  passes.
+
 ## [0.2.5] - 2026-11-27
 
 - A project's threads show as soon as BenCode starts, and when a tab of

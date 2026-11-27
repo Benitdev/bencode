@@ -12,6 +12,13 @@ Modified for BenCode with MonoCode's backdrop blur (MonoCode's
   (`framebufferOnly` off) in every build so the drawable can be copied.
 - src/shaders.metal: `backdrop_composite_vertex` / `_fragment`.
 
+GPUI draws a quad with rounded corners as pieces (its interior, corners
+squared off, and four strips, each the whole quad under its own mask), so
+a frosted quad arrives in pieces too. Consecutive pieces of one quad
+(`same_frost`) share one blur, and each writes only inside its mask but is
+edged by the whole quad's rounded bounds, so the pieces meet without a
+seam; a frosted card's shadow takes its radius from the strips.
+
 GPUI draws opaque rectangles first, front to back, against a depth buffer.
 What a frosted quad copies, and what a cutout clears, must not hold what is
 drawn after it, so the opaque pass stops at the first such quad and

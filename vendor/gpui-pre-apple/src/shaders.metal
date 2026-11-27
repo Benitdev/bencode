@@ -1470,6 +1470,8 @@ struct BackdropVertexOutput {
 struct BackdropCompositeParams {
   float2 origin;
   float2 size;
+  float2 shape_origin;
+  float2 shape_size;
   float2 region_origin;
   float2 region_size;
   float2 viewport_size;
@@ -1505,8 +1507,10 @@ fragment float4 backdrop_composite_fragment(BackdropVertexOutput input [[stage_i
     soft += float4(0.09, 0.09, 0.11, 1.0) * missing;
   }
   float4 sharp = original.read(uint2(clamp(local, float2(0.), params->region_size - 1.)));
-  float2 half_size = params->size * 0.5;
-  float2 corner = abs(position - (params->origin + half_size)) - half_size + params->corner_radius;
+  // The pieces GPUI splits a rounded quad into each write their own part
+  // of the whole quad's shape, so they meet without a seam.
+  float2 half_size = params->shape_size * 0.5;
+  float2 corner = abs(position - (params->shape_origin + half_size)) - half_size + params->corner_radius;
   float distance = length(max(corner, float2(0.))) + min(max(corner.x, corner.y), 0.) - params->corner_radius;
   return mix(sharp, soft, saturate(0.5 - distance));
 }
